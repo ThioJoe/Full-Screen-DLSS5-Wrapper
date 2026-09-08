@@ -72,7 +72,7 @@ constexpr std::array<FieldSpec, kFieldCount> kFields{ {
     { L"Local structure", L"Detail the model adds within a region. The slider's end is not the model's: type or step past it and the slider follows. Does nothing while auto mask is off.", 0, 1000,
       100, true },
     { L"Local tone", L"How far the model moves local brightness. The slider's end is not the model's: type or step past it and the slider follows.", 0, 1000, 100, true },
-    { L"Skin structure", L"Detail on skin; -1 follows local structure. The slider's end is not the model's. Does nothing while auto mask is off.", -100, 1000, 100, true },
+    { L"Skin structure", L"Detail on skin. The slider's end is not the model's. Does nothing while auto mask is off, or while skin follows local structure.", 0, 1000, 100, true },
     { L"Motion vector scale X", L"What the model multiplies the horizontal motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, false },
     { L"Motion vector scale Y", L"What the model multiplies the vertical motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, false },
     { L"Split position", L"Where the divider sits in the split view. Ctrl+Alt+Shift and the mouse drags it on screen.", 0, 100, 100, false },
@@ -92,6 +92,9 @@ struct ToggleSpec
 constexpr std::array<ToggleSpec, kToggleCount> kToggles{ {
     { L"Run the model", L"Whether the model runs at all. Off costs nothing and shows the captured picture as it was.", false },
     { L"Auto mask", L"Let the model find skin itself. Skin structure and local structure do nothing while this is off.", true },
+    { L"Skin follows local structure",
+      L"Give skin whatever local structure is given, which is what the model reads -1 as. It is the only value between -1 and 0 that means anything, so it is a switch rather than part of the slider.",
+      true },
     { L"UI correction", L"Ask the model to leave interface pixels alone. It reads a UI layer DlssScreen does not supply, so this is inert as wired.", true },
     { L"Depth is inverted", L"Tell the model the depth plane counts the other way. With one flat plane it changes little.", true },
     { L"Wait for the display", L"Present in step with the monitor. Off presents as fast as the pipeline allows.", true },
@@ -189,9 +192,9 @@ struct PageSpec
 
 constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
     { L"Model",
-      14,
-      { Of(Toggle::NeuralRendering), Of(Group::Style), Of(List::Preset), Of(Field::Intensity), Of(Field::LocalStructure), Of(Field::LocalTone), Of(Field::Skin), Of(Toggle::AutoMask),
-        Of(Toggle::UiCorrection), Of(Toggle::DepthInverted), Of(Field::DepthValue), Of(Field::ResetThreshold), Of(Field::MvScaleX), Of(Field::MvScaleY) } },
+      15,
+      { Of(Toggle::NeuralRendering), Of(Group::Style), Of(List::Preset), Of(Field::Intensity), Of(Field::LocalStructure), Of(Field::LocalTone), Of(Toggle::SkinFollowsStructure), Of(Field::Skin),
+        Of(Toggle::AutoMask), Of(Toggle::UiCorrection), Of(Toggle::DepthInverted), Of(Field::DepthValue), Of(Field::ResetThreshold), Of(Field::MvScaleX), Of(Field::MvScaleY) } },
     { L"View", 7, { Of(Group::Compare), Of(Field::Split), Of(Toggle::Vsync), Of(Group::Cursor), Of(Toggle::CaptureBorder), Of(Toggle::Topmost), Of(Group::LogLevel) } },
     { L"Start-up",
       16,
@@ -572,8 +575,18 @@ void ChooseOnly(std::span<const HWND> group, std::size_t index) noexcept
 
 [[nodiscard]] std::array<bool, kToggleCount> StartingToggles(const interior::Options& o, const interior::LiveSettings& live) noexcept
 {
-    return { live.neuralRendering, live.tuning.autoMask, live.tuning.uiCorrection, live.depthInverted, live.vsync, o.captureBorder, o.topmost, o.redirectionBitmap, o.debugLayer,
-             o.indicator,          o.cubinCache };
+    return { live.neuralRendering,
+             live.tuning.autoMask,
+             live.tuning.skinStructure.Get() < 0.0f,
+             live.tuning.uiCorrection,
+             live.depthInverted,
+             live.vsync,
+             o.captureBorder,
+             o.topmost,
+             o.redirectionBitmap,
+             o.debugLayer,
+             o.indicator,
+             o.cubinCache };
 }
 
 [[nodiscard]] std::size_t CodeOfGrid(interior::GridSize grid) noexcept
@@ -1018,6 +1031,15 @@ void ShowChosenPage(const ControlPanel& panel) noexcept
     return levels[std::min(index, levels.size() - 1)];
 }
 
+// -1 is the model's own way of saying "whatever local structure got", and nothing between it and 0 means
+// anything, so the switch carries that value and the number carries the rest.
+[[nodiscard]] interior::SkinStrength SkinOf(const ControlPanel& panel, interior::SkinStrength held) noexcept
+{
+    if (IsOn(panel, Toggle::SkinFollowsStructure))
+        return interior::SkinStrengthTag::Parse(-1.0f).value_or(held);
+    return interior::SkinStrengthTag::Parse(SettledValue(panel, Field::Skin)).value_or(held);
+}
+
 // The model names its own presets or none at all; with none the row is absent and the session keeps what
 // it started with.
 [[nodiscard]] interior::NgxPreset PresetOf(const ControlPanel& panel, interior::NgxPreset held) noexcept
@@ -1035,7 +1057,7 @@ void ShowChosenPage(const ControlPanel& panel) noexcept
                                StyleFrom(ChosenIn(panel, Group::Style, interior::StyleCode(current.style))),
                                strength(Field::LocalStructure, current.localStructure),
                                strength(Field::LocalTone, current.localTone),
-                               interior::SkinStrengthTag::Parse(SettledValue(panel, Field::Skin)).value_or(current.skinStructure),
+                               SkinOf(panel, current.skinStructure),
                                IsOn(panel, Toggle::AutoMask),
                                IsOn(panel, Toggle::UiCorrection) };
 }
@@ -1071,6 +1093,18 @@ void ResetToggle(const ControlPanel& panel, std::size_t t, bool on) noexcept
 {
     if (IsPushed(panel.toggleResets[t]))
         SetChecked(panel.toggles[t], on);
+}
+
+void EnableAll(std::span<const HWND> controls, bool enabled) noexcept
+{
+    std::ranges::for_each(controls, [enabled](HWND control) { (void)::EnableWindow(control, enabled ? TRUE : FALSE); });
+}
+
+// While the switch is on it is the answer, so the number it stands in for is greyed rather than left
+// looking as though it still counted.
+void ApplyEnables(const ControlPanel& panel) noexcept
+{
+    EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::Skin)), !IsOn(panel, Toggle::SkinFollowsStructure));
 }
 
 // A held reset puts its own control back where the defaults start it; the same answer every frame.
@@ -1448,6 +1482,7 @@ Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options,
 PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSettings& current) noexcept
 {
     ShowChosenPage(panel);
+    ApplyEnables(panel);
     ApplyResets(panel);
     const interior::Fraction split = interior::FractionTag::Parse(SettledValue(panel, Field::Split)).value_or(*kCentre);
     return PanelReading{ LiveOf(panel, current), SurfaceOf(panel), DisplayFrom(ChosenIn(panel, Group::Compare, 0)), split, IsPushed(panel.restart) };

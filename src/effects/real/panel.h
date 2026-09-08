@@ -21,7 +21,21 @@ enum class Page : std::size_t { Model, View, Startup, Count };
 enum class Field : std::size_t { Intensity, LocalStructure, LocalTone, Skin, MvScaleX, MvScaleY, Split, DepthValue, ResetThreshold, MvLevel, SrPreset, Count };
 
 // A switch the operator flips.
-enum class Toggle : std::size_t { NeuralRendering, AutoMask, UiCorrection, DepthInverted, Vsync, CaptureBorder, Topmost, RedirectionBitmap, DebugLayer, Indicator, CubinCache, Count };
+enum class Toggle : std::size_t {
+    NeuralRendering,
+    AutoMask,
+    SkinFollowsStructure,
+    UiCorrection,
+    DepthInverted,
+    Vsync,
+    CaptureBorder,
+    Topmost,
+    RedirectionBitmap,
+    DebugLayer,
+    Indicator,
+    CubinCache,
+    Count
+};
 
 // A choice among a few named alternatives.
 enum class Group : std::size_t { Compare, Style, Cursor, Motion, NvofGrid, NvofPerf, Sr, Format, LogLevel, Console, Count };
