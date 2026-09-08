@@ -1,8 +1,7 @@
 #include "infrastructure/checked.h"
 
-#if defined(_MSC_VER)
-#include <intsafe.h>
-#endif
+#include <cstdint>
+#include <limits>
 
 namespace infra {
 
@@ -13,81 +12,94 @@ namespace {
     return value == 0;
 }
 
-#if defined(_MSC_VER)
-template <class T>
-[[nodiscard]] Result<T, ArithmeticError> FromIntsafe(HRESULT status, T value) noexcept
-{
-    if (status < 0)
-        return Fail(ArithmeticError::Overflow);
-    return value;
-}
-#endif
-
 } // namespace
 
 #if defined(_MSC_VER)
 
+namespace {
+
+[[nodiscard]] bool IsOutsideInt32(std::int64_t value) noexcept
+{
+    return value < std::numeric_limits<std::int32_t>::min() || value > std::numeric_limits<std::int32_t>::max();
+}
+
+[[nodiscard]] Result<std::uint32_t, ArithmeticError> NarrowedUnsigned(std::uint64_t value) noexcept
+{
+    if (value > std::numeric_limits<std::uint32_t>::max())
+        return Fail(ArithmeticError::Overflow);
+    return static_cast<std::uint32_t>(value);
+}
+
+[[nodiscard]] Result<std::int32_t, ArithmeticError> NarrowedSigned(std::int64_t value) noexcept
+{
+    if (IsOutsideInt32(value))
+        return Fail(ArithmeticError::Overflow);
+    return static_cast<std::int32_t>(value);
+}
+
+[[nodiscard]] bool WouldWrapAdding(std::uint64_t a, std::uint64_t b) noexcept
+{
+    return a > std::numeric_limits<std::uint64_t>::max() - b;
+}
+
+[[nodiscard]] bool WouldWrapMultiplying(std::uint64_t a, std::uint64_t b) noexcept
+{
+    return a != 0 && b > std::numeric_limits<std::uint64_t>::max() / a;
+}
+
+} // namespace
+
 Result<std::uint32_t, ArithmeticError> CheckedAdd(std::uint32_t a, std::uint32_t b) noexcept
 {
-    std::uint32_t out = 0;
-    const auto status = UIntAdd(a, b, &out);
-    return FromIntsafe(status, out);
+    return NarrowedUnsigned(static_cast<std::uint64_t>(a) + b);
 }
 
 Result<std::uint32_t, ArithmeticError> CheckedSub(std::uint32_t a, std::uint32_t b) noexcept
 {
-    std::uint32_t out = 0;
-    const auto status = UIntSub(a, b, &out);
-    return FromIntsafe(status, out);
+    if (b > a)
+        return Fail(ArithmeticError::Overflow);
+    return a - b;
 }
 
 Result<std::uint32_t, ArithmeticError> CheckedMul(std::uint32_t a, std::uint32_t b) noexcept
 {
-    std::uint32_t out = 0;
-    const auto status = UIntMult(a, b, &out);
-    return FromIntsafe(status, out);
+    return NarrowedUnsigned(static_cast<std::uint64_t>(a) * b);
 }
 
 Result<std::uint64_t, ArithmeticError> CheckedAdd(std::uint64_t a, std::uint64_t b) noexcept
 {
-    std::uint64_t out = 0;
-    const auto status = ULongLongAdd(a, b, &out);
-    return FromIntsafe(status, out);
+    if (WouldWrapAdding(a, b))
+        return Fail(ArithmeticError::Overflow);
+    return a + b;
 }
 
 Result<std::uint64_t, ArithmeticError> CheckedSub(std::uint64_t a, std::uint64_t b) noexcept
 {
-    std::uint64_t out = 0;
-    const auto status = ULongLongSub(a, b, &out);
-    return FromIntsafe(status, out);
+    if (b > a)
+        return Fail(ArithmeticError::Overflow);
+    return a - b;
 }
 
 Result<std::uint64_t, ArithmeticError> CheckedMul(std::uint64_t a, std::uint64_t b) noexcept
 {
-    std::uint64_t out = 0;
-    const auto status = ULongLongMult(a, b, &out);
-    return FromIntsafe(status, out);
+    if (WouldWrapMultiplying(a, b))
+        return Fail(ArithmeticError::Overflow);
+    return a * b;
 }
 
 Result<std::int32_t, ArithmeticError> CheckedAdd(std::int32_t a, std::int32_t b) noexcept
 {
-    std::int32_t out = 0;
-    const auto status = IntAdd(a, b, &out);
-    return FromIntsafe(status, out);
+    return NarrowedSigned(static_cast<std::int64_t>(a) + b);
 }
 
 Result<std::int32_t, ArithmeticError> CheckedSub(std::int32_t a, std::int32_t b) noexcept
 {
-    std::int32_t out = 0;
-    const auto status = IntSub(a, b, &out);
-    return FromIntsafe(status, out);
+    return NarrowedSigned(static_cast<std::int64_t>(a) - b);
 }
 
 Result<std::int32_t, ArithmeticError> CheckedMul(std::int32_t a, std::int32_t b) noexcept
 {
-    std::int32_t out = 0;
-    const auto status = IntMult(a, b, &out);
-    return FromIntsafe(status, out);
+    return NarrowedSigned(static_cast<std::int64_t>(a) * b);
 }
 
 #else

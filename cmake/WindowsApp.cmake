@@ -22,6 +22,7 @@ foreach(_root "$ENV{WindowsSdkBinPath}" "${CMAKE_WINDOWS_KITS_10_DIR}/bin" "C:/P
     list(APPEND _dxc_hints "${_d}/x64")
   endforeach()
 endforeach()
+list(REVERSE _dxc_hints) # newest Windows SDK first
 find_program(DXC_EXECUTABLE NAMES dxc dxc.exe HINTS ${_dxc_hints})
 if(NOT DXC_EXECUTABLE)
   message(FATAL_ERROR "dxc.exe was not found; it ships with the Windows SDK under bin/<version>/x64 (set -DDXC_EXECUTABLE=<path>)")
@@ -36,6 +37,7 @@ function(dscreen_compile_shader hlsl entry profile variable)
   add_custom_command(OUTPUT "${_out}"
     COMMAND "${DXC_EXECUTABLE}" -nologo -T ${profile} -E ${entry} -O3 -WX -I "${CMAKE_CURRENT_SOURCE_DIR}/shaders" -Fh "${_out}" -Vn k${variable} "${_src}"
     DEPENDS "${_src}" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Common.hlsli"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
     COMMENT "DXC ${hlsl}:${entry}" VERBATIM)
   set(DSCREEN_SHADER_HEADERS ${DSCREEN_SHADER_HEADERS} "${_out}" PARENT_SCOPE)
 endfunction()
