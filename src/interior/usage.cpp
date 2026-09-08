@@ -52,6 +52,8 @@ std::string_view UsageText() noexcept
            "  --ngx-app-id HEX           Initialise NGX with an application id instead of a project id\n"
            "  --ngx-project-id GUID      Project id used with NVSDK_NGX_D3D12_Init_with_ProjectID\n"
            "  --ngx-log 0|1|2            NGX logging: off, on (default), verbose\n"
+           "  --indicator on|off         Let the model draw its own overlay naming its version, the preset\n"
+           "                             it resolved and its working size (default off; read only at start-up)\n"
            "  --app-data DIR             Folder for NGX logs (default: next to the executable)\n"
            "\n"
            "Window and diagnostics\n"

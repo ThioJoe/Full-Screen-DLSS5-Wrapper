@@ -23,6 +23,7 @@ struct NgxSettings
     interior::DirectoryPath executableDirectory;
     interior::DirectoryPath featurePath;
     interior::NgxLogLevel logLevel;
+    bool indicator;
 };
 
 // Where nvngx_dlssnr.dll sits among the folders the loader searches (the executable folder, then

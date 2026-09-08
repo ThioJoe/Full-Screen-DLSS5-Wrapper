@@ -73,6 +73,7 @@ struct Options
     DirectoryPath logFile;
     bool gui;
     ConsoleMode console;
+    bool indicator;
     [[nodiscard]] friend constexpr bool operator==(const Options&, const Options&) noexcept = default;
 };
 

@@ -402,10 +402,21 @@ Requirement RequirementOf(const GpuDevice& gpu, const NgxSettings& settings, NVS
     return Requirement{ result, static_cast<std::uint32_t>(requirement.FeatureSupported) };
 }
 
+// The model draws its own overlay, naming its version, the preset it resolved and the sizes it is
+// working at, when this reads exactly 1024. It is read as the model loads, so it is asked for first.
+[[nodiscard]] Status<Error> RequestIndicator(bool wanted) noexcept
+{
+    if (!wanted)
+        return {};
+    return CheckBool(::SetEnvironmentVariableW(L"__NGX_SHOW_INDICATOR", L"1024"), ApiCall::SetEnvironmentVariable);
+}
+
 Result<NgxRuntime, Error> CreateNgxRuntime(const GpuDevice& gpu, const NgxSettings& settings) noexcept
 {
     const std::shared_ptr<const NgxPaths> paths = std::make_shared<const NgxPaths>(settings);
-    return CheckNgx(Init(settings, gpu.device.Get(), paths->Common()), ApiCall::NgxInit).and_then([&] { return Initialized(gpu, paths); });
+    return RequestIndicator(settings.indicator).and_then([&] { return CheckNgx(Init(settings, gpu.device.Get(), paths->Common()), ApiCall::NgxInit); }).and_then([&] {
+        return Initialized(gpu, paths);
+    });
 }
 
 Status<Error> RequireSuperResolution(const NgxRuntime& runtime) noexcept

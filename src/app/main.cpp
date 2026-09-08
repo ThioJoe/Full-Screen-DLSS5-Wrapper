@@ -237,7 +237,7 @@ struct Base
 
 [[nodiscard]] real::NgxSettings NgxSettingsOf(const Options& o, const interior::DirectoryPath& executableDirectory) noexcept
 {
-    return real::NgxSettings{ o.ngxAppId, o.ngxProjectId, DataPathOf(o, executableDirectory), executableDirectory, o.ngxPath, o.ngxLogLevel };
+    return real::NgxSettings{ o.ngxAppId, o.ngxProjectId, DataPathOf(o, executableDirectory), executableDirectory, o.ngxPath, o.ngxLogLevel, o.indicator };
 }
 
 [[nodiscard]] Line SupportText(std::uint32_t mask) noexcept

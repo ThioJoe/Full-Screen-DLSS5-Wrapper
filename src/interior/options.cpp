@@ -60,6 +60,7 @@ enum class OptionId : std::uint8_t {
     LogFile,
     Gui,
     Console,
+    Indicator,
 };
 
 enum class ValueKind : std::uint8_t {
@@ -91,7 +92,7 @@ struct OptionSpec
     ValueKind kind;
 };
 
-constexpr std::array<OptionSpec, 41> kSpecs{ {
+constexpr std::array<OptionSpec, 42> kSpecs{ {
     { L"help", OptionId::Help, ValueKind::Flag },
     { L"list-monitors", OptionId::ListMonitors, ValueKind::Flag },
     { L"monitor", OptionId::Monitor, ValueKind::MonitorSel },
@@ -133,6 +134,7 @@ constexpr std::array<OptionSpec, 41> kSpecs{ {
     { L"log-file", OptionId::LogFile, ValueKind::Path },
     { L"gui", OptionId::Gui, ValueKind::Bool },
     { L"console", OptionId::Console, ValueKind::Console },
+    { L"indicator", OptionId::Indicator, ValueKind::Bool },
 } };
 
 struct FlagValue
@@ -627,6 +629,7 @@ struct ValidatedNumbers
         ValueOr(list, OptionId::LogFile, d.logFile),
         ValueOr(list, OptionId::Gui, d.gui),
         ValueOr(list, OptionId::Console, d.console),
+        ValueOr(list, OptionId::Indicator, d.indicator),
     };
 }
 
@@ -707,6 +710,7 @@ Options DefaultOptions() noexcept
         DirectoryPath{},
         true,
         ConsoleMode::Auto,
+        false,
     };
 }
 

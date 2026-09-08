@@ -33,11 +33,6 @@ static_assert(kDisplayCount == kRadioCount && kStyleCount == kRadioCount);
 // The layout in reference pixels; every one of them is scaled to the panel's own dots per inch.
 constexpr int kMargin = 12;
 constexpr int kPanelWidth = 404;
-constexpr int kLabelHeight = 17;
-constexpr int kControlHeight = 24;
-constexpr int kFieldRow = 46;
-constexpr int kCheckRow = 26;
-constexpr int kGroupRow = 46;
 constexpr int kSliderWidth = 214;
 constexpr int kBoxLeft = 236;
 constexpr int kBoxWidth = 84;
@@ -76,17 +71,10 @@ constexpr std::array<const wchar_t*, kStyleCount> kStyleLabels{ L"Standard", L"N
 // Rows down the panel, each with its own height, so the numbers and the switches sit at their own pace.
 enum class Row : std::size_t { View, Split, Model, Preset, Style, Intensity, LocalStructure, LocalTone, Skin, AutoMask, UiCorrection, ResetAll, Count };
 
-constexpr std::array<int, static_cast<std::size_t>(Row::Count)> kRowHeights{ kGroupRow, kFieldRow, kCheckRow, kFieldRow, kGroupRow, kFieldRow,
-                                                                             kFieldRow, kFieldRow, kFieldRow, kCheckRow, kCheckRow, kFieldRow };
-
-[[nodiscard]] int RowTop(Row row) noexcept
+[[nodiscard]] bool IsSwitchRow(Row row) noexcept
 {
-    return std::ranges::fold_left(kRowHeights | std::views::take(static_cast<std::size_t>(row)), kMargin, std::plus<int>{});
-}
-
-[[nodiscard]] int PanelHeight() noexcept
-{
-    return RowTop(Row::Count) + kMargin;
+    constexpr std::array<Row, kCheckCount> switches{ Row::Model, Row::AutoMask, Row::UiCorrection };
+    return std::ranges::contains(switches, row);
 }
 
 [[nodiscard]] Row RowOfField(std::size_t field) noexcept
@@ -101,12 +89,34 @@ constexpr std::array<int, static_cast<std::size_t>(Row::Count)> kRowHeights{ kGr
     return rows[check];
 }
 
-// Everything the panel draws is measured in the display's own dots, so it is the same size everywhere.
+// Everything is measured in the display's own dots and in the height of a line of its own text, so a row
+// is always tall enough for what it holds however the display is scaled.
 struct Metrics
 {
     int dpi;
+    int line;
     [[nodiscard]] int Of(int reference) const noexcept { return ::MulDiv(reference, dpi, kReferenceDpi); }
+    [[nodiscard]] int LabelHeight() const noexcept { return line + Of(5); }
+    [[nodiscard]] int ControlHeight() const noexcept { return std::max(Of(22), line + Of(9)); }
+    [[nodiscard]] int SwitchHeight() const noexcept { return ControlHeight() + Of(6); }
+    [[nodiscard]] int FieldHeight() const noexcept { return LabelHeight() + ControlHeight() + Of(10); }
 };
+
+[[nodiscard]] int RowHeight(Row row, const Metrics& m) noexcept
+{
+    return IsSwitchRow(row) ? m.SwitchHeight() : m.FieldHeight();
+}
+
+[[nodiscard]] int RowTop(Row row, const Metrics& m) noexcept
+{
+    const auto heights = std::views::iota(std::size_t{ 0 }, static_cast<std::size_t>(row)) | std::views::transform([&m](std::size_t i) { return RowHeight(static_cast<Row>(i), m); });
+    return std::ranges::fold_left(heights, m.Of(kMargin), std::plus<int>{});
+}
+
+[[nodiscard]] int PanelHeight(const Metrics& m) noexcept
+{
+    return RowTop(Row::Count, m) + m.Of(kMargin);
+}
 
 // WAIVER(R17): the window procedure is called by the OS, which discards nothing and ignores attributes.
 LRESULT CALLBACK PanelProc(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
@@ -134,14 +144,33 @@ void InitialiseCommonControls() noexcept
     (void)::InitCommonControlsEx(&controls);
 }
 
-// The font the rest of Windows writes its dialogs in, at the panel's own scale.
-[[nodiscard]] UniqueFont MessageFont(const Metrics& m) noexcept
+// The font the rest of Windows writes its dialogs in, asked for at this display's scale. The plain query
+// answers for the primary display, and scaling that answer again is what made the text outgrow its labels.
+[[nodiscard]] UniqueFont MessageFont(int dpi) noexcept
 {
-    NONCLIENTMETRICSW metrics{};
+    NONCLIENTMETRICSW metrics{}; // WAIVER(R2): a request record filled once, before it is asked.
     metrics.cbSize = sizeof(NONCLIENTMETRICSW);
-    ENSURE(::SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICSW), &metrics, 0) != FALSE);
-    metrics.lfMessageFont.lfHeight = -m.Of(-static_cast<int>(metrics.lfMessageFont.lfHeight));
+    ENSURE(::SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICSW), &metrics, 0, static_cast<UINT>(dpi)) != FALSE);
     return UniqueFont(::CreateFontIndirectW(&metrics.lfMessageFont));
+}
+
+// How tall one line of that font actually is, which is what every row is then built around.
+[[nodiscard]] int MeasuredOn(HDC dc, HFONT font) noexcept
+{
+    const HGDIOBJ previous = ::SelectObject(dc, font);
+    TEXTMETRICW text{}; // WAIVER(R2): an answer record filled once by the measurement below.
+    ENSURE(::GetTextMetricsW(dc, &text) != FALSE);
+    (void)::SelectObject(dc, previous);
+    return static_cast<int>(text.tmHeight);
+}
+
+[[nodiscard]] int LineHeight(HWND window, HFONT font) noexcept
+{
+    const HDC dc = ::GetDC(window);
+    ENSURE(dc != nullptr);
+    const int height = MeasuredOn(dc, font);
+    ENSURE(::ReleaseDC(window, dc) == 1);
+    return height;
 }
 
 [[nodiscard]] HWND CreateChild(HWND parent, const wchar_t* className, const wchar_t* text, DWORD style, DWORD extended, RECT bounds) noexcept
@@ -149,19 +178,21 @@ void InitialiseCommonControls() noexcept
     return ::CreateWindowExW(extended, className, text, WS_CHILD | WS_VISIBLE | style, bounds.left, bounds.top, bounds.right, bounds.bottom, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
 }
 
-[[nodiscard]] RECT Bounds(const Metrics& m, int x, int y, int width, int height) noexcept
+// Horizontal places are given in reference pixels and scaled; vertical ones are already in the display's
+// dots, because they follow the text.
+[[nodiscard]] RECT Bounds(const Metrics& m, int x, int top, int width, int height) noexcept
 {
-    return RECT{ m.Of(x), m.Of(y), m.Of(width), m.Of(height) };
+    return RECT{ m.Of(x), top, m.Of(width), height };
 }
 
-[[nodiscard]] HWND CreateLabel(HWND parent, const Metrics& m, const wchar_t* text, int x, int y, int width) noexcept
+[[nodiscard]] HWND CreateLabel(HWND parent, const Metrics& m, const wchar_t* text, int x, int top, int width) noexcept
 {
-    return CreateChild(parent, WC_STATICW, text, SS_LEFT, 0, Bounds(m, x, y, width, kLabelHeight));
+    return CreateChild(parent, WC_STATICW, text, SS_LEFT, 0, Bounds(m, x, top, width, m.LabelHeight()));
 }
 
-[[nodiscard]] HWND CreateButton(HWND parent, const Metrics& m, const wchar_t* text, DWORD style, int x, int y, int width) noexcept
+[[nodiscard]] HWND CreateButton(HWND parent, const Metrics& m, const wchar_t* text, DWORD style, int x, int top, int width) noexcept
 {
-    return CreateChild(parent, WC_BUTTONW, text, style, 0, Bounds(m, x, y, width, kControlHeight));
+    return CreateChild(parent, WC_BUTTONW, text, style, 0, Bounds(m, x, top, width, m.ControlHeight()));
 }
 
 // --- the tooltip -------------------------------------------------------------------------------------
@@ -305,20 +336,20 @@ void CheckOnly(std::span<const HWND> group, std::size_t index) noexcept
 
 // --- building the panel ------------------------------------------------------------------------------
 
-struct Row2
+struct Placement
 {
     int top;
     int control;
 };
 
-[[nodiscard]] Row2 RowOf(Row row) noexcept
+[[nodiscard]] Placement RowOf(Row row, const Metrics& m) noexcept
 {
-    return Row2{ RowTop(row), RowTop(row) + kLabelHeight };
+    return Placement{ RowTop(row, m), RowTop(row, m) + m.LabelHeight() };
 }
 
 [[nodiscard]] HWND CreateSlider(HWND parent, const Metrics& m, const FieldSpec& spec, Row row, int steps) noexcept
 {
-    const HWND slider = CreateChild(parent, TRACKBAR_CLASSW, nullptr, TBS_HORZ | TBS_NOTICKS, 0, Bounds(m, kMargin, RowOf(row).control, kSliderWidth, kControlHeight));
+    const HWND slider = CreateChild(parent, TRACKBAR_CLASSW, nullptr, TBS_HORZ | TBS_NOTICKS, 0, Bounds(m, kMargin, RowOf(row, m).control, kSliderWidth, m.ControlHeight()));
     if (slider == nullptr)
         return nullptr;
     (void)::SendMessageW(slider, TBM_SETRANGE, TRUE, MAKELPARAM(spec.minimum, spec.maximum));
@@ -328,7 +359,7 @@ struct Row2
 
 [[nodiscard]] HWND CreateBox(HWND parent, const Metrics& m, Row row) noexcept
 {
-    return CreateChild(parent, WC_EDITW, L"", ES_LEFT | ES_AUTOHSCROLL | WS_TABSTOP, WS_EX_CLIENTEDGE, Bounds(m, kBoxLeft, RowOf(row).control, kBoxWidth, kControlHeight));
+    return CreateChild(parent, WC_EDITW, L"", ES_LEFT | ES_AUTOHSCROLL | WS_TABSTOP, WS_EX_CLIENTEDGE, Bounds(m, kBoxLeft, RowOf(row, m).control, kBoxWidth, m.ControlHeight()));
 }
 
 [[nodiscard]] HWND ArrangedSpin(HWND spin, HWND box, const FieldSpec& spec, int steps) noexcept
@@ -348,7 +379,7 @@ struct Row2
 
 [[nodiscard]] std::array<HWND, kFieldCount> CreateFieldLabels(HWND parent, const Metrics& m) noexcept
 {
-    return infra::Generated<HWND, kFieldCount>([parent, &m](std::size_t f) { return CreateLabel(parent, m, kFields[f].label, kMargin, RowOf(RowOfField(f)).top, kPanelWidth - 2 * kMargin); });
+    return infra::Generated<HWND, kFieldCount>([parent, &m](std::size_t f) { return CreateLabel(parent, m, kFields[f].label, kMargin, RowOf(RowOfField(f), m).top, kPanelWidth - 2 * kMargin); });
 }
 
 [[nodiscard]] std::array<HWND, kFieldCount> CreateSliders(HWND parent, const Metrics& m, const std::array<int, kFieldCount>& steps) noexcept
@@ -368,14 +399,14 @@ struct Row2
 
 [[nodiscard]] std::array<HWND, kFieldCount> CreateFieldResets(HWND parent, const Metrics& m) noexcept
 {
-    return infra::Generated<HWND, kFieldCount>([parent, &m](std::size_t f) { return CreateButton(parent, m, L"Reset", 0, kResetLeft, RowOf(RowOfField(f)).control, kResetWidth); });
+    return infra::Generated<HWND, kFieldCount>([parent, &m](std::size_t f) { return CreateButton(parent, m, L"Reset", 0, kResetLeft, RowOf(RowOfField(f), m).control, kResetWidth); });
 }
 
 [[nodiscard]] std::array<HWND, kCheckCount> CreateChecks(HWND parent, const Metrics& m, const interior::ModelControls& initial) noexcept
 {
     const std::array<bool, kCheckCount> values = CheckValues(initial);
     return infra::Generated<HWND, kCheckCount>([parent, &m, &values](std::size_t c) {
-        const HWND check = CreateButton(parent, m, kCheckLabels[c], BS_AUTOCHECKBOX, kMargin, RowOf(RowOfCheck(c)).top, kBoxLeft - kMargin);
+        const HWND check = CreateButton(parent, m, kCheckLabels[c], BS_AUTOCHECKBOX, kMargin, RowOf(RowOfCheck(c), m).top, kBoxLeft - kMargin);
         if (check != nullptr)
             SetChecked(check, values[c]);
         return check;
@@ -384,14 +415,14 @@ struct Row2
 
 [[nodiscard]] std::array<HWND, kCheckCount> CreateCheckResets(HWND parent, const Metrics& m) noexcept
 {
-    return infra::Generated<HWND, kCheckCount>([parent, &m](std::size_t c) { return CreateButton(parent, m, L"Reset", 0, kResetLeft, RowOf(RowOfCheck(c)).top, kResetWidth); });
+    return infra::Generated<HWND, kCheckCount>([parent, &m](std::size_t c) { return CreateButton(parent, m, L"Reset", 0, kResetLeft, RowOf(RowOfCheck(c), m).top, kResetWidth); });
 }
 
 [[nodiscard]] std::array<HWND, kRadioCount> CreateRadios(HWND parent, const Metrics& m, std::span<const wchar_t* const> labels, Row row, std::size_t checked) noexcept
 {
     const std::array<HWND, kRadioCount> group = infra::Generated<HWND, kRadioCount>([parent, &m, labels, row](std::size_t i) {
         const DWORD style = BS_AUTORADIOBUTTON | (i == 0 ? WS_GROUP : 0u);
-        return CreateButton(parent, m, labels[i], style, kMargin + static_cast<int>(i) * kRadioWidth, RowOf(row).control, kRadioWidth);
+        return CreateButton(parent, m, labels[i], style, kMargin + static_cast<int>(i) * kRadioWidth, RowOf(row, m).control, kRadioWidth);
     });
     if (std::ranges::all_of(group, [](HWND h) { return h != nullptr; }))
         CheckOnly(group, checked);
@@ -409,8 +440,8 @@ void ApplyFont(HWND control, HFONT font) noexcept
 void CreateHeadings(HWND parent, const Metrics& m) noexcept
 {
     (void)CreateFieldLabels(parent, m);
-    (void)CreateLabel(parent, m, L"View", kMargin, RowOf(Row::View).top, kPanelWidth - 2 * kMargin);
-    (void)CreateLabel(parent, m, L"Style", kMargin, RowOf(Row::Style).top, kPanelWidth - 2 * kMargin);
+    (void)CreateLabel(parent, m, L"View", kMargin, RowOf(Row::View, m).top, kPanelWidth - 2 * kMargin);
+    (void)CreateLabel(parent, m, L"Style", kMargin, RowOf(Row::Style, m).top, kPanelWidth - 2 * kMargin);
 }
 
 [[nodiscard]] std::array<int, kFieldCount> StartingSteps(const interior::ModelControls& initial, float split) noexcept
@@ -435,7 +466,7 @@ void CreateHeadings(HWND parent, const Metrics& m) noexcept
                          CreateCheckResets(parent, m),
                          CreateRadios(parent, m, kDisplayLabels, Row::View, static_cast<std::size_t>(display)),
                          CreateRadios(parent, m, kStyleLabels, Row::Style, interior::StyleCode(initial.tuning.style)),
-                         CreateButton(parent, m, L"Reset everything", 0, kMargin, RowOf(Row::ResetAll).control, 2 * kRadioWidth) };
+                         CreateButton(parent, m, L"Reset everything", 0, kMargin, RowOf(Row::ResetAll, m).control, 2 * kRadioWidth) };
 }
 
 [[nodiscard]] bool IsPresent(HWND control) noexcept
@@ -539,22 +570,22 @@ constexpr DWORD kPanelStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIM
 
 [[nodiscard]] Result<UniqueWindow, Error> CreatePanelWindow() noexcept
 {
-    HWND window = ::CreateWindowExW(WS_EX_TOPMOST, kPanelClass, L"DlssScreen controls", kPanelStyle, CW_USEDEFAULT, CW_USEDEFAULT, kPanelWidth, PanelHeight(), nullptr, nullptr,
+    HWND window = ::CreateWindowExW(WS_EX_TOPMOST, kPanelClass, L"DlssScreen controls", kPanelStyle, CW_USEDEFAULT, CW_USEDEFAULT, kPanelWidth, kPanelWidth, nullptr, nullptr,
                                     ::GetModuleHandleW(nullptr), nullptr);
     if (window == nullptr)
         return Fail(LastError(ApiCall::CreateWindowExW));
     return UniqueWindow(window);
 }
 
-// The window is made at a nominal size, then measured and resized in the dots its own display uses.
-[[nodiscard]] Metrics MetricsOf(HWND window) noexcept
+// The window is made at a nominal size, then measured and resized once its own text has been measured.
+[[nodiscard]] Metrics MetricsOf(HWND window, HFONT font) noexcept
 {
-    return Metrics{ static_cast<int>(::GetDpiForWindow(window)) };
+    return Metrics{ static_cast<int>(::GetDpiForWindow(window)), LineHeight(window, font) };
 }
 
 void ResizeToFit(HWND window, const Metrics& m) noexcept
 {
-    RECT frame{ 0, 0, m.Of(kPanelWidth), m.Of(PanelHeight()) };
+    RECT frame{ 0, 0, m.Of(kPanelWidth), PanelHeight(m) };
     ENSURE(::AdjustWindowRectExForDpi(&frame, kPanelStyle, FALSE, 0, static_cast<UINT>(m.dpi)) != FALSE);
     ENSURE(::SetWindowPos(window, nullptr, 0, 0, frame.right - frame.left, frame.bottom - frame.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE);
 }
@@ -573,9 +604,10 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
 
 [[nodiscard]] Result<ControlPanel, Error> Populated(UniqueWindow window, const interior::ModelControls& initial, interior::DisplayMode display) noexcept
 {
-    const Metrics m = MetricsOf(window.get());
+    UniqueFont font = MessageFont(static_cast<int>(::GetDpiForWindow(window.get())));
+    const Metrics m = MetricsOf(window.get(), font.get());
     ResizeToFit(window.get(), m);
-    return Shown(Assembled(std::move(window), MessageFont(m), m, initial, display));
+    return Shown(Assembled(std::move(window), std::move(font), m, initial, display));
 }
 
 } // namespace
