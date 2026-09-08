@@ -59,12 +59,28 @@ constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all",  
     return parsed.has_value() && parsed->source.kind == MonitorSelectionKind::Index && parsed->source.index.Get() == index;
 }
 
-// The model publishes no range for its strengths, so the parser imposes none: every finite value is
-// the operator's to choose, and only a value the model could not act on is refused.
-[[nodiscard]] bool IntensityAcceptsEveryFiniteValue(infra::RngState& rng) noexcept
+// Past 1 the model makes no further difference, so the parser takes 0 to 1 and refuses the rest rather
+// than accepting a number that would quietly do nothing.
+[[nodiscard]] bool IntensityAcceptsItsWholeRange(infra::RngState& rng) noexcept
+{
+    const std::wstring joined = L"--nr-intensity=" + std::to_wstring(proptest::DrawUnit(rng));
+    const std::array<std::wstring_view, 1> real{ joined };
+    return ParseOptions(real).has_value();
+}
+
+[[nodiscard]] bool IntensityRefusesWhatIsOutsideIt(infra::RngState&) noexcept
+{
+    const std::array<std::wstring_view, 1> above{ L"--nr-intensity=1.5" };
+    const std::array<std::wstring_view, 1> below{ L"--nr-intensity=-0.5" };
+    const std::array<std::wstring_view, 1> ends{ L"--nr-intensity=1" };
+    return !ParseOptions(above).has_value() && !ParseOptions(below).has_value() && ParseOptions(ends).has_value();
+}
+
+// The strengths have no such end, and every finite value is the operator's to choose.
+[[nodiscard]] bool StrengthAcceptsEveryFiniteValue(infra::RngState& rng) noexcept
 {
     const float value = (proptest::DrawUnit(rng) - 0.5f) * 200.0f;
-    const std::wstring joined = L"--nr-intensity=" + std::to_wstring(value);
+    const std::wstring joined = L"--nr-local-tone=" + std::to_wstring(value);
     const std::array<std::wstring_view, 1> real{ joined };
     return ParseOptions(real).has_value();
 }
@@ -209,7 +225,9 @@ std::uint32_t OptionsSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("option parser never panics on random input", seed, 3000, ParserNeverPanicsAndErrorsAreEnumerated));
     failures += Failures(proptest::ForAll("empty arguments give the defaults", seed, 1, EmptyArgumentsGiveDefaults));
     failures += Failures(proptest::ForAll("--monitor N round-trips", seed, 200, MonitorIndexRoundTrips));
-    failures += Failures(proptest::ForAll("--nr-intensity accepts every finite value", seed, 300, IntensityAcceptsEveryFiniteValue));
+    failures += Failures(proptest::ForAll("--nr-intensity accepts its whole range", seed, 300, IntensityAcceptsItsWholeRange));
+    failures += Failures(proptest::ForAll("--nr-intensity refuses what is outside it", seed, 1, IntensityRefusesWhatIsOutsideIt));
+    failures += Failures(proptest::ForAll("--nr-local-tone accepts every finite value", seed, 300, StrengthAcceptsEveryFiniteValue));
     failures += Failures(proptest::ForAll("--nr-intensity refuses what is not a number", seed, 1, IntensityRefusesWhatIsNotANumber));
     failures += Failures(proptest::ForAll("--mv-scale-x accepts every finite value", seed, 300, MotionScaleAcceptsEveryFiniteValue));
     failures += Failures(proptest::ForAll("a motion scale not asked for stays absent", seed, 1, MotionScaleIsAbsentUnlessAsked));

@@ -12,7 +12,7 @@ namespace interior {
 struct NrTuning
 {
     NgxPreset preset;
-    Strength intensity;
+    NrIntensity intensity;
     NrStyle style;
     Strength localStructure;
     Strength localTone;

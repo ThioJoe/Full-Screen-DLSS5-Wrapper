@@ -38,7 +38,7 @@ using namespace interior;
     const float nan = std::bit_cast<float>(0x7FC00000u);
     const float infinity = std::bit_cast<float>(0x7F800000u);
     return !FractionTag::Parse(nan).has_value() && !ScaleTag::Parse(nan).has_value() && !StrengthTag::Parse(nan).has_value() && !StrengthTag::Parse(infinity).has_value() &&
-           !SkinStrengthTag::Parse(nan).has_value();
+           !SkinStrengthTag::Parse(nan).has_value() && !NrIntensityTag::Parse(nan).has_value();
 }
 
 [[nodiscard]] bool RectRequiresPositiveArea(infra::RngState& rng) noexcept

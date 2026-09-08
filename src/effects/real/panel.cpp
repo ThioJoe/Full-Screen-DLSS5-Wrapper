@@ -59,7 +59,7 @@ struct FieldSpec
 };
 
 constexpr std::array<FieldSpec, kFieldCount> kFields{ {
-    { L"Intensity", L"How much of the model's work to keep. The model applies no limit of its own; it was authored around 0 to 1.", 0, 1000, 100 },
+    { L"Intensity", L"How much of the model's work to keep. Past 1 the model makes no further difference, so 1 is the whole of it.", 0, 100, 100 },
     { L"Local structure", L"Detail the model adds within a region. Does nothing while auto mask is off.", 0, 1000, 100 },
     { L"Local tone", L"How far the model moves local brightness.", 0, 1000, 100 },
     { L"Skin structure", L"Detail on skin; -1 follows local structure. Does nothing while auto mask is off.", -100, 1000, 100 },
@@ -1010,8 +1010,9 @@ void ShowChosenPage(const ControlPanel& panel) noexcept
 [[nodiscard]] interior::NrTuning TuningOf(const ControlPanel& panel, const interior::NrTuning& current) noexcept
 {
     const auto strength = [&panel](Field field, interior::Strength held) { return interior::StrengthTag::Parse(SettledValue(panel, field)).value_or(held); };
+    const interior::NrIntensity intensity = interior::NrIntensityTag::Parse(SettledValue(panel, Field::Intensity)).value_or(current.intensity);
     return interior::NrTuning{ PresetOf(panel, current.preset),
-                               strength(Field::Intensity, current.intensity),
+                               intensity,
                                StyleFrom(ChosenIn(panel, Group::Style, interior::StyleCode(current.style))),
                                strength(Field::LocalStructure, current.localStructure),
                                strength(Field::LocalTone, current.localTone),

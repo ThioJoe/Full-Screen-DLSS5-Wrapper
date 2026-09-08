@@ -552,7 +552,7 @@ template <class T>
 struct ValidatedTuning
 {
     NgxPreset preset;
-    Strength intensity;
+    NrIntensity intensity;
     Strength localStructure;
     Strength localTone;
     SkinStrength skin;
@@ -561,7 +561,7 @@ struct ValidatedTuning
 [[nodiscard]] Result<ValidatedTuning, OptionsError> TuningOf(const ParsedList& list, const NrTuning& d) noexcept
 {
     return Validated(list, OptionId::NrPreset, d.preset, NgxPresetTag::Parse).and_then([&](NgxPreset preset) {
-        return Validated(list, OptionId::NrIntensity, d.intensity, StrengthTag::Parse).and_then([&](Strength intensity) {
+        return Validated(list, OptionId::NrIntensity, d.intensity, NrIntensityTag::Parse).and_then([&](NrIntensity intensity) {
             return Validated(list, OptionId::NrLocalStructure, d.localStructure, StrengthTag::Parse).and_then([&](Strength structure) {
                 return Validated(list, OptionId::NrLocalTone, d.localTone, StrengthTag::Parse).and_then([&](Strength tone) {
                     return Validated(list, OptionId::NrSkin, d.skinStructure, SkinStrengthTag::Parse).transform([&](SkinStrength skin) {
@@ -696,7 +696,8 @@ struct ValidatedScales
                              [arguments](const ParseState& state, std::uint32_t index) { return ConsumeIndexed(state, arguments, index); });
 }
 
-constexpr auto kDefaultIntensity = StrengthTag::Parse(1.0f);
+constexpr auto kDefaultIntensity = NrIntensityTag::Parse(1.0f);
+constexpr auto kDefaultStrength = StrengthTag::Parse(1.0f);
 constexpr auto kDefaultSkin = SkinStrengthTag::Parse(-1.0f);
 constexpr auto kDefaultDepth = DepthValueTag::Parse(0.5f);
 constexpr auto kDefaultThreshold = FractionTag::Parse(0.5f);
@@ -704,7 +705,7 @@ constexpr auto kDefaultPreset = NgxPresetTag::Parse(kShippedNgxPreset); // askin
 constexpr auto kDefaultSrPreset = SrPresetTag::Parse(0);
 constexpr auto kDefaultLevel = LevelIndexTag::Parse(1);
 constexpr auto kDefaultProjectId = ProjectIdText::Parse("5e9b2a44-7c31-4d0e-9f2b-8d3c1a6e7f10");
-static_assert(kDefaultIntensity.has_value() && kDefaultSkin.has_value());
+static_assert(kDefaultIntensity.has_value() && kDefaultStrength.has_value() && kDefaultSkin.has_value());
 static_assert(kDefaultDepth.has_value() && kDefaultThreshold.has_value());
 static_assert(kDefaultPreset.has_value() && kDefaultSrPreset.has_value());
 static_assert(kDefaultLevel.has_value() && kDefaultProjectId.has_value());
@@ -726,7 +727,7 @@ Options DefaultOptions() noexcept
         SourceSelection{ MonitorSelectionKind::Primary, RequestedMonitorTag::Parse(0) },
         std::nullopt,
         true,
-        NrTuning{ *kDefaultPreset, *kDefaultIntensity, NrStyle::Standard, *kDefaultIntensity, *kDefaultIntensity, *kDefaultSkin, true, true },
+        NrTuning{ *kDefaultPreset, *kDefaultIntensity, NrStyle::Standard, *kDefaultStrength, *kDefaultStrength, *kDefaultSkin, true, true },
         SrMode::Auto,
         *kDefaultSrPreset,
         MotionBackend::BuiltIn,

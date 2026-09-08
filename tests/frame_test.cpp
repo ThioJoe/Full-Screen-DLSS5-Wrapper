@@ -418,7 +418,7 @@ struct Replay
     return LiveSettings{ neuralRendering, tuning, plan.depthInverted, plan.mvScaleX, plan.mvScaleY, plan.vsync, plan.resetThreshold, plan.depth };
 }
 
-[[nodiscard]] NrTuning WithIntensity(const NrTuning& t, Strength intensity) noexcept
+[[nodiscard]] NrTuning WithIntensity(const NrTuning& t, NrIntensity intensity) noexcept
 {
     return NrTuning{ t.preset, intensity, t.style, t.localStructure, t.localTone, t.skinStructure, t.autoMask, t.uiCorrection };
 }
@@ -447,7 +447,7 @@ struct Replay
 {
     const SessionPlan plan = WithNeuralRendering(RandomPlan(rng));
     const std::optional<FrameState> captured = AfterFirstCapture(plan);
-    const Strength louder = *StrengthTag::Parse(plan.tuning.intensity.Get() + 1.0f);
+    const NrIntensity louder = *NrIntensityTag::Parse(plan.tuning.intensity.Get() * 0.5f);
     if (!captured.has_value() || !captured->hasOutput)
         return false;
     const auto framePlan = PlanFrame(plan, *captured, StillScreen(LiveOf(plan, true, WithIntensity(plan.tuning, louder))));
@@ -470,7 +470,7 @@ struct Replay
 [[nodiscard]] bool ANewIntensityReachesTheEvaluatedStep(infra::RngState& rng) noexcept
 {
     const SessionPlan plan = WithNeuralRendering(RandomPlan(rng));
-    const Strength intensity = *StrengthTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1000)) / 100.0f);
+    const NrIntensity intensity = *NrIntensityTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 101)) / 100.0f);
     const LiveSettings controls = LiveOf(plan, true, WithIntensity(plan.tuning, intensity));
     const auto framePlan = PlanFrame(plan, InitialFrameState(plan), RequestingControls(controls));
     if (!framePlan.has_value())

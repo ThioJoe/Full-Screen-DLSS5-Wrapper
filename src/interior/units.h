@@ -21,6 +21,7 @@ enum class UnitError : std::uint8_t {
     NotFinite,
     FractionOutOfRange,
     DepthOutOfRange,
+    IntensityOutOfRange,
     ScaleOutOfRange,
     LevelOutOfRange,
     LevelCountOutOfRange,
@@ -141,6 +142,15 @@ using Strength = infra::Strong<float, StrengthTag>;
 struct StrengthTag
 {
     [[nodiscard]] static constexpr Result<Strength, UnitError> Parse(float raw) noexcept;
+};
+
+// How much of the model's work to keep. Unlike the strengths, this one does have an end: past 1 the model
+// makes no further difference, so 0 to 1 inclusive is the whole of it.
+struct NrIntensityTag;
+using NrIntensity = infra::Strong<float, NrIntensityTag>;
+struct NrIntensityTag
+{
+    [[nodiscard]] static constexpr Result<NrIntensity, UnitError> Parse(float raw) noexcept;
 };
 
 struct SkinStrengthTag;
@@ -424,6 +434,13 @@ constexpr Result<Strength, UnitError> StrengthTag::Parse(float raw) noexcept
     if (IsNotFinite(raw))
         return infra::Fail(UnitError::NotFinite);
     return Strength(raw);
+}
+
+constexpr Result<NrIntensity, UnitError> NrIntensityTag::Parse(float raw) noexcept
+{
+    if (IsOutsideOrNaN(raw, 0.0f, 1.0f))
+        return infra::Fail(UnitError::IntensityOutOfRange);
+    return NrIntensity(raw);
 }
 
 constexpr Result<SkinStrength, UnitError> SkinStrengthTag::Parse(float raw) noexcept

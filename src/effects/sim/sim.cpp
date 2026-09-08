@@ -291,7 +291,7 @@ struct ModelCheck
 {
     const Options d = DefaultOptions();
     const LiveSettings base = DefaultLive(d);
-    const Result<Strength, UnitError> intensity = StrengthTag::Parse(static_cast<float>(value % 400u) / 100.0f);
+    const Result<NrIntensity, UnitError> intensity = NrIntensityTag::Parse(static_cast<float>(value % 101u) / 100.0f);
     ENSURE(intensity.has_value());
     return LiveSettings{
         (value % 2u) == 0u,  NrTuning{ d.tuning.preset, *intensity, d.tuning.style, d.tuning.localStructure, d.tuning.localTone, d.tuning.skinStructure, d.tuning.autoMask, d.tuning.uiCorrection },
