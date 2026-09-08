@@ -20,6 +20,21 @@ This branch is a from-scratch rewrite under the *Rules for AI-Written Code* (see
 a pure planning core, a seeded simulator of the effect layer, property tests with mutation testing,
 build-applied call tracing, contracts that run in production, and a lint that enforces the rules.
 
+## This is not what DLSS 5 looks like in a game
+
+A game hands the model its own motion vectors, its own depth buffer and the sub-pixel jitter it rendered
+with, frame by frame, before anything is composited. DlssScreen has none of that. It captures the finished
+desktop and makes substitutes: one flat depth plane, and motion guessed by matching blocks between two
+pictures that have already been drawn, resized and blended by the window manager.
+
+So the model is working from worse inputs than it was built for, on an image that has already lost the
+information it wants. What it does to the desktop is not what it does in a game, and neither is what it
+costs: the capture, the matching and the extra copies are all work a game would not be doing, and none of
+it is part of DLSS. Judge DLSS 5 by a game that implements it. This is a way to watch the model run on
+something it was never given.
+
+The control panel says the same thing at the foot of its window.
+
 ## Requirements
 
 - Windows 10 2004 or newer (Windows Graphics Capture, DirectComposition), Windows 11 recommended.

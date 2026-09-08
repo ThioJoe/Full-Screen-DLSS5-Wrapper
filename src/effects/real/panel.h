@@ -82,6 +82,7 @@ struct ControlPanel
     UniqueWindow window;
     UniqueFont font;
     UniqueFont iconFont; // the reset buttons wear a glyph rather than a word, so they get their own face
+    UniqueFont boldFont; // the notice under the controls, which should not read as one more label
     HWND tabs;
     HWND tooltip;
     HWND restart;
@@ -104,6 +105,11 @@ struct ControlPanel
     bool displayAffinity;
     bool clickThrough;
     bool superResolution;
+    HWND notice;     // the one line that is always there
+    HWND expander;   // holds its own state, which is the panel's record of whether the notice is open
+    HWND noticeBody; // the rest of it, shown only when the operator opens it
+    int shortHeight; // what the window measures with the notice closed, and with it open
+    int tallHeight;
 };
 
 // What the panel says this frame: the settings that take effect at once, and the view they belong to.

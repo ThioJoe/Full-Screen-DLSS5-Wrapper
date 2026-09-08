@@ -44,6 +44,18 @@ constexpr int kTabHeight = 30;
 // A runtime list carries names rather than words, so its buttons are wider and fewer to a line.
 constexpr int kListChoiceWidth = 186;
 constexpr std::size_t kListPerLine = 2;
+constexpr wchar_t kChevronGlyph[] = L"\uE70D";
+constexpr wchar_t kNoticeLine[] = L"NOTICE: this is not representative of a native DLSS 5 implementation";
+constexpr wchar_t kNoticeBody[] =
+    L"A game hands the model its own motion vectors, its own depth buffer and the sub-pixel jitter it rendered with, frame by frame, before anything is composited. DlssScreen has none of "
+    L"that. It captures the finished desktop and makes substitutes: one flat depth plane, and motion guessed by matching blocks between two pictures that have already been drawn, "
+    L"resized and blended by the window manager.\r\n\r\n"
+    L"So the model here is working from worse inputs than it was built for, on an image that has already lost the information it wants. What it does to the desktop is not what it does in a "
+    L"game, and neither is what it costs: the capture, the matching and the extra copies are all work a game would not be doing, and none of it is part of DLSS.\r\n\r\n"
+    L"Judge DLSS 5 by a game that implements it. This is a way to see the model run on something it was never given, not a preview of what it does when it is used properly.";
+constexpr int kNoticeLines = 9;
+constexpr int kExpanderWidth = 28;
+
 constexpr int kMinRowsPerColumn = 9;
 constexpr int kMaxRowsPerColumn = 16;
 
@@ -239,9 +251,11 @@ struct Metrics
     [[nodiscard]] int ControlHeight() const noexcept { return std::max(Of(22), line + Of(9)); }
     [[nodiscard]] int RowHeight() const noexcept { return LabelHeight() + ControlHeight() + Of(10); }
     [[nodiscard]] int PageTop() const noexcept { return Of(kMargin + kTabHeight); }
-    // The rows, then the button that starts a new session below them, then the margin under it.
-    [[nodiscard]] int PageHeight() const noexcept { return rows * RowHeight() + ControlHeight() + Of(2 * kMargin); }
+    // The rows, then the button that starts a new session below them, then the notice, then the margin.
+    [[nodiscard]] int PageHeight() const noexcept { return rows * RowHeight() + 2 * ControlHeight() + Of(3 * kMargin); }
     [[nodiscard]] int ButtonTop() const noexcept { return PageTop() + rows * RowHeight(); }
+    [[nodiscard]] int NoticeTop() const noexcept { return ButtonTop() + ControlHeight() + Of(kMargin); }
+    [[nodiscard]] int BodyHeight() const noexcept { return kNoticeLines * line + Of(kMargin); }
 };
 
 struct Placement
@@ -329,12 +343,25 @@ constexpr wchar_t kResetHint[] = L"Put this setting back to the value it starts 
 
 // The font the rest of Windows writes its dialogs in, asked for at this display's scale. The plain query
 // answers for the primary display, and scaling that answer again is what made the text outgrow its labels.
-[[nodiscard]] UniqueFont MessageFont(int dpi) noexcept
+[[nodiscard]] LOGFONTW MessageDescription(int dpi) noexcept
 {
     NONCLIENTMETRICSW metrics{}; // WAIVER(R2): a request record filled once, before it is asked.
     metrics.cbSize = sizeof(NONCLIENTMETRICSW);
     ENSURE(::SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(NONCLIENTMETRICSW), &metrics, 0, static_cast<UINT>(dpi)) != FALSE);
-    return UniqueFont(::CreateFontIndirectW(&metrics.lfMessageFont));
+    return metrics.lfMessageFont;
+}
+
+[[nodiscard]] UniqueFont MessageFont(int dpi) noexcept
+{
+    const LOGFONTW description = MessageDescription(dpi);
+    return UniqueFont(::CreateFontIndirectW(&description));
+}
+
+[[nodiscard]] UniqueFont BoldFont(int dpi) noexcept
+{
+    LOGFONTW description = MessageDescription(dpi); // WAIVER(R2): a request record, weighted once before it is asked.
+    description.lfWeight = FW_BOLD;
+    return UniqueFont(::CreateFontIndirectW(&description));
 }
 
 [[nodiscard]] int MeasuredOn(HDC dc, HFONT font) noexcept
@@ -1100,8 +1127,30 @@ void EnableAll(std::span<const HWND> controls, bool enabled) noexcept
     std::ranges::for_each(controls, [enabled](HWND control) { (void)::EnableWindow(control, enabled ? TRUE : FALSE); });
 }
 
-// While the switch is on it is the answer, so the number it stands in for is greyed rather than left
-// looking as though it still counted.
+// The expander is a check box that looks like a button, so it keeps its own state and the panel reads it.
+// Opening it grows the window, and nothing moves because the notice sits under everything else.
+[[nodiscard]] bool IsNoticeOpen(const ControlPanel& panel) noexcept
+{
+    return IsChecked(panel.expander);
+}
+
+void ResizeForNotice(const ControlPanel& panel, bool open) noexcept
+{
+    RECT frame{};
+    ENSURE(::GetWindowRect(panel.window.get(), &frame) != FALSE);
+    const int height = open ? panel.tallHeight : panel.shortHeight;
+    ENSURE(::SetWindowPos(panel.window.get(), nullptr, 0, 0, frame.right - frame.left, height, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE);
+}
+
+void ApplyNotice(const ControlPanel& panel) noexcept
+{
+    const bool open = IsNoticeOpen(panel);
+    if (open == (::IsWindowVisible(panel.noticeBody) != FALSE))
+        return;
+    (void)::ShowWindow(panel.noticeBody, HowOf(open));
+    ResizeForNotice(panel, open);
+}
+
 void ApplyEnables(const ControlPanel& panel) noexcept
 {
     EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::Skin)), !IsOn(panel, Toggle::SkinFollowsStructure));
@@ -1312,11 +1361,44 @@ constexpr DWORD kPanelStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIM
     return Metrics{ static_cast<int>(::GetDpiForWindow(window)), LineHeight(window, font), RowsPerColumn(lists), &lists };
 }
 
+// What the window measures on the outside for a page of a given height on the inside.
+[[nodiscard]] int OuterHeight(const Metrics& m, int inner) noexcept
+{
+    RECT frame{ 0, 0, m.Of(kPanelWidth), inner };
+    ENSURE(::AdjustWindowRectExForDpi(&frame, kPanelStyle, FALSE, 0, static_cast<UINT>(m.dpi)) != FALSE);
+    return frame.bottom - frame.top;
+}
+
 void ResizeToFit(HWND window, const Metrics& m) noexcept
 {
     RECT frame{ 0, 0, m.Of(kPanelWidth), m.PageTop() + m.PageHeight() };
     ENSURE(::AdjustWindowRectExForDpi(&frame, kPanelStyle, FALSE, 0, static_cast<UINT>(m.dpi)) != FALSE);
     ENSURE(::SetWindowPos(window, nullptr, 0, 0, frame.right - frame.left, frame.bottom - frame.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) != FALSE);
+}
+
+// The notice sits under everything, so opening it grows the window rather than moving the controls.
+struct Notice
+{
+    HWND line;
+    HWND expander;
+    HWND body;
+};
+
+[[nodiscard]] HWND CreateNoticeBody(HWND parent, const Metrics& m) noexcept
+{
+    const int top = m.NoticeTop() + m.ControlHeight();
+    const HWND body = CreateChild(parent, WC_STATICW, kNoticeBody, SS_LEFT, 0, Bounds(m, kMargin, top, kPanelWidth - 2 * kMargin, m.BodyHeight()));
+    if (body != nullptr)
+        (void)::ShowWindow(body, SW_HIDE);
+    return body;
+}
+
+[[nodiscard]] Notice CreateNotice(HWND parent, const Metrics& m) noexcept
+{
+    const int width = kPanelWidth - 2 * kMargin - kExpanderWidth;
+    const HWND line = CreateChild(parent, WC_STATICW, kNoticeLine, SS_LEFTNOWORDWRAP, 0, Bounds(m, kMargin, m.NoticeTop(), width, m.ControlHeight()));
+    const HWND expander = CreateChild(parent, WC_BUTTONW, kChevronGlyph, BS_AUTOCHECKBOX | BS_PUSHLIKE, 0, Bounds(m, kMargin + width, m.NoticeTop(), kExpanderWidth, m.ControlHeight()));
+    return Notice{ line, expander, CreateNoticeBody(parent, m) };
 }
 
 [[nodiscard]] std::array<std::size_t, kListCount> CountsOf(const PanelLists& lists) noexcept
@@ -1330,13 +1412,14 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
     HWND parent = window.get();
     const HWND tabs = CreateTabs(parent, m);
     const Built built = BuildAll(parent, m, o, live, display);
-    const HWND restart = CreateButton(parent, m, L"Start a new session with these", 0, kMargin, m.ButtonTop(), kColumnWidth);
+    const Notice notice = CreateNotice(parent, m);
     return ControlPanel{ std::move(window),
                          std::move(font),
                          IconFont(m.dpi),
+                         BoldFont(m.dpi),
                          tabs,
                          tabs == nullptr ? nullptr : CreateTooltip(parent),
-                         restart,
+                         CreateButton(parent, m, L"Start a new session with these", 0, kMargin, m.ButtonTop(), kColumnWidth),
                          built.labels,
                          built.sliders,
                          built.boxes,
@@ -1353,7 +1436,12 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
                          CountsOf(*m.lists),
                          o.displayAffinity,
                          o.clickThrough,
-                         findings.superResolution };
+                         findings.superResolution,
+                         notice.line,
+                         notice.expander,
+                         notice.body,
+                         OuterHeight(m, m.PageTop() + m.PageHeight()),
+                         OuterHeight(m, m.PageTop() + m.PageHeight() + m.BodyHeight()) };
 }
 
 [[nodiscard]] bool IsPresent(HWND control) noexcept
@@ -1366,9 +1454,14 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
     return std::ranges::all_of(controls, IsPresent);
 }
 
+[[nodiscard]] std::array<HWND, 4> Furniture(const ControlPanel& panel) noexcept
+{
+    return { panel.restart, panel.notice, panel.expander, panel.noticeBody };
+}
+
 [[nodiscard]] std::array<std::span<const HWND>, 10> GroupsOf(const ControlPanel& panel) noexcept
 {
-    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.textLabels, panel.texts, std::span<const HWND>(&panel.restart, 1) };
+    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.textLabels, panel.texts, Furniture(panel) };
 }
 
 // A switch's reset is there exactly when its spec asks for one, so both a missing and a spare one is a fault.
@@ -1444,6 +1537,8 @@ void IconiseResets(const ControlPanel& panel) noexcept
 {
     std::ranges::for_each(panel.resets, [&panel](HWND button) { WearIcon(panel, button); });
     std::ranges::for_each(panel.toggleResets, [&panel](HWND button) { WearIcon(panel, button); });
+    WearIcon(panel, panel.expander);
+    (void)::SendMessageW(panel.notice, WM_SETFONT, reinterpret_cast<WPARAM>(panel.boldFont.get()), TRUE);
 }
 
 void DressPanel(const ControlPanel& panel) noexcept
@@ -1495,11 +1590,19 @@ Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options,
     });
 }
 
-PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSettings& current) noexcept
+// What the panel does to itself before it is read: the chosen page, the notice, what is greyed, and any
+// reset the operator is holding down.
+void Arrange(const ControlPanel& panel) noexcept
 {
     ShowChosenPage(panel);
+    ApplyNotice(panel);
     ApplyEnables(panel);
     ApplyResets(panel);
+}
+
+PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSettings& current) noexcept
+{
+    Arrange(panel);
     const interior::Fraction split = interior::FractionTag::Parse(SettledValue(panel, Field::Split)).value_or(*kCentre);
     return PanelReading{ LiveOf(panel, current), SurfaceOf(panel), DisplayFrom(ChosenIn(panel, Group::Compare, 0)), split, IsPushed(panel.restart) };
 }
