@@ -62,7 +62,9 @@ trace ring to `dlssscreen-trace.txt` next to the working directory.
 ## How it works
 
 1. **Capture**: one `Direct3D11CaptureFramePool` per source monitor (free-threaded, polled every frame)
-   copies into a D3D12 canvas through D3D11On12. The output window is excluded with
+   on a plain Direct3D 11 device, the only kind the capture API accepts. Frames are copied into the
+   D3D12 canvas, opened on that device as a shared texture; two shared fences order the two devices,
+   so no CPU wait sits between capture and the models. The output window is excluded with
    `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`.
 2. **Synthesised inputs**: the desktop has no depth or motion vectors. A constant depth plane and motion
    vectors from a GPU coarse-to-fine block matcher (or NVIDIA Optical Flow, or zeros) feed the models.

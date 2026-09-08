@@ -49,7 +49,12 @@ std::string_view Describe(ApiCall call) noexcept
     case ApiCall::RoInitialize: return "RoInitialize";
     case ApiCall::RoGetActivationFactory: return "RoGetActivationFactory";
     case ApiCall::WindowsCreateStringReference: return "WindowsCreateStringReference";
-    case ApiCall::D3D11On12CreateDevice: return "D3D11On12CreateDevice";
+    case ApiCall::D3D11CreateDevice: return "D3D11CreateDevice";
+    case ApiCall::CreateSharedHandle: return "ID3D12Device::CreateSharedHandle";
+    case ApiCall::OpenSharedResource: return "ID3D11Device1::OpenSharedResource1";
+    case ApiCall::OpenSharedFence: return "ID3D11Device5::OpenSharedFence";
+    case ApiCall::ContextWait: return "ID3D11DeviceContext4::Wait";
+    case ApiCall::ContextSignal: return "ID3D11DeviceContext4::Signal";
     case ApiCall::CreateDirect3D11DeviceFromDXGIDevice: return "CreateDirect3D11DeviceFromDXGIDevice";
     case ApiCall::CreateForMonitor: return "IGraphicsCaptureItemInterop::CreateForMonitor";
     case ApiCall::CreateFreeThreaded: return "Direct3D11CaptureFramePool::CreateFreeThreaded";
@@ -58,7 +63,6 @@ std::string_view Describe(ApiCall call) noexcept
     case ApiCall::TryGetNextFrame: return "Direct3D11CaptureFramePool::TryGetNextFrame";
     case ApiCall::GetSurface: return "Direct3D11CaptureFrame::Surface";
     case ApiCall::GetInterface: return "IDirect3DDxgiInterfaceAccess::GetInterface";
-    case ApiCall::CreateWrappedResource: return "ID3D11On12Device::CreateWrappedResource";
     case ApiCall::GetContentSize: return "Direct3D11CaptureFrame::ContentSize";
     case ApiCall::PutIsCursorCaptureEnabled: return "GraphicsCaptureSession::IsCursorCaptureEnabled";
     case ApiCall::PutIsBorderRequired: return "GraphicsCaptureSession::IsBorderRequired";

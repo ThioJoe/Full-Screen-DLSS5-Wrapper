@@ -38,6 +38,7 @@ constexpr std::uint32_t kSrvSlots = interior::kDescriptorsPerFrame * interior::k
 constexpr std::uint64_t kFenceTimeoutMicroseconds = 4000000;
 
 [[nodiscard]] infra::Result<GpuDevice, Error> CreateGpuDevice(const DeviceSettings& settings) noexcept;
+[[nodiscard]] infra::Result<Com<ID3D12Fence>, Error> CreateFence(ID3D12Device* device, D3D12_FENCE_FLAGS flags) noexcept;
 [[nodiscard]] infra::Result<interior::FenceValue, Error> SignalFence(const GpuDevice& gpu, interior::FenceValue previous) noexcept;
 [[nodiscard]] infra::Status<Error> WaitForFence(const GpuDevice& gpu, interior::FenceValue value, interior::Microseconds timeout) noexcept;
 [[nodiscard]] infra::Result<interior::FenceValue, Error> WaitIdle(const GpuDevice& gpu, interior::FenceValue previous) noexcept;

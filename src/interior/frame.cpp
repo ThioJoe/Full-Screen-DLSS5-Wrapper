@@ -134,7 +134,7 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
         .and_then([set](const Builder& n) { return MoveTo(n, LumaId(set, *kZeroLevel), ResourceState::UnorderedAccess); })
         .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::ModelColor), ResourceState::UnorderedAccess); })
         .and_then([&plan, set](const Builder& n) { return ConvertDispatch(n, plan, set); })
-        .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::Canvas), ResourceState::CopyDest); })
+        .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::Canvas), ResourceState::Common); })
         .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::ModelColor), ResourceState::ShaderRead); });
 }
 
@@ -544,7 +544,7 @@ struct InitialEntry
     ResourceState state;
 };
 
-constexpr std::array<InitialEntry, 10> kInitialEntries{ { { 0, ResourceState::CopyDest },
+constexpr std::array<InitialEntry, 10> kInitialEntries{ { { 0, ResourceState::Common },
                                                           { 2, ResourceState::ShaderRead },
                                                           { 4, ResourceState::CopyDest },
                                                           { 5, ResourceState::GenericRead },

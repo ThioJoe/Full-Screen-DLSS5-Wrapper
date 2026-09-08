@@ -64,12 +64,12 @@ struct Pending;
 
 [[nodiscard]] Result<Com<ID3D11Device>, Error> CreateDevice11(const GpuDevice& gpu, Com<ID3D11DeviceContext>& context) noexcept
 {
-    IUnknown* queues[] = { gpu.queue.Get() };
     Com<ID3D11Device> device;
-    const HRESULT hr = D3D11On12CreateDevice(gpu.device.Get(), D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, queues, 1, 0, &device, &context, nullptr);
-    return Check(hr, ApiCall::D3D11On12CreateDevice).transform([&device] { return device; });
+    const HRESULT hr = ::D3D11CreateDevice(gpu.adapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, &context);
+    return Check(hr, ApiCall::D3D11CreateDevice).transform([&device] { return device; });
 }
 
+// The free-threaded pool uses the context from the capture service's thread, so it is protected.
 [[nodiscard]] Status<Error> ProtectContext(const Com<ID3D11DeviceContext>& context) noexcept
 {
     return As<ID3D11Multithread>(context, ApiCall::QueryInterface).transform([](const Com<ID3D11Multithread>& multithread) { multithread->SetMultithreadProtected(TRUE); });
@@ -84,12 +84,38 @@ struct Pending;
     });
 }
 
-[[nodiscard]] Result<Com<ID3D11Resource>, Error> WrapCanvas(const Com<ID3D11On12Device>& on12, ID3D12Resource* canvas) noexcept
+[[nodiscard]] Result<UniqueHandle, Error> SharedHandleOf(const GpuDevice& gpu, ID3D12DeviceChild* object) noexcept
 {
-    const D3D11_RESOURCE_FLAGS flags{ 0, 0, 0, 0 };
-    Com<ID3D11Resource> wrapped;
-    const HRESULT hr = on12->CreateWrappedResource(canvas, &flags, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_COPY_DEST, IID_PPV_ARGS(&wrapped));
-    return Check(hr, ApiCall::CreateWrappedResource).transform([&wrapped] { return wrapped; });
+    HANDLE handle = nullptr;
+    const HRESULT hr = gpu.device->CreateSharedHandle(object, nullptr, GENERIC_ALL, nullptr, &handle);
+    return Check(hr, ApiCall::CreateSharedHandle).transform([handle] { return UniqueHandle(handle); });
+}
+
+[[nodiscard]] Result<Com<ID3D11Texture2D>, Error> OpenedTexture(const Com<ID3D11Device1>& device1, const UniqueHandle& handle) noexcept
+{
+    Com<ID3D11Texture2D> texture;
+    return Check(device1->OpenSharedResource1(handle.get(), IID_PPV_ARGS(&texture)), ApiCall::OpenSharedResource).transform([&texture] { return texture; });
+}
+
+[[nodiscard]] Result<Com<ID3D11Texture2D>, Error> OpenedCanvas(const Com<ID3D11Device>& device11, const GpuDevice& gpu, ID3D12Resource* canvas) noexcept
+{
+    return As<ID3D11Device1>(device11, ApiCall::QueryInterface).and_then([&](const Com<ID3D11Device1>& device1) {
+        return SharedHandleOf(gpu, canvas).and_then([&device1](const UniqueHandle& handle) { return OpenedTexture(device1, handle); });
+    });
+}
+
+[[nodiscard]] Result<Com<ID3D11Fence>, Error> OpenedFenceOn(const Com<ID3D11Device5>& device5, const UniqueHandle& handle) noexcept
+{
+    Com<ID3D11Fence> fence;
+    return Check(device5->OpenSharedFence(handle.get(), IID_PPV_ARGS(&fence)), ApiCall::OpenSharedFence).transform([&fence] { return fence; });
+}
+
+// WAIVER(R7): the same handle dance as OpenedCanvas over another interface; a template here would put metaprogramming outside infrastructure.
+[[nodiscard]] Result<Com<ID3D11Fence>, Error> OpenedFence(const Com<ID3D11Device>& device11, const GpuDevice& gpu, ID3D12Fence* fence) noexcept
+{
+    return As<ID3D11Device5>(device11, ApiCall::QueryInterface).and_then([&](const Com<ID3D11Device5>& device5) {
+        return SharedHandleOf(gpu, fence).and_then([&device5](const UniqueHandle& handle) { return OpenedFenceOn(device5, handle); });
+    });
 }
 
 [[nodiscard]] Result<Com<WGC::IGraphicsCaptureItem>, Error> ItemFor(const interior::MonitorInfo& monitor) noexcept
@@ -167,8 +193,7 @@ using Sessions = infra::BoundedVector<MonitorSession, interior::kMaxMonitors>;
 struct Devices
 {
     Com<ID3D11Device> device11;
-    Com<ID3D11DeviceContext> context;
-    Com<ID3D11On12Device> on12;
+    Com<ID3D11DeviceContext4> context;
     Com<WGD11::IDirect3DDevice> winrtDevice;
 };
 
@@ -176,9 +201,32 @@ struct Devices
 {
     Com<ID3D11DeviceContext> context;
     return CreateDevice11(gpu, context).and_then([&](const Com<ID3D11Device>& device11) {
-        return ProtectContext(context).and_then([&] { return As<ID3D11On12Device>(device11, ApiCall::QueryInterface); }).and_then([&](const Com<ID3D11On12Device>& on12) {
-            return WinrtDeviceOf(device11).transform([&](const Com<WGD11::IDirect3DDevice>& winrt) { return Devices{ device11, context, on12, winrt }; });
+        return ProtectContext(context).and_then([&] { return As<ID3D11DeviceContext4>(context, ApiCall::QueryInterface); }).and_then([&](const Com<ID3D11DeviceContext4>& context4) {
+            return WinrtDeviceOf(device11).transform([&](const Com<WGD11::IDirect3DDevice>& winrt) { return Devices{ device11, context4, winrt }; });
         });
+    });
+}
+
+// The objects both devices see: the canvas, the frame fence D3D12 signals, the capture fence D3D11 signals.
+struct Bridge
+{
+    Com<ID3D11Texture2D> canvas;
+    Com<ID3D11Fence> frameFence;
+    Com<ID3D12Fence> captureFence12;
+    Com<ID3D11Fence> captureFence;
+};
+
+[[nodiscard]] Result<Bridge, Error> WithCaptureFence(const Devices& d, const GpuDevice& gpu, const Com<ID3D11Texture2D>& canvas, const Com<ID3D11Fence>& frameFence) noexcept
+{
+    return CreateFence(gpu.device.Get(), D3D12_FENCE_FLAG_SHARED).and_then([&](const Com<ID3D12Fence>& fence12) {
+        return OpenedFence(d.device11, gpu, fence12.Get()).transform([&](const Com<ID3D11Fence>& fence11) { return Bridge{ canvas, frameFence, fence12, fence11 }; });
+    });
+}
+
+[[nodiscard]] Result<Bridge, Error> CreateBridge(const Devices& d, const GpuDevice& gpu, ID3D12Resource* canvas) noexcept
+{
+    return OpenedCanvas(d.device11, gpu, canvas).and_then([&](const Com<ID3D11Texture2D>& canvas11) {
+        return OpenedFence(d.device11, gpu, gpu.fence.Get()).and_then([&](const Com<ID3D11Fence>& frameFence) { return WithCaptureFence(d, gpu, canvas11, frameFence); });
     });
 }
 
@@ -301,7 +349,7 @@ void CopyOne(const Capture& capture, const Pending& p) noexcept
 {
     const std::optional<CopyRegion> region = RegionOf(capture, p);
     if (region.has_value())
-        capture.context->CopySubresourceRegion(capture.wrappedCanvas.Get(), 0, region->x, region->y, 0, p.texture.Get(), 0, &region->box);
+        capture.context->CopySubresourceRegion(capture.canvas.Get(), 0, region->x, region->y, 0, p.texture.Get(), 0, &region->box);
 }
 
 void CopyPending(const Capture& capture, const PendingList& pending) noexcept
@@ -309,13 +357,34 @@ void CopyPending(const Capture& capture, const PendingList& pending) noexcept
     std::ranges::for_each(pending.Items(), [&capture](const Pending& p) { CopyOne(capture, p); });
 }
 
-void CopyAll(const Capture& capture, const PendingList& pending) noexcept
+// The previous frame's D3D12 work read the canvas; the copy waits for its fence on the GPU, then signals
+// the capture fence, and the D3D12 queue waits for that before this frame's command lists run.
+[[nodiscard]] Status<Error> AwaitPreviousFrame(const Capture& capture, interior::FenceValue lastFrame) noexcept
 {
-    ID3D11Resource* wrapped[] = { capture.wrappedCanvas.Get() };
-    capture.on12->AcquireWrappedResources(wrapped, 1);
-    CopyPending(capture, pending);
-    capture.on12->ReleaseWrappedResources(wrapped, 1);
+    return Check(capture.context->Wait(capture.frameFence.Get(), lastFrame.Get()), ApiCall::ContextWait);
+}
+
+[[nodiscard]] Status<Error> SignalCopied(const Capture& capture, interior::FenceValue ready) noexcept
+{
+    const HRESULT hr = capture.context->Signal(capture.captureFence.Get(), ready.Get());
     capture.context->Flush();
+    return Check(hr, ApiCall::ContextSignal);
+}
+
+[[nodiscard]] Status<Error> QueueAwaitsCopy(const Capture& capture, interior::FenceValue ready) noexcept
+{
+    return Check(capture.queue->Wait(capture.captureFence12.Get(), ready.Get()), ApiCall::QueueWait);
+}
+
+[[nodiscard]] Status<Error> CopiedAndSignalled(const Capture& capture, const PendingList& pending, interior::FenceValue ready) noexcept
+{
+    CopyPending(capture, pending);
+    return SignalCopied(capture, ready);
+}
+
+[[nodiscard]] Status<Error> CopyOrdered(const Capture& capture, const PendingList& pending, interior::FenceValue lastFrame, interior::FenceValue ready) noexcept
+{
+    return AwaitPreviousFrame(capture, lastFrame).and_then([&] { return CopiedAndSignalled(capture, pending, ready); }).and_then([&] { return QueueAwaitsCopy(capture, ready); });
 }
 
 [[nodiscard]] Status<Error> CloseAll(const PendingList& pending) noexcept
@@ -323,12 +392,17 @@ void CopyAll(const Capture& capture, const PendingList& pending) noexcept
     return infra::ForEach(pending.Items(), Status<Error>{}, [](const Pending& p) { return CloseFrame(p.frame); });
 }
 
-[[nodiscard]] Result<bool, Error> CopyAndClose(const Capture& capture, const PendingList& pending) noexcept
+[[nodiscard]] Result<bool, Error> CopyAndClose(const Capture& capture, const PendingList& pending, interior::FenceValue lastFrame, interior::FenceValue ready) noexcept
 {
     if (pending.IsEmpty())
         return false;
-    CopyAll(capture, pending);
-    return CloseAll(pending).transform([] { return true; });
+    return CopyOrdered(capture, pending, lastFrame, ready).and_then([&pending] { return CloseAll(pending); }).transform([] { return true; });
+}
+
+// One capture fence value per frame, so the values only ever rise.
+[[nodiscard]] interior::FenceValue ReadyValueOf(interior::FrameNumber number) noexcept
+{
+    return interior::FenceValueTag::Parse(number.Get() + 1);
 }
 
 } // namespace
@@ -357,27 +431,17 @@ Result<Capture, Error> CreateCapture(const GpuDevice& gpu, ID3D12Resource* canva
                                      const CaptureSettings& settings) noexcept
 {
     return CreateDevices(gpu).and_then([&](const Devices& d) {
-        return WrapCanvas(d.on12, canvas).and_then([&](const Com<ID3D11Resource>& wrapped) {
+        return CreateBridge(d, gpu, canvas).and_then([&](const Bridge& bridge) {
             return StartAll(d.winrtDevice.Get(), monitors, settings).transform([&](const Sessions& sessions) {
-                return Capture{ d.device11, d.context, d.on12, d.winrtDevice, wrapped, sessions, canvasRect, canvasExtent };
+                return Capture{ d.device11, d.context, d.winrtDevice, bridge.canvas, bridge.frameFence, bridge.captureFence12, bridge.captureFence, gpu.queue, sessions, canvasRect, canvasExtent };
             });
         });
     });
 }
 
-// An 11on12 context submits to the D3D12 queue only on Flush, and the capture service queues its copies
-// and fences on this context from its thread; without a flush per poll they stall after the first frame.
-void SubmitQueuedWork(const Capture& capture) noexcept
+Result<bool, Error> AcquireFrames(const Capture& capture, interior::FrameNumber number, interior::FenceValue lastFrame) noexcept
 {
-    capture.context->Flush();
-}
-
-Result<bool, Error> AcquireFrames(const Capture& capture) noexcept
-{
-    return CollectPending(capture).and_then([&capture](const PendingList& pending) { return CopyAndClose(capture, pending); }).transform([&capture](bool fresh) {
-        SubmitQueuedWork(capture);
-        return fresh;
-    });
+    return CollectPending(capture).and_then([&](const PendingList& pending) { return CopyAndClose(capture, pending, lastFrame, ReadyValueOf(number)); });
 }
 
 } // namespace real

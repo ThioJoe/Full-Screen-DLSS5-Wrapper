@@ -139,13 +139,6 @@ struct Candidate
     return Check(hr, ApiCall::CreateCommandQueue).transform([&queue] { return queue; });
 }
 
-[[nodiscard]] Result<Com<ID3D12Fence>, Error> CreateFence(ID3D12Device* device) noexcept
-{
-    Com<ID3D12Fence> fence;
-    const HRESULT hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-    return Check(hr, ApiCall::CreateFence).transform([&fence] { return fence; });
-}
-
 [[nodiscard]] Result<UniqueHandle, Error> CreateFenceEvent() noexcept
 {
     HANDLE handle = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
@@ -184,10 +177,11 @@ struct Queues
     });
 }
 
+// The frame fence is shared: the capture device waits on it before it writes the canvas.
 [[nodiscard]] Result<Queues, Error> CreateQueues(ID3D12Device* device) noexcept
 {
     return CreateQueue(device).and_then(
-        [device](const Com<ID3D12CommandQueue>& queue) { return CreateFence(device).transform([&queue](const Com<ID3D12Fence>& fence) { return Queues{ queue, fence }; }); });
+        [device](const Com<ID3D12CommandQueue>& queue) { return CreateFence(device, D3D12_FENCE_FLAG_SHARED).transform([&queue](const Com<ID3D12Fence>& fence) { return Queues{ queue, fence }; }); });
 }
 
 [[nodiscard]] GpuDevice Assemble(Core& core, Queues& queues, UniqueHandle& event, Com<ID3D12DescriptorHeap>& rtv, Com<ID3D12DescriptorHeap>& srv) noexcept
@@ -243,6 +237,13 @@ struct Queues
 }
 
 } // namespace
+
+Result<Com<ID3D12Fence>, Error> CreateFence(ID3D12Device* device, D3D12_FENCE_FLAGS flags) noexcept
+{
+    Com<ID3D12Fence> fence;
+    const HRESULT hr = device->CreateFence(0, flags, IID_PPV_ARGS(&fence));
+    return Check(hr, ApiCall::CreateFence).transform([&fence] { return fence; });
+}
 
 Result<GpuDevice, Error> CreateGpuDevice(const DeviceSettings& settings) noexcept
 {

@@ -105,9 +105,7 @@ static_assert(kZeroLevel.has_value());
 
 [[nodiscard]] Result<Com<ID3D12Fence>, Error> CompletionFence(const GpuDevice& gpu) noexcept
 {
-    Com<ID3D12Fence> fence;
-    const HRESULT hr = gpu.device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence));
-    return Check(hr, ApiCall::CreateFence).transform([&fence] { return fence; });
+    return CreateFence(gpu.device.Get(), D3D12_FENCE_FLAG_NONE);
 }
 
 struct Registration
