@@ -17,7 +17,7 @@ build-applied call tracing, contracts that run in production, and a lint that en
 
 - Windows 10 2004 or newer (Windows Graphics Capture, DirectComposition), Windows 11 recommended.
 - An NVIDIA RTX GPU with a driver that ships DLSS 5 (616.64 or newer) for neural rendering.
-- The [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS) (`nvsdk_ngx_d3d12.lib`, headers, `nvngx_dlss.dll`).
+- The [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS) (`lib/Windows_x86_64/x64/nvsdk_ngx_s.lib`, `include/`, `lib/Windows_x86_64/rel/nvngx_dlss.dll`).
 - `nvngx_dlssnr.dll` next to `DlssScreen.exe`, in `--ngx-path`, or in the driver store.
 - Visual Studio 2022 17.8+ (MSVC 19.38), CMake 3.21+, Ninja or MSBuild, the Windows 10 SDK (dxc.exe).
 - Optional: the NVIDIA Optical Flow SDK for the hardware motion-vector backend (`-DDSCREEN_ENABLE_NVOF=ON`).

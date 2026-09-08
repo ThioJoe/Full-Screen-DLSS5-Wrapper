@@ -2,8 +2,9 @@
 
 find_path(NGX_INCLUDE_DIR nvsdk_ngx.h HINTS "${DLSS_SDK_DIR}/include")
 set(_ngx_lib_hints "${DLSS_SDK_DIR}/lib/Windows_x86_64/x86_64" "${DLSS_SDK_DIR}/lib/Windows_x86_64/x64" "${DLSS_SDK_DIR}/lib/Windows_x86_64" "${DLSS_SDK_DIR}/lib")
-find_library(NGX_LIBRARY_RELEASE NAMES nvsdk_ngx_d3d12 HINTS ${_ngx_lib_hints})
-find_library(NGX_LIBRARY_DEBUG NAMES nvsdk_ngx_d3d12_dbg HINTS ${_ngx_lib_hints})
+# The SDK ships nvsdk_ngx_s.lib for the static CRT (/MT, which this project uses) and nvsdk_ngx_d.lib for the dynamic one.
+find_library(NGX_LIBRARY_RELEASE NAMES nvsdk_ngx_s nvsdk_ngx_d3d12 HINTS ${_ngx_lib_hints})
+find_library(NGX_LIBRARY_DEBUG NAMES nvsdk_ngx_s_dbg nvsdk_ngx_d3d12_dbg HINTS ${_ngx_lib_hints})
 if(NOT NGX_INCLUDE_DIR OR NOT NGX_LIBRARY_RELEASE)
   message(FATAL_ERROR "NVIDIA DLSS SDK not found: configure with -DDLSS_SDK_DIR=<checkout of https://github.com/NVIDIA/DLSS>")
 endif()
