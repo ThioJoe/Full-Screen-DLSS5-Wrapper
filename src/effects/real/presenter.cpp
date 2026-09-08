@@ -14,8 +14,16 @@ using infra::Status;
 
 [[nodiscard]] DXGI_SWAP_CHAIN_DESC1 SwapChainDescription(const interior::Extent& extent) noexcept
 {
-    return DXGI_SWAP_CHAIN_DESC1{ extent.width.Get(), extent.height.Get(), kSwapChainFormat, FALSE, DXGI_SAMPLE_DESC{ 1, 0 }, DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                                  interior::kBackBufferCount, DXGI_SCALING_STRETCH, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_ALPHA_MODE_IGNORE,
+    return DXGI_SWAP_CHAIN_DESC1{ extent.width.Get(),
+                                  extent.height.Get(),
+                                  kSwapChainFormat,
+                                  FALSE,
+                                  DXGI_SAMPLE_DESC{ 1, 0 },
+                                  DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                                  interior::kBackBufferCount,
+                                  DXGI_SCALING_STRETCH,
+                                  DXGI_SWAP_EFFECT_FLIP_DISCARD,
+                                  DXGI_ALPHA_MODE_IGNORE,
                                   DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT };
 }
 
@@ -34,9 +42,7 @@ using infra::Status;
 
 [[nodiscard]] Result<Com<IDXGISwapChain3>, Error> CreateSwapChain(const GpuDevice& gpu, const interior::Extent& extent) noexcept
 {
-    return CreateCompositionSwapChain(gpu, extent)
-        .and_then([](const Com<IDXGISwapChain1>& chain) { return As<IDXGISwapChain3>(chain, ApiCall::QueryInterface); })
-        .and_then(WithLatencyOne);
+    return CreateCompositionSwapChain(gpu, extent).and_then([](const Com<IDXGISwapChain1>& chain) { return As<IDXGISwapChain3>(chain, ApiCall::QueryInterface); }).and_then(WithLatencyOne);
 }
 
 [[nodiscard]] Result<UniqueHandle, Error> WaitableOf(IDXGISwapChain3* chain) noexcept
@@ -77,9 +83,9 @@ struct Composition
 
 [[nodiscard]] Status<Error> Bind(const Composition& c, IDXGISwapChain3* chain) noexcept
 {
-    return Check(c.visual->SetContent(chain), ApiCall::SetContent)
-        .and_then([&c] { return Check(c.target->SetRoot(c.visual.Get()), ApiCall::SetRoot); })
-        .and_then([&c] { return Check(c.device->Commit(), ApiCall::Commit); });
+    return Check(c.visual->SetContent(chain), ApiCall::SetContent).and_then([&c] { return Check(c.target->SetRoot(c.visual.Get()), ApiCall::SetRoot); }).and_then([&c] {
+        return Check(c.device->Commit(), ApiCall::Commit);
+    });
 }
 
 [[nodiscard]] Result<Composition, Error> Bound(const Composition& c, IDXGISwapChain3* chain) noexcept
@@ -89,10 +95,8 @@ struct Composition
 
 [[nodiscard]] Result<Composition, Error> CreateComposition(HWND window, IDXGISwapChain3* chain) noexcept
 {
-    return CreateCompositionDevice().and_then([window, chain](const Com<IDCompositionDevice>& device)
-    {
-        return CreateTarget(device.Get(), window).and_then([&](const Com<IDCompositionTarget>& target)
-        {
+    return CreateCompositionDevice().and_then([window, chain](const Com<IDCompositionDevice>& device) {
+        return CreateTarget(device.Get(), window).and_then([&](const Com<IDCompositionTarget>& target) {
             return CreateVisual(device.Get()).and_then([&](const Com<IDCompositionVisual>& visual) { return Bound(Composition{ device, target, visual }, chain); });
         });
     });
@@ -112,8 +116,7 @@ struct Composition
 
 [[nodiscard]] Result<BackBuffers, Error> WithBuffer(const BackBuffers& buffers, const GpuDevice& gpu, IDXGISwapChain3* chain, std::uint32_t index) noexcept
 {
-    return BufferAt(chain, index).transform([&](const Com<ID3D12Resource>& buffer)
-    {
+    return BufferAt(chain, index).transform([&](const Com<ID3D12Resource>& buffer) {
         CreateRtv(gpu, buffer.Get(), kSwapChainFormat, RtvHandle(gpu, index));
         return infra::WithElement(buffers, index, buffer);
     });
@@ -127,12 +130,9 @@ struct Composition
 
 [[nodiscard]] Result<Presenter, Error> Assemble(const GpuDevice& gpu, HWND window, const Com<IDXGISwapChain3>& chain, const interior::Extent& extent) noexcept
 {
-    return CreateComposition(window, chain.Get()).and_then([&](const Composition& composition)
-    {
-        return WaitableOf(chain.Get()).and_then([&](UniqueHandle waitable)
-        {
-            return CollectBuffers(gpu, chain.Get()).transform([&](const BackBuffers& buffers)
-            {
+    return CreateComposition(window, chain.Get()).and_then([&](const Composition& composition) {
+        return WaitableOf(chain.Get()).and_then([&](UniqueHandle waitable) {
+            return CollectBuffers(gpu, chain.Get()).transform([&](const BackBuffers& buffers) {
                 return Presenter{ chain, composition.device, composition.target, composition.visual, std::move(waitable), buffers, extent };
             });
         });
@@ -161,8 +161,7 @@ Status<Error> WaitForNextFrame(const Presenter& presenter) noexcept
 
 Result<interior::BackBufferIndex, Error> CurrentBackBuffer(const Presenter& presenter) noexcept
 {
-    return interior::BackBufferIndexTag::Parse(presenter.swapChain->GetCurrentBackBufferIndex())
-        .transform_error([](interior::UnitError) { return Error{ ApiCall::GetCurrentBackBufferIndex, 0 }; });
+    return interior::BackBufferIndexTag::Parse(presenter.swapChain->GetCurrentBackBufferIndex()).transform_error([](interior::UnitError) { return Error{ ApiCall::GetCurrentBackBufferIndex, 0 }; });
 }
 
 Status<Error> PresentFrame(const Presenter& presenter, bool vsync) noexcept

@@ -45,8 +45,12 @@ using namespace interior;
 [[nodiscard]] Geometry GeometryFor(const Extent& source, const Extent& target) noexcept
 {
     const auto zero = CoordinateTag::Parse(0);
-    const auto sr = CoordinateTag::Parse(static_cast<std::int32_t>(source.width.Get())).and_then([&](Coordinate r) { return CoordinateTag::Parse(static_cast<std::int32_t>(source.height.Get())).and_then([&](Coordinate b) { return ScreenRectTag::Parse(*zero, *zero, r, b); }); });
-    const auto tr = CoordinateTag::Parse(static_cast<std::int32_t>(target.width.Get())).and_then([&](Coordinate r) { return CoordinateTag::Parse(static_cast<std::int32_t>(target.height.Get())).and_then([&](Coordinate b) { return ScreenRectTag::Parse(*zero, *zero, r, b); }); });
+    const auto sr = CoordinateTag::Parse(static_cast<std::int32_t>(source.width.Get())).and_then([&](Coordinate r) {
+        return CoordinateTag::Parse(static_cast<std::int32_t>(source.height.Get())).and_then([&](Coordinate b) { return ScreenRectTag::Parse(*zero, *zero, r, b); });
+    });
+    const auto tr = CoordinateTag::Parse(static_cast<std::int32_t>(target.width.Get())).and_then([&](Coordinate r) {
+        return CoordinateTag::Parse(static_cast<std::int32_t>(target.height.Get())).and_then([&](Coordinate b) { return ScreenRectTag::Parse(*zero, *zero, r, b); });
+    });
     REQUIRE(sr.has_value() && tr.has_value());
     return Geometry{ MonitorList{}, *sr, *tr, source, target };
 }

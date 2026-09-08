@@ -8,8 +8,7 @@ namespace infra {
 namespace detail {
 
 template <class T, std::size_t N, std::size_t... I>
-[[nodiscard]] constexpr std::array<T, N> WithElementImpl(const std::array<T, N>& source, std::size_t index, const T& value,
-                                                        std::index_sequence<I...>) noexcept
+[[nodiscard]] constexpr std::array<T, N> WithElementImpl(const std::array<T, N>& source, std::size_t index, const T& value, std::index_sequence<I...>) noexcept
 {
     return std::array<T, N>{ (I == index ? value : source[I])... };
 }

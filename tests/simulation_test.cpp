@@ -22,8 +22,26 @@ using namespace interior;
     const auto flow = GridExtent(source, 1);
     REQUIRE(scale.has_value() && flow.has_value());
     const std::array<MotionBackend, 3> backends{ MotionBackend::BuiltIn, MotionBackend::NvOpticalFlow, MotionBackend::None };
-    return SessionPlan{ source, source, source, std::nullopt, proptest::DrawBool(rng), d.tuning, backends[proptest::DrawBelow(rng, 3)], levels, d.motionFinestLevel,
-                        GridSize::One, PerfLevel::Medium, *flow, *scale, *scale, d.depthValue, d.resetThreshold, ColorFormat::Rgba8, DisplayMode::Processed, false, true };
+    return SessionPlan{ source,
+                        source,
+                        source,
+                        std::nullopt,
+                        proptest::DrawBool(rng),
+                        d.tuning,
+                        backends[proptest::DrawBelow(rng, 3)],
+                        levels,
+                        d.motionFinestLevel,
+                        GridSize::One,
+                        PerfLevel::Medium,
+                        *flow,
+                        *scale,
+                        *scale,
+                        d.depthValue,
+                        d.resetThreshold,
+                        ColorFormat::Rgba8,
+                        DisplayMode::Processed,
+                        false,
+                        true };
 }
 
 [[nodiscard]] bool SessionEndsCleanlyUnderInjectedFailures(infra::RngState& rng) noexcept

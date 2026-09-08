@@ -84,8 +84,17 @@ static_assert(kZeroLevel.has_value());
 
 [[nodiscard]] NV_OF_INIT_PARAMS InitParamsOf(const interior::SessionPlan& plan) noexcept
 {
-    return NV_OF_INIT_PARAMS{ plan.source.width.Get(), plan.source.height.Get(), OutputGridOf(plan.nvofGrid), HintGridOf(plan.nvofGrid), NV_OF_MODE_OPTICALFLOW,
-                              PerfLevelOf(plan.nvofPerf), NV_OF_FALSE, NV_OF_FALSE, nullptr, NV_OF_STEREO_DISPARITY_RANGE_UNDEFINED, NV_OF_FALSE };
+    return NV_OF_INIT_PARAMS{ plan.source.width.Get(),
+                              plan.source.height.Get(),
+                              OutputGridOf(plan.nvofGrid),
+                              HintGridOf(plan.nvofGrid),
+                              NV_OF_MODE_OPTICALFLOW,
+                              PerfLevelOf(plan.nvofPerf),
+                              NV_OF_FALSE,
+                              NV_OF_FALSE,
+                              nullptr,
+                              NV_OF_STEREO_DISPARITY_RANGE_UNDEFINED,
+                              NV_OF_FALSE };
 }
 
 [[nodiscard]] Status<Error> Initialized(const NV_OF_D3D12_API_FUNCTION_LIST& api, NvOFHandle session, const interior::SessionPlan& plan) noexcept
@@ -113,8 +122,9 @@ struct Registration
 {
     NvOFGPUBufferHandle handle = nullptr;
     NV_OF_REGISTER_RESOURCE_PARAMS_D3D12 params{ resource, &handle, NV_OF_FENCE_POINT{ r.input, 0 }, NV_OF_FENCE_POINT{ r.output, 0 } };
-    return CheckFlow(r.api->nvOFRegisterResourceD3D12(r.session, &params), ApiCall::OpticalFlowRegister)
-        .transform([&] { return RegisteredBuffer(handle, BufferUnregister{ r.api->nvOFUnregisterResourceD3D12 }); });
+    return CheckFlow(r.api->nvOFRegisterResourceD3D12(r.session, &params), ApiCall::OpticalFlowRegister).transform([&] {
+        return RegisteredBuffer(handle, BufferUnregister{ r.api->nvOFUnregisterResourceD3D12 });
+    });
 }
 
 [[nodiscard]] Result<RegisteredBuffer, Error> RegisteredResource(const Registration& r, const ResourceTable& resources, const interior::ResourceId& id) noexcept
@@ -137,21 +147,16 @@ struct Loaded
 
 [[nodiscard]] Result<Loaded, Error> LoadApi() noexcept
 {
-    return LoadedLibrary().and_then([](UniqueModule library)
-    {
-        return EntryPoint(library.get()).and_then(ApiOf).transform([&library](const NV_OF_D3D12_API_FUNCTION_LIST& api) { return Loaded{ std::move(library), api }; });
-    });
+    return LoadedLibrary().and_then(
+        [](UniqueModule library) { return EntryPoint(library.get()).and_then(ApiOf).transform([&library](const NV_OF_D3D12_API_FUNCTION_LIST& api) { return Loaded{ std::move(library), api }; }); });
 }
 
 [[nodiscard]] Result<OpticalFlow, Error> Assembled(Loaded loaded, OpticalFlowSession session, const Com<ID3D12Fence>& completion, const GpuDevice& gpu, const ResourceTable& resources) noexcept
 {
     const Registration r{ &loaded.api, session.get(), gpu.fence.Get(), completion.Get() };
-    return RegisteredResource(r, resources, LumaIdOf(0)).and_then([&](RegisteredBuffer first)
-    {
-        return RegisteredResource(r, resources, LumaIdOf(1)).and_then([&](RegisteredBuffer second)
-        {
-            return RegisteredResource(r, resources, interior::SimpleId(interior::ResourceKind::OpticalFlowOutput)).transform([&](RegisteredBuffer flow)
-            {
+    return RegisteredResource(r, resources, LumaIdOf(0)).and_then([&](RegisteredBuffer first) {
+        return RegisteredResource(r, resources, LumaIdOf(1)).and_then([&](RegisteredBuffer second) {
+            return RegisteredResource(r, resources, interior::SimpleId(interior::ResourceKind::OpticalFlowOutput)).transform([&](RegisteredBuffer flow) {
                 return OpticalFlow{ std::move(loaded.library), loaded.api, std::move(session), completion, { std::move(first), std::move(second) }, std::move(flow) };
             });
         });
@@ -160,11 +165,10 @@ struct Loaded
 
 [[nodiscard]] Result<OpticalFlow, Error> WithSession(Loaded loaded, const GpuDevice& gpu, const interior::SessionPlan& plan, const ResourceTable& resources) noexcept
 {
-    return SessionOf(loaded.api, gpu.device.Get()).and_then([&](OpticalFlowSession session)
-    {
-        return Initialized(loaded.api, session.get(), plan)
-            .and_then([&] { return CompletionFence(gpu); })
-            .and_then([&](const Com<ID3D12Fence>& completion) { return Assembled(std::move(loaded), std::move(session), completion, gpu, resources); });
+    return SessionOf(loaded.api, gpu.device.Get()).and_then([&](OpticalFlowSession session) {
+        return Initialized(loaded.api, session.get(), plan).and_then([&] { return CompletionFence(gpu); }).and_then([&](const Com<ID3D12Fence>& completion) {
+            return Assembled(std::move(loaded), std::move(session), completion, gpu, resources);
+        });
     });
 }
 
@@ -213,7 +217,9 @@ Status<Error> ExecuteOpticalFlow(const OpticalFlow& flow, const GpuDevice& gpu, 
     NV_OF_FENCE_POINT wait{ gpu.fence.Get(), frame.phaseOne.Get() };
     const NV_OF_EXECUTE_INPUT_PARAMS_D3D12 in = InputParamsOf(flow, frame, &wait);
     NV_OF_EXECUTE_OUTPUT_PARAMS_D3D12 out = OutputParamsOf(flow, frame);
-    return CheckFlow(flow.api.nvOFExecuteD3D12(flow.session.get(), &in, &out), ApiCall::OpticalFlowExecute).and_then([&] { return Check(gpu.queue->Wait(flow.completion.Get(), out.fencePoint.value), ApiCall::QueueWait); });
+    return CheckFlow(flow.api.nvOFExecuteD3D12(flow.session.get(), &in, &out), ApiCall::OpticalFlowExecute).and_then([&] {
+        return Check(gpu.queue->Wait(flow.completion.Get(), out.fencePoint.value), ApiCall::QueueWait);
+    });
 }
 
 } // namespace real

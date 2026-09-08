@@ -55,10 +55,7 @@ public:
         return *items_[size_ - 1];
     }
 
-    [[nodiscard]] constexpr auto Items() const noexcept
-    {
-        return std::span<const std::optional<T>>(items_.data(), size_) | std::views::transform(detail::DerefOptional{});
-    }
+    [[nodiscard]] constexpr auto Items() const noexcept { return std::span<const std::optional<T>>(items_.data(), size_) | std::views::transform(detail::DerefOptional{}); }
 
     [[nodiscard]] constexpr Result<BoundedVector, CapacityExceeded> Push(const T& item) const noexcept
     {

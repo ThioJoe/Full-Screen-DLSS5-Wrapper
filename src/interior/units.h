@@ -9,8 +9,7 @@ namespace interior {
 
 using infra::Result;
 
-enum class UnitError : std::uint8_t
-{
+enum class UnitError : std::uint8_t {
     PixelCountZero,
     PixelCountTooLarge,
     CoordinateTooLarge,
@@ -82,10 +81,7 @@ public:
 
 private:
     friend ScreenRectTag;
-    constexpr ScreenRect(Coordinate left, Coordinate top, Coordinate right, Coordinate bottom) noexcept
-        : left_(left), top_(top), right_(right), bottom_(bottom)
-    {
-    }
+    constexpr ScreenRect(Coordinate left, Coordinate top, Coordinate right, Coordinate bottom) noexcept : left_(left), top_(top), right_(right), bottom_(bottom) {}
     Coordinate left_;
     Coordinate top_;
     Coordinate right_;
@@ -93,8 +89,7 @@ private:
 };
 struct ScreenRectTag
 {
-    [[nodiscard]] static constexpr Result<ScreenRect, UnitError> Parse(Coordinate left, Coordinate top, Coordinate right,
-                                                                      Coordinate bottom) noexcept;
+    [[nodiscard]] static constexpr Result<ScreenRect, UnitError> Parse(Coordinate left, Coordinate top, Coordinate right, Coordinate bottom) noexcept;
 };
 
 struct MonitorCountTag;
@@ -291,10 +286,22 @@ using DeviceName = infra::BoundedString<wchar_t, 32>;
 
 [[nodiscard]] Result<ProjectIdText, UnitError> ParseProjectId(std::string_view raw) noexcept;
 
-[[nodiscard]] constexpr bool IsZero(std::uint32_t value) noexcept { return value == 0; }
-[[nodiscard]] constexpr bool IsAbove(float value, float limit) noexcept { return value > limit; }
-[[nodiscard]] constexpr bool IsBelow(float value, float limit) noexcept { return value < limit; }
-[[nodiscard]] constexpr bool IsNaN(float value) noexcept { return value != value; }
+[[nodiscard]] constexpr bool IsZero(std::uint32_t value) noexcept
+{
+    return value == 0;
+}
+[[nodiscard]] constexpr bool IsAbove(float value, float limit) noexcept
+{
+    return value > limit;
+}
+[[nodiscard]] constexpr bool IsBelow(float value, float limit) noexcept
+{
+    return value < limit;
+}
+[[nodiscard]] constexpr bool IsNaN(float value) noexcept
+{
+    return value != value;
+}
 [[nodiscard]] constexpr bool IsOutside(float value, float low, float high) noexcept
 {
     return IsBelow(value, low) || IsAbove(value, high);
@@ -337,8 +344,7 @@ constexpr Result<Coordinate, UnitError> CoordinateTag::Parse(std::int32_t raw) n
     return right <= left || bottom <= top;
 }
 
-constexpr Result<ScreenRect, UnitError> ScreenRectTag::Parse(Coordinate left, Coordinate top, Coordinate right,
-                                                            Coordinate bottom) noexcept
+constexpr Result<ScreenRect, UnitError> ScreenRectTag::Parse(Coordinate left, Coordinate top, Coordinate right, Coordinate bottom) noexcept
 {
     if (IsEmptyArea(left, top, right, bottom))
         return infra::Fail(UnitError::RectangleEmpty);

@@ -31,9 +31,9 @@ using infra::Fail;
 
 [[nodiscard]] Result<std::uint32_t, PyramidError> CeilDiv(std::uint32_t value, std::uint32_t divisor) noexcept
 {
-    return infra::CheckedAdd(value, divisor - 1)
-        .and_then([divisor](std::uint32_t padded) { return infra::CheckedDiv(padded, divisor); })
-        .transform_error([](infra::ArithmeticError) { return PyramidError::Arithmetic; });
+    return infra::CheckedAdd(value, divisor - 1).and_then([divisor](std::uint32_t padded) { return infra::CheckedDiv(padded, divisor); }).transform_error([](infra::ArithmeticError) {
+        return PyramidError::Arithmetic;
+    });
 }
 
 [[nodiscard]] PyramidError FromUnit(UnitError) noexcept
@@ -78,26 +78,19 @@ LevelCount LevelCountFor(const Extent& source) noexcept
 
 Result<LevelExtents, PyramidError> LevelExtentsOf(const Extent& source, LevelCount levels) noexcept
 {
-    return LevelExtents{}.Push(source)
-        .transform_error([](infra::CapacityExceeded) { return PyramidError::Capacity; })
-        .and_then([levels](const LevelExtents& first)
-        {
-            return infra::FoldResult(std::views::iota(std::uint32_t{ 1 }, levels.Get()), Result<LevelExtents, PyramidError>(first), AppendHalved);
-        });
+    return LevelExtents{}.Push(source).transform_error([](infra::CapacityExceeded) { return PyramidError::Capacity; }).and_then([levels](const LevelExtents& first) {
+        return infra::FoldResult(std::views::iota(std::uint32_t{ 1 }, levels.Get()), Result<LevelExtents, PyramidError>(first), AppendHalved);
+    });
 }
 
 Result<ThreadGroups, PyramidError> GroupsFor(const Extent& extent) noexcept
 {
-    return GroupsAlong(extent.width).and_then([&extent](GroupCount x)
-    {
-        return GroupsAlong(extent.height).transform([x](GroupCount y) { return ThreadGroups{ x, y }; });
-    });
+    return GroupsAlong(extent.width).and_then([&extent](GroupCount x) { return GroupsAlong(extent.height).transform([x](GroupCount y) { return ThreadGroups{ x, y }; }); });
 }
 
 Result<Extent, PyramidError> GridExtent(const Extent& source, std::uint32_t grid) noexcept
 {
-    return CellsAlong(source.width, grid).and_then([&source, grid](PixelCount width)
-    {
+    return CellsAlong(source.width, grid).and_then([&source, grid](PixelCount width) {
         return CellsAlong(source.height, grid).transform([width](PixelCount height) { return Extent{ width, height }; });
     });
 }

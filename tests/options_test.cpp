@@ -11,8 +11,8 @@ namespace {
 
 using namespace interior;
 
-constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all", L"--target", L"1", L"--nr-intensity", L"1.5", L"--sr", L"dlaa",
-                                                          L"--mv=nvof", L"--bogus", L"positional", L"--nr-style=cinematic" };
+constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all",  L"--target",  L"1",       L"--nr-intensity", L"1.5",
+                                                         L"--sr",      L"dlaa", L"--mv=nvof", L"--bogus", L"positional",     L"--nr-style=cinematic" };
 
 [[nodiscard]] std::vector<std::wstring> RandomArguments(infra::RngState& rng) noexcept
 {

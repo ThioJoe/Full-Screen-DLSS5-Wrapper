@@ -26,8 +26,8 @@ using ResourceTable = std::array<Com<ID3D12Resource>, interior::kSlotCount>;
 
 [[nodiscard]] infra::Result<Texture, Error> CreateTexture(const GpuDevice& gpu, const TextureRequest& request) noexcept;
 [[nodiscard]] infra::Result<Texture, Error> CreateClearableTexture(const GpuDevice& gpu, const TextureRequest& request, float clearValue) noexcept;
-[[nodiscard]] infra::Result<Com<ID3D12Resource>, Error> CreateBuffer(const GpuDevice& gpu, interior::ByteCount bytes, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_STATES state,
-                                                                    D3D12_RESOURCE_FLAGS flags, const wchar_t* name) noexcept;
+[[nodiscard]] infra::Result<Com<ID3D12Resource>, Error> CreateBuffer(const GpuDevice& gpu, interior::ByteCount bytes, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_STATES state, D3D12_RESOURCE_FLAGS flags,
+                                                                     const wchar_t* name) noexcept;
 [[nodiscard]] infra::Status<Error> WriteZeros(ID3D12Resource* upload, interior::ByteCount bytes) noexcept;
 [[nodiscard]] infra::Result<std::uint32_t, Error> ReadFirstUInt(ID3D12Resource* readback) noexcept;
 

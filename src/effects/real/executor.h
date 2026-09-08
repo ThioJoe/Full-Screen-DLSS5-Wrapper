@@ -58,7 +58,6 @@ struct FrameContext
 
 [[nodiscard]] infra::Status<Error> OpenList(const Gpu& gpu, interior::FrameSlot slot) noexcept;
 [[nodiscard]] infra::Result<interior::FenceValue, Error> FlushList(const Gpu& gpu, interior::FenceValue previous) noexcept;
-[[nodiscard]] infra::Result<interior::FenceValue, Error> ExecuteSteps(const Gpu& gpu, const interior::SessionPlan& plan, const FrameContext& frame,
-                                                                     const interior::StepList& steps) noexcept;
+[[nodiscard]] infra::Result<interior::FenceValue, Error> ExecuteSteps(const Gpu& gpu, const interior::SessionPlan& plan, const FrameContext& frame, const interior::StepList& steps) noexcept;
 
 } // namespace real

@@ -82,7 +82,7 @@ std::string Trim(const std::string& s)
 bool IsCommentLine(const std::string& line)
 {
     const std::string t = Trim(line);
-    return StartsWith(t, "//") || StartsWith(t, "/*") || StartsWith(t, "*") || StartsWith(t, ";");
+    return StartsWith(t, "//") || StartsWith(t, "/*") || StartsWith(t, "* ") || StartsWith(t, "*/") || StartsWith(t, ";");
 }
 
 std::string StripComment(const std::string& line)
@@ -265,7 +265,8 @@ void CheckLines(const SourceFile& f)
 
 // --- function extraction ------------------------------------------------------------------------
 
-const std::regex kFunctionHeader(R"(^\s*(?:\[\[nodiscard\]\]\s*)?(?:static\s+|constexpr\s+|inline\s+|friend\s+|explicit\s+|virtual\s+)*([A-Za-z_][\w:<>,\s\*&\.]*?)\s+\**&*\s*(operator\S+|[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*\(([^;{}]*)\)\s*(const\s*)?(noexcept\s*)?(override\s*)?(final\s*)?(->\s*[^{]+)?\s*(\{)?\s*$)");
+const std::regex kFunctionHeader(
+    R"(^\s*(?:\[\[nodiscard\]\]\s*)?(?:static\s+|constexpr\s+|inline\s+|friend\s+|explicit\s+|virtual\s+)*([A-Za-z_][\w:<>,\s\*&\.]*?)\s+\**&*\s*(operator\S+|[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*\(([^;{}]*)\)\s*(const\s*)?(noexcept\s*)?(override\s*)?(final\s*)?(->\s*[^{]+)?\s*(\{)?\s*$)");
 const std::regex kLambdaOpen(R"(\[[^\]]*\]\s*(\([^)]*\))?\s*(mutable\s*)?(noexcept\s*)?(->\s*[^{]+?)?\s*\{)");
 const std::regex kControlKeyword(R"(^\s*(if|else|switch|while|for|return|do)\b)");
 
@@ -286,13 +287,33 @@ int BraceDelta(const std::string& code, int& opens)
     return delta;
 }
 
+int ParenBalance(const std::string& code)
+{
+    int balance = 0;
+    for (const char c : code)
+        balance += c == '(' ? 1 : c == ')' ? -1 : 0;
+    return balance;
+}
+
+// A signature wrapped by the formatter is joined back into one line before matching.
+std::string JoinedHeader(const SourceFile& f, size_t i)
+{
+    std::string code = StripStrings(StripComment(f.lines[i]));
+    if (ParenBalance(code) <= 0 || !Contains(code, "("))
+        return code;
+    std::string joined = code;
+    for (size_t k = i + 1; k < f.lines.size() && k < i + 6 && ParenBalance(joined) > 0; ++k)
+        joined += " " + Trim(StripStrings(StripComment(f.lines[k])));
+    return ParenBalance(joined) == 0 ? joined : code;
+}
+
 std::vector<Function> ExtractFunctions(const SourceFile& f)
 {
     std::vector<Function> functions;
     int depth = 0;
     for (size_t i = 0; i < f.lines.size(); ++i)
     {
-        const std::string code = StripStrings(StripComment(f.lines[i]));
+        const std::string code = JoinedHeader(f, i);
         std::smatch m;
         const bool header = std::regex_match(code, m, kFunctionHeader) && !std::regex_search(code, kControlKeyword);
         const bool lambda = std::regex_search(code, kLambdaOpen);
@@ -535,7 +556,8 @@ void CheckFunctions(const SourceFile& f, const std::vector<Function>& functions)
 
 // --- must-use, reachability, clones --------------------------------------------------------------
 
-const std::regex kDeclaration(R"(^\s*(?:static\s+|constexpr\s+|inline\s+|friend\s+|explicit\s+|virtual\s+)*([A-Za-z_][\w:<>,\s\*&]*?)\s+\**&*\s*([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?(?:=\s*default\s*)?(?:=\s*0\s*)?[;{]?\s*$)");
+const std::regex kDeclaration(
+    R"(^\s*(?:static\s+|constexpr\s+|inline\s+|friend\s+|explicit\s+|virtual\s+)*([A-Za-z_][\w:<>,\s\*&]*?)\s+\**&*\s*([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?(?:=\s*default\s*)?(?:=\s*0\s*)?[;{]?\s*$)");
 
 std::set<std::string> g_nodiscardNames;
 
@@ -584,9 +606,32 @@ void CheckReachabilityAndClones(const std::vector<SourceFile>& files, const std:
     for (const SourceFile& f : files)
         for (const std::string& l : f.lines)
             corpus += StripComment(l) + "\n";
-    const std::set<std::string> entryPoints{ "main", "wmain", "WindowProc", "TraceEnter", "TraceExit", "__cyg_profile_func_enter", "__cyg_profile_func_exit",
-                                             "ContractViolation", "DumpTrace", "Contract", "Parse", "operator==", "operator<=>", "Get", "Size", "IsEmpty",
-                                             "IsFull", "At", "Items", "Push", "Last", "HasIndex", "CString", "Capacity", "Describe", "Analyse" };
+    const std::set<std::string> entryPoints{ "main",
+                                             "wmain",
+                                             "WindowProc",
+                                             "TraceEnter",
+                                             "TraceExit",
+                                             "__cyg_profile_func_enter",
+                                             "__cyg_profile_func_exit",
+                                             "ContractViolation",
+                                             "DumpTrace",
+                                             "Contract",
+                                             "Parse",
+                                             "operator==",
+                                             "operator<=>",
+                                             "Get",
+                                             "Size",
+                                             "IsEmpty",
+                                             "IsFull",
+                                             "At",
+                                             "Items",
+                                             "Push",
+                                             "Last",
+                                             "HasIndex",
+                                             "CString",
+                                             "Capacity",
+                                             "Describe",
+                                             "Analyse" };
     std::map<std::string, const Function*> bodies;
     for (const Function& fn : all)
     {
@@ -665,6 +710,7 @@ int main(int argc, char** argv)
     std::sort(g_findings.begin(), g_findings.end(), [](const Finding& a, const Finding& b) { return a.file == b.file ? a.line < b.line : a.file < b.file; });
     for (const Finding& f : g_findings)
         std::printf("%s:%d: [%s] %s\n", f.file.c_str(), f.line, f.rule.c_str(), f.message.c_str());
-    std::printf("rules_lint: %zu finding(s), %zu waiver(s), %zu growth site(s), %zu feature flag(s), %zu indexed function(s)\n", g_findings.size(), g_waivers.size(), g_growthSites.size(), g_featureFlags.size(), g_index.size());
+    std::printf("rules_lint: %zu finding(s), %zu waiver(s), %zu growth site(s), %zu feature flag(s), %zu indexed function(s)\n", g_findings.size(), g_waivers.size(), g_growthSites.size(),
+                g_featureFlags.size(), g_index.size());
     return g_findings.empty() ? 0 : 1;
 }

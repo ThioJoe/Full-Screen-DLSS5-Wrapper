@@ -37,8 +37,7 @@ constexpr std::array<std::size_t, 4> kDashPositions{ 8, 13, 18, 23 };
 
 [[nodiscard]] bool IsGuidShaped(std::string_view text) noexcept
 {
-    return std::ranges::all_of(std::views::iota(std::size_t{ 0 }, text.size()),
-                               [text](std::size_t i) { return IsValidGuidChar(text[i], i); });
+    return std::ranges::all_of(std::views::iota(std::size_t{ 0 }, text.size()), [text](std::size_t i) { return IsValidGuidChar(text[i], i); });
 }
 
 [[nodiscard]] bool IsGuidLength(std::string_view text) noexcept

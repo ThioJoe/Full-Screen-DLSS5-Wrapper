@@ -66,8 +66,7 @@ struct Options
     [[nodiscard]] friend constexpr bool operator==(const Options&, const Options&) noexcept = default;
 };
 
-enum class OptionsErrorKind : std::uint8_t
-{
+enum class OptionsErrorKind : std::uint8_t {
     UnknownOption,
     MissingValue,
     InvalidInteger,

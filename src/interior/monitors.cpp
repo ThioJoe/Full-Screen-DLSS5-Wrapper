@@ -127,9 +127,9 @@ using infra::Fail;
 
 [[nodiscard]] Result<PixelCount, MonitorError> Span(Coordinate low, Coordinate high) noexcept
 {
-    return infra::CheckedSub(high.Get(), low.Get())
-        .transform_error([](infra::ArithmeticError e) { return AsMonitorError(e); })
-        .and_then([](std::int32_t length) { return PixelCountTag::Parse(static_cast<std::uint32_t>(length)).transform_error([](UnitError e) { return AsMonitorError(e); }); });
+    return infra::CheckedSub(high.Get(), low.Get()).transform_error([](infra::ArithmeticError e) { return AsMonitorError(e); }).and_then([](std::int32_t length) {
+        return PixelCountTag::Parse(static_cast<std::uint32_t>(length)).transform_error([](UnitError e) { return AsMonitorError(e); });
+    });
 }
 
 [[nodiscard]] Result<MonitorList, MonitorError> PrimaryOf(const MonitorList& ordered) noexcept
@@ -153,18 +153,15 @@ using infra::Fail;
 
 [[nodiscard]] Result<Geometry, MonitorError> GeometryFrom(const MonitorList& source, const ScreenRect& sourceRect, const ScreenRect& targetRect) noexcept
 {
-    return ExtentOf(sourceRect).and_then([&](Extent sourceExtent)
-    {
+    return ExtentOf(sourceRect).and_then([&](Extent sourceExtent) {
         return ExtentOf(targetRect).transform([&](Extent targetExtent) { return Geometry{ source, sourceRect, targetRect, sourceExtent, targetExtent }; });
     });
 }
 
 [[nodiscard]] Result<Geometry, MonitorError> GeometryOf(const MonitorList& ordered, const MonitorList& source, std::optional<RequestedMonitor> target) noexcept
 {
-    return UnionRect(source).and_then([&](const ScreenRect& sourceRect)
-    {
-        return TargetRectOf(ordered, sourceRect, target).and_then([&](const ScreenRect& targetRect) { return GeometryFrom(source, sourceRect, targetRect); });
-    });
+    return UnionRect(source).and_then(
+        [&](const ScreenRect& sourceRect) { return TargetRectOf(ordered, sourceRect, target).and_then([&](const ScreenRect& targetRect) { return GeometryFrom(source, sourceRect, targetRect); }); });
 }
 
 } // namespace
@@ -176,9 +173,8 @@ bool ComesBefore(const MonitorInfo& a, const MonitorInfo& b) noexcept
 
 MonitorList Ordered(const MonitorList& monitors) noexcept
 {
-    const Result<MonitorList, infra::CapacityExceeded> ordered =
-        infra::FoldResult(std::views::iota(std::size_t{ 0 }, monitors.Size()), Result<MonitorList, infra::CapacityExceeded>(MonitorList{}),
-                          [&monitors](const MonitorList& acc, std::size_t rank) { return AppendRanked(monitors, acc, rank); });
+    const Result<MonitorList, infra::CapacityExceeded> ordered = infra::FoldResult(std::views::iota(std::size_t{ 0 }, monitors.Size()), Result<MonitorList, infra::CapacityExceeded>(MonitorList{}),
+                                                                                   [&monitors](const MonitorList& acc, std::size_t rank) { return AppendRanked(monitors, acc, rank); });
     ENSURE(ordered.has_value());
     return *ordered;
 }
@@ -187,16 +183,12 @@ Result<ScreenRect, MonitorError> UnionRect(const MonitorList& monitors) noexcept
 {
     if (monitors.IsEmpty())
         return Fail(MonitorError::NoMonitors);
-    return infra::FoldResult(monitors.Items(), Result<ScreenRect, UnitError>(monitors.At(0).rect), UnionWith)
-        .transform_error([](UnitError e) { return AsMonitorError(e); });
+    return infra::FoldResult(monitors.Items(), Result<ScreenRect, UnitError>(monitors.At(0).rect), UnionWith).transform_error([](UnitError e) { return AsMonitorError(e); });
 }
 
 Result<Extent, MonitorError> ExtentOf(const ScreenRect& rect) noexcept
 {
-    return Span(rect.Left(), rect.Right()).and_then([&rect](PixelCount width)
-    {
-        return Span(rect.Top(), rect.Bottom()).transform([width](PixelCount height) { return Extent{ width, height }; });
-    });
+    return Span(rect.Left(), rect.Right()).and_then([&rect](PixelCount width) { return Span(rect.Top(), rect.Bottom()).transform([width](PixelCount height) { return Extent{ width, height }; }); });
 }
 
 [[nodiscard]] Result<MonitorList, MonitorError> SelectFrom(const MonitorList& ordered, const SourceSelection& selection) noexcept

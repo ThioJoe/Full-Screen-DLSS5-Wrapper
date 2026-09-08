@@ -39,8 +39,9 @@ struct Pending;
     REQUIRE(className.data()[className.size()] == L'\0');
     HSTRING_HEADER header{};
     HSTRING string = nullptr;
-    return Check(::WindowsCreateStringReference(className.data(), static_cast<UINT32>(className.size()), &header, &string), ApiCall::WindowsCreateStringReference)
-        .and_then([&] { return Check(::RoGetActivationFactory(string, iid, factory), ApiCall::RoGetActivationFactory); });
+    return Check(::WindowsCreateStringReference(className.data(), static_cast<UINT32>(className.size()), &header, &string), ApiCall::WindowsCreateStringReference).and_then([&] {
+        return Check(::RoGetActivationFactory(string, iid, factory), ApiCall::RoGetActivationFactory);
+    });
 }
 
 [[nodiscard]] Result<Com<IGraphicsCaptureItemInterop>, Error> ItemInterop() noexcept
@@ -76,8 +77,7 @@ struct Pending;
 
 [[nodiscard]] Result<Com<WGD11::IDirect3DDevice>, Error> WinrtDeviceOf(const Com<ID3D11Device>& device11) noexcept
 {
-    return As<IDXGIDevice>(device11, ApiCall::QueryInterface).and_then([](const Com<IDXGIDevice>& dxgi)
-    {
+    return As<IDXGIDevice>(device11, ApiCall::QueryInterface).and_then([](const Com<IDXGIDevice>& dxgi) {
         Com<IInspectable> inspectable;
         const HRESULT hr = ::CreateDirect3D11DeviceFromDXGIDevice(dxgi.Get(), &inspectable);
         return Check(hr, ApiCall::CreateDirect3D11DeviceFromDXGIDevice).and_then([&inspectable] { return As<WGD11::IDirect3DDevice>(inspectable, ApiCall::QueryInterface); });
@@ -94,8 +94,7 @@ struct Pending;
 
 [[nodiscard]] Result<Com<WGC::IGraphicsCaptureItem>, Error> ItemFor(const interior::MonitorInfo& monitor) noexcept
 {
-    return ItemInterop().and_then([&monitor](const Com<IGraphicsCaptureItemInterop>& interop)
-    {
+    return ItemInterop().and_then([&monitor](const Com<IGraphicsCaptureItemInterop>& interop) {
         Com<WGC::IGraphicsCaptureItem> item;
         const HRESULT hr = interop->CreateForMonitor(reinterpret_cast<HMONITOR>(monitor.handle.Get()), IID_PPV_ARGS(&item));
         return Check(hr, ApiCall::CreateForMonitor).transform([&item] { return item; });
@@ -110,10 +109,8 @@ struct Pending;
 
 [[nodiscard]] Result<Com<WGC::IDirect3D11CaptureFramePool>, Error> PoolFor(WGD11::IDirect3DDevice* device, WGC::IGraphicsCaptureItem* item) noexcept
 {
-    return PoolStatics().and_then([&](const Com<WGC::IDirect3D11CaptureFramePoolStatics2>& statics)
-    {
-        return SizeOf(item).and_then([&](ABI::Windows::Graphics::SizeInt32 size) -> Result<Com<WGC::IDirect3D11CaptureFramePool>, Error>
-        {
+    return PoolStatics().and_then([&](const Com<WGC::IDirect3D11CaptureFramePoolStatics2>& statics) {
+        return SizeOf(item).and_then([&](ABI::Windows::Graphics::SizeInt32 size) -> Result<Com<WGC::IDirect3D11CaptureFramePool>, Error> {
             Com<WGC::IDirect3D11CaptureFramePool> pool;
             const HRESULT hr = statics->CreateFreeThreaded(device, WGD::DirectXPixelFormat_B8G8R8A8UIntNormalized, kPoolBuffers, size, &pool);
             return Check(hr, ApiCall::CreateFreeThreaded).transform([&pool] { return pool; });
@@ -123,16 +120,18 @@ struct Pending;
 
 [[nodiscard]] Status<Error> ApplyCursor(const Com<WGC::IGraphicsCaptureSession>& session, bool cursor) noexcept
 {
-    return As<WGC::IGraphicsCaptureSession2>(session, ApiCall::PutIsCursorCaptureEnabled)
-        .and_then([cursor](const Com<WGC::IGraphicsCaptureSession2>& s2) { return Check(s2->put_IsCursorCaptureEnabled(cursor ? 1 : 0), ApiCall::PutIsCursorCaptureEnabled); });
+    return As<WGC::IGraphicsCaptureSession2>(session, ApiCall::PutIsCursorCaptureEnabled).and_then([cursor](const Com<WGC::IGraphicsCaptureSession2>& s2) {
+        return Check(s2->put_IsCursorCaptureEnabled(cursor ? 1 : 0), ApiCall::PutIsCursorCaptureEnabled);
+    });
 }
 
 [[nodiscard]] Status<Error> ApplyBorder(const Com<WGC::IGraphicsCaptureSession>& session, bool border) noexcept
 {
     if (border)
         return {};
-    return As<WGC::IGraphicsCaptureSession3>(session, ApiCall::PutIsBorderRequired)
-        .and_then([](const Com<WGC::IGraphicsCaptureSession3>& s3) { return Check(s3->put_IsBorderRequired(0), ApiCall::PutIsBorderRequired); });
+    return As<WGC::IGraphicsCaptureSession3>(session, ApiCall::PutIsBorderRequired).and_then([](const Com<WGC::IGraphicsCaptureSession3>& s3) {
+        return Check(s3->put_IsBorderRequired(0), ApiCall::PutIsBorderRequired);
+    });
 }
 
 [[nodiscard]] Result<Com<WGC::IGraphicsCaptureSession>, Error> SessionFor(WGC::IDirect3D11CaptureFramePool* pool, WGC::IGraphicsCaptureItem* item, const CaptureSettings& settings) noexcept
@@ -147,10 +146,8 @@ struct Pending;
 
 [[nodiscard]] Result<MonitorSession, Error> StartSession(WGD11::IDirect3DDevice* device, const interior::MonitorInfo& monitor, const CaptureSettings& settings) noexcept
 {
-    return ItemFor(monitor).and_then([&](const Com<WGC::IGraphicsCaptureItem>& item)
-    {
-        return PoolFor(device, item.Get()).and_then([&](const Com<WGC::IDirect3D11CaptureFramePool>& pool)
-        {
+    return ItemFor(monitor).and_then([&](const Com<WGC::IGraphicsCaptureItem>& item) {
+        return PoolFor(device, item.Get()).and_then([&](const Com<WGC::IDirect3D11CaptureFramePool>& pool) {
             return SessionFor(pool.Get(), item.Get(), settings).transform([&](const Com<WGC::IGraphicsCaptureSession>& session) { return MonitorSession{ item, pool, session, monitor }; });
         });
     });
@@ -160,9 +157,10 @@ using Sessions = infra::BoundedVector<MonitorSession, interior::kMaxMonitors>;
 
 [[nodiscard]] Result<Sessions, Error> StartAll(WGD11::IDirect3DDevice* device, const interior::MonitorList& monitors, const CaptureSettings& settings) noexcept
 {
-    return infra::FoldResult(monitors.Items(), Result<Sessions, Error>(Sessions{}), [&](const Sessions& acc, const interior::MonitorInfo& monitor)
-    {
-        return StartSession(device, monitor, settings).and_then([&acc](const MonitorSession& s) { return acc.Push(s).transform_error([](infra::CapacityExceeded) { return Error{ ApiCall::CreateCaptureSession, 1 }; }); });
+    return infra::FoldResult(monitors.Items(), Result<Sessions, Error>(Sessions{}), [&](const Sessions& acc, const interior::MonitorInfo& monitor) {
+        return StartSession(device, monitor, settings).and_then([&acc](const MonitorSession& s) {
+            return acc.Push(s).transform_error([](infra::CapacityExceeded) { return Error{ ApiCall::CreateCaptureSession, 1 }; });
+        });
     });
 }
 
@@ -177,10 +175,8 @@ struct Devices
 [[nodiscard]] Result<Devices, Error> CreateDevices(const GpuDevice& gpu) noexcept
 {
     Com<ID3D11DeviceContext> context;
-    return CreateDevice11(gpu, context).and_then([&](const Com<ID3D11Device>& device11)
-    {
-        return ProtectContext(context).and_then([&] { return As<ID3D11On12Device>(device11, ApiCall::QueryInterface); }).and_then([&](const Com<ID3D11On12Device>& on12)
-        {
+    return CreateDevice11(gpu, context).and_then([&](const Com<ID3D11Device>& device11) {
+        return ProtectContext(context).and_then([&] { return As<ID3D11On12Device>(device11, ApiCall::QueryInterface); }).and_then([&](const Com<ID3D11On12Device>& on12) {
             return WinrtDeviceOf(device11).transform([&](const Com<WGD11::IDirect3DDevice>& winrt) { return Devices{ device11, context, on12, winrt }; });
         });
     });
@@ -198,7 +194,9 @@ struct Drain
 {
     if (!frame)
         return {};
-    return As<ABI::Windows::Foundation::IClosable>(frame, ApiCall::CloseFrame).and_then([](const Com<ABI::Windows::Foundation::IClosable>& closable) { return Check(closable->Close(), ApiCall::CloseFrame); });
+    return As<ABI::Windows::Foundation::IClosable>(frame, ApiCall::CloseFrame).and_then([](const Com<ABI::Windows::Foundation::IClosable>& closable) {
+        return Check(closable->Close(), ApiCall::CloseFrame);
+    });
 }
 
 [[nodiscard]] Result<Drain, Error> Replace(const Drain& d, const Com<WGC::IDirect3D11CaptureFrame>& next) noexcept
@@ -242,8 +240,7 @@ using PendingList = infra::BoundedVector<Pending, interior::kMaxMonitors>;
     Com<WGD11::IDirect3DSurface> surface;
     return Check(frame->get_Surface(&surface), ApiCall::GetSurface)
         .and_then([&] { return As<Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>(surface, ApiCall::GetInterface); })
-        .and_then([](const Com<Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>& access) -> Result<Com<ID3D11Texture2D>, Error>
-        {
+        .and_then([](const Com<Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>& access) -> Result<Com<ID3D11Texture2D>, Error> {
             Com<ID3D11Texture2D> texture;
             return Check(access->GetInterface(IID_PPV_ARGS(&texture)), ApiCall::GetInterface).transform([&texture] { return texture; });
         });
@@ -253,16 +250,14 @@ using PendingList = infra::BoundedVector<Pending, interior::kMaxMonitors>;
 {
     if (!frame)
         return acc;
-    return TextureOf(frame.Get()).and_then([&](const Com<ID3D11Texture2D>& texture)
-    {
+    return TextureOf(frame.Get()).and_then([&](const Com<ID3D11Texture2D>& texture) {
         return acc.Push(Pending{ frame, texture, session.monitor }).transform_error([](infra::CapacityExceeded) { return Error{ ApiCall::TryGetNextFrame, 1 }; });
     });
 }
 
 [[nodiscard]] Result<PendingList, Error> CollectPending(const Capture& capture) noexcept
 {
-    return infra::FoldResult(capture.sessions.Items(), Result<PendingList, Error>(PendingList{}), [](const PendingList& acc, const MonitorSession& session)
-    {
+    return infra::FoldResult(capture.sessions.Items(), Result<PendingList, Error>(PendingList{}), [](const PendingList& acc, const MonitorSession& session) {
         return LatestFrame(session.pool.Get()).and_then([&](const Com<WGC::IDirect3D11CaptureFrame>& frame) { return AppendPending(acc, session, frame); });
     });
 }
@@ -348,11 +343,9 @@ Status<Error> InitializeRuntime() noexcept
 
 Status<Error> RequireCaptureSupport() noexcept
 {
-    return SessionStatics().and_then([](const Com<WGC::IGraphicsCaptureSessionStatics>& statics) -> Status<Error>
-    {
+    return SessionStatics().and_then([](const Com<WGC::IGraphicsCaptureSessionStatics>& statics) -> Status<Error> {
         boolean supported = 0;
-        return Check(statics->IsSupported(&supported), ApiCall::IsCaptureSupported).and_then([supported]() -> Status<Error>
-        {
+        return Check(statics->IsSupported(&supported), ApiCall::IsCaptureSupported).and_then([supported]() -> Status<Error> {
             if (supported == 0)
                 return Fail(Error{ ApiCall::IsCaptureSupported, 0 });
             return {};
@@ -360,15 +353,14 @@ Status<Error> RequireCaptureSupport() noexcept
     });
 }
 
-Result<Capture, Error> CreateCapture(const GpuDevice& gpu, ID3D12Resource* canvas, const interior::ScreenRect& canvasRect, const interior::Extent& canvasExtent,
-                                     const interior::MonitorList& monitors, const CaptureSettings& settings) noexcept
+Result<Capture, Error> CreateCapture(const GpuDevice& gpu, ID3D12Resource* canvas, const interior::ScreenRect& canvasRect, const interior::Extent& canvasExtent, const interior::MonitorList& monitors,
+                                     const CaptureSettings& settings) noexcept
 {
-    return CreateDevices(gpu).and_then([&](const Devices& d)
-    {
-        return WrapCanvas(d.on12, canvas).and_then([&](const Com<ID3D11Resource>& wrapped)
-        {
-            return StartAll(d.winrtDevice.Get(), monitors, settings)
-                .transform([&](const Sessions& sessions) { return Capture{ d.device11, d.context, d.on12, d.winrtDevice, wrapped, sessions, canvasRect, canvasExtent }; });
+    return CreateDevices(gpu).and_then([&](const Devices& d) {
+        return WrapCanvas(d.on12, canvas).and_then([&](const Com<ID3D11Resource>& wrapped) {
+            return StartAll(d.winrtDevice.Get(), monitors, settings).transform([&](const Sessions& sessions) {
+                return Capture{ d.device11, d.context, d.on12, d.winrtDevice, wrapped, sessions, canvasRect, canvasExtent };
+            });
         });
     });
 }

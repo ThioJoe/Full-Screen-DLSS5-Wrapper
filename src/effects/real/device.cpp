@@ -95,7 +95,7 @@ struct Candidate
 }
 
 [[nodiscard]] std::optional<Candidate> FirstWanted(const std::optional<Candidate>& found, IDXGIFactory4* factory, std::uint32_t index,
-                                                  const std::optional<interior::RequestedAdapter>& request) noexcept
+                                                   const std::optional<interior::RequestedAdapter>& request) noexcept
 {
     return found.has_value() ? found : WantedAt(factory, index, request);
 }
@@ -162,10 +162,8 @@ struct Queues
 
 [[nodiscard]] Result<Core, Error> CreateCore(const DeviceSettings& settings) noexcept
 {
-    return EnableDebugLayer(settings.debugLayer).and_then([&] { return CreateFactory(settings.debugLayer); }).and_then([&](const Com<IDXGIFactory4>& factory)
-    {
-        return SelectAdapter(factory.Get(), settings.adapter).and_then([&](const Candidate& candidate)
-        {
+    return EnableDebugLayer(settings.debugLayer).and_then([&] { return CreateFactory(settings.debugLayer); }).and_then([&](const Com<IDXGIFactory4>& factory) {
+        return SelectAdapter(factory.Get(), settings.adapter).and_then([&](const Candidate& candidate) {
             return CreateDevice(candidate.adapter.Get()).transform([&](const Com<ID3D12Device>& device) { return Core{ factory, candidate, device }; });
         });
     });
@@ -173,28 +171,33 @@ struct Queues
 
 [[nodiscard]] Result<Queues, Error> CreateQueues(ID3D12Device* device) noexcept
 {
-    return CreateQueue(device).and_then([device](const Com<ID3D12CommandQueue>& queue)
-    {
-        return CreateFence(device).transform([&queue](const Com<ID3D12Fence>& fence) { return Queues{ queue, fence }; });
-    });
+    return CreateQueue(device).and_then(
+        [device](const Com<ID3D12CommandQueue>& queue) { return CreateFence(device).transform([&queue](const Com<ID3D12Fence>& fence) { return Queues{ queue, fence }; }); });
 }
 
 [[nodiscard]] GpuDevice Assemble(Core& core, Queues& queues, UniqueHandle& event, Com<ID3D12DescriptorHeap>& rtv, Com<ID3D12DescriptorHeap>& srv) noexcept
 {
     ID3D12Device* device = core.device.Get();
-    return GpuDevice{ core.factory, core.candidate.adapter, core.device, queues.queue, queues.fence, std::move(event), rtv, srv,
+    return GpuDevice{ core.factory,
+                      core.candidate.adapter,
+                      core.device,
+                      queues.queue,
+                      queues.fence,
+                      std::move(event),
+                      rtv,
+                      srv,
                       device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV),
-                      device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV), IsNvidia(core.candidate) };
+                      device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV),
+                      IsNvidia(core.candidate) };
 }
 
 [[nodiscard]] Result<GpuDevice, Error> AssembleDevice(Core core, Queues queues) noexcept
 {
-    return CreateFenceEvent().and_then([&](UniqueHandle event)
-    {
-        return CreateHeap(core.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, kRtvSlots, D3D12_DESCRIPTOR_HEAP_FLAG_NONE).and_then([&](Com<ID3D12DescriptorHeap> rtv)
-        {
-            return CreateHeap(core.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, kSrvSlots, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE)
-                .transform([&](Com<ID3D12DescriptorHeap> srv) { return Assemble(core, queues, event, rtv, srv); });
+    return CreateFenceEvent().and_then([&](UniqueHandle event) {
+        return CreateHeap(core.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_RTV, kRtvSlots, D3D12_DESCRIPTOR_HEAP_FLAG_NONE).and_then([&](Com<ID3D12DescriptorHeap> rtv) {
+            return CreateHeap(core.device.Get(), D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, kSrvSlots, D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE).transform([&](Com<ID3D12DescriptorHeap> srv) {
+                return Assemble(core, queues, event, rtv, srv);
+            });
         });
     });
 }
@@ -226,10 +229,7 @@ struct Queues
 
 Result<GpuDevice, Error> CreateGpuDevice(const DeviceSettings& settings) noexcept
 {
-    return CreateCore(settings).and_then([](Core core)
-    {
-        return CreateQueues(core.device.Get()).and_then([&core](Queues queues) { return AssembleDevice(std::move(core), std::move(queues)); });
-    });
+    return CreateCore(settings).and_then([](Core core) { return CreateQueues(core.device.Get()).and_then([&core](Queues queues) { return AssembleDevice(std::move(core), std::move(queues)); }); });
 }
 
 Result<interior::FenceValue, Error> SignalFence(const GpuDevice& gpu, interior::FenceValue previous) noexcept
@@ -247,8 +247,7 @@ Status<Error> WaitForFence(const GpuDevice& gpu, interior::FenceValue value, int
 
 Result<interior::FenceValue, Error> WaitIdle(const GpuDevice& gpu, interior::FenceValue previous) noexcept
 {
-    return SignalFence(gpu, previous).and_then([&gpu](interior::FenceValue signaled)
-    {
+    return SignalFence(gpu, previous).and_then([&gpu](interior::FenceValue signaled) {
         return WaitForFence(gpu, signaled, interior::MicrosecondsTag::Parse(kFenceTimeoutMicroseconds)).transform([signaled] { return signaled; });
     });
 }

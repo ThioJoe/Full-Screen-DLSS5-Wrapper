@@ -15,24 +15,103 @@
 
 namespace real {
 
-enum class ApiCall : std::uint8_t
-{
-    CreateDXGIFactory2, EnumAdapters1, D3D12CreateDevice, CreateCommandQueue, CreateFence, CreateEventW, CreateDescriptorHeap,
-    CreateCommandAllocator, CreateCommandList, CloseCommandList, ResetCommandList, ResetAllocator, CreateCommittedResource,
-    MapResource, SetEventOnCompletion, WaitForFence, QueueSignal, QueueWait, CreateSwapChainForComposition, QueryInterface,
-    SetMaximumFrameLatency, GetBuffer, Present, WaitForFrame, DCompositionCreateDevice2, CreateTargetForHwnd, CreateVisual,
-    SetContent, SetRoot, Commit, SerializeRootSignature, CreateRootSignature, CreateComputePipelineState,
-    CreateGraphicsPipelineState, RegisterClassExW, CreateWindowExW, SetWindowDisplayAffinity, RegisterHotKey, RoInitialize,
-    RoGetActivationFactory, WindowsCreateStringReference, D3D11On12CreateDevice, CreateDirect3D11DeviceFromDXGIDevice,
-    CreateForMonitor, CreateFreeThreaded, CreateCaptureSession, StartCapture, TryGetNextFrame, GetSurface, GetInterface,
-    CreateWrappedResource, GetContentSize, PutIsCursorCaptureEnabled, PutIsBorderRequired, CloseFrame, IsCaptureSupported,
-    GetMonitorInfoW, EnumDisplayMonitors, QueryPerformanceCounter, QueryPerformanceFrequency, OpenLogFile, WriteLog,
-    NgxInit, NgxGetCapabilityParameters, NgxCreateFeature, NgxEvaluateFeature, NgxOptimalSettings, NgxParameterRoundTrip,
-    NgxNeuralRenderingUnavailable, NgxSuperResolutionUnavailable, TextureDescriptionMismatch, PlanFrame, LoadOpticalFlow,
-    OpticalFlowCreate, OpticalFlowInit, OpticalFlowRegister, OpticalFlowExecute, ResourceMissing, ArgumentCount, DpiAwareness,
-    SetProcessDpiAwareness, GetMonitorRect, AdapterNotFound, NotNvidia, DescriptorBudget, StatsOutOfRange, GetModuleFileNameW,
-    CommandLineToArgvW, ResolveGeometry, PlanSession, NgxParameterList, NgxGetFeatureRequirements, NgxShutdown, OpticalFlowUnavailable,
-    GetCurrentBackBufferIndex, ExecutableDirectory,
+enum class ApiCall : std::uint8_t {
+    CreateDXGIFactory2,
+    EnumAdapters1,
+    D3D12CreateDevice,
+    CreateCommandQueue,
+    CreateFence,
+    CreateEventW,
+    CreateDescriptorHeap,
+    CreateCommandAllocator,
+    CreateCommandList,
+    CloseCommandList,
+    ResetCommandList,
+    ResetAllocator,
+    CreateCommittedResource,
+    MapResource,
+    SetEventOnCompletion,
+    WaitForFence,
+    QueueSignal,
+    QueueWait,
+    CreateSwapChainForComposition,
+    QueryInterface,
+    SetMaximumFrameLatency,
+    GetBuffer,
+    Present,
+    WaitForFrame,
+    DCompositionCreateDevice2,
+    CreateTargetForHwnd,
+    CreateVisual,
+    SetContent,
+    SetRoot,
+    Commit,
+    SerializeRootSignature,
+    CreateRootSignature,
+    CreateComputePipelineState,
+    CreateGraphicsPipelineState,
+    RegisterClassExW,
+    CreateWindowExW,
+    SetWindowDisplayAffinity,
+    RegisterHotKey,
+    RoInitialize,
+    RoGetActivationFactory,
+    WindowsCreateStringReference,
+    D3D11On12CreateDevice,
+    CreateDirect3D11DeviceFromDXGIDevice,
+    CreateForMonitor,
+    CreateFreeThreaded,
+    CreateCaptureSession,
+    StartCapture,
+    TryGetNextFrame,
+    GetSurface,
+    GetInterface,
+    CreateWrappedResource,
+    GetContentSize,
+    PutIsCursorCaptureEnabled,
+    PutIsBorderRequired,
+    CloseFrame,
+    IsCaptureSupported,
+    GetMonitorInfoW,
+    EnumDisplayMonitors,
+    QueryPerformanceCounter,
+    QueryPerformanceFrequency,
+    OpenLogFile,
+    WriteLog,
+    NgxInit,
+    NgxGetCapabilityParameters,
+    NgxCreateFeature,
+    NgxEvaluateFeature,
+    NgxOptimalSettings,
+    NgxParameterRoundTrip,
+    NgxNeuralRenderingUnavailable,
+    NgxSuperResolutionUnavailable,
+    TextureDescriptionMismatch,
+    PlanFrame,
+    LoadOpticalFlow,
+    OpticalFlowCreate,
+    OpticalFlowInit,
+    OpticalFlowRegister,
+    OpticalFlowExecute,
+    ResourceMissing,
+    ArgumentCount,
+    DpiAwareness,
+    SetProcessDpiAwareness,
+    GetMonitorRect,
+    AdapterNotFound,
+    NotNvidia,
+    DescriptorBudget,
+    StatsOutOfRange,
+    GetModuleFileNameW,
+    CommandLineToArgvW,
+    ResolveGeometry,
+    PlanSession,
+    NgxParameterList,
+    NgxGetFeatureRequirements,
+    NgxShutdown,
+    OpticalFlowUnavailable,
+    GetCurrentBackBufferIndex,
+    ExecutableDirectory,
 };
 
 struct Error
@@ -84,19 +163,13 @@ template <class T, class U>
 
 struct HandleCloser
 {
-    void operator()(void* handle) const noexcept
-    {
-        ENSURE(::CloseHandle(handle) != FALSE);
-    }
+    void operator()(void* handle) const noexcept { ENSURE(::CloseHandle(handle) != FALSE); }
 };
 using UniqueHandle = std::unique_ptr<void, HandleCloser>;
 
 struct WindowDestroyer
 {
-    void operator()(HWND window) const noexcept
-    {
-        ENSURE(::DestroyWindow(window) != FALSE);
-    }
+    void operator()(HWND window) const noexcept { ENSURE(::DestroyWindow(window) != FALSE); }
 };
 using UniqueWindow = std::unique_ptr<std::remove_pointer_t<HWND>, WindowDestroyer>;
 

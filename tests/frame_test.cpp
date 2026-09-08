@@ -90,10 +90,7 @@ struct Replay
 
 [[nodiscard]] Replay ReplayPlan(const StateTable& start, const FramePlan& plan) noexcept
 {
-    return std::ranges::fold_left(plan.steps.Items(), Replay{ start, true, 0, 0 }, [](const Replay& r, const Step& step)
-    {
-        return std::visit([&r](const auto& s) { return Apply(r, s); }, step);
-    });
+    return std::ranges::fold_left(plan.steps.Items(), Replay{ start, true, 0, 0 }, [](const Replay& r, const Step& step) { return std::visit([&r](const auto& s) { return Apply(r, s); }, step); });
 }
 
 [[nodiscard]] Extent RandomExtent(infra::RngState& rng) noexcept
@@ -125,9 +122,26 @@ struct Replay
     const auto flow = GridExtent(source, 1);
     REQUIRE(finest.has_value() && scaleX.has_value() && scaleY.has_value() && flow.has_value());
     const std::array<MotionBackend, 3> backends{ MotionBackend::BuiltIn, MotionBackend::NvOpticalFlow, MotionBackend::None };
-    return SessionPlan{ source, target, target, sr ? std::optional<SrChoice>{ SrChoice{ SrQuality::Quality, source, target, d.srPreset, false } } : std::nullopt,
-                        proptest::DrawBool(rng), d.tuning, backends[proptest::DrawBelow(rng, 3)], levels, *finest, GridSize::One, PerfLevel::Medium, *flow,
-                        *scaleX, *scaleY, d.depthValue, d.resetThreshold, ColorFormat::Rgba8, DisplayMode::Processed, false, true };
+    return SessionPlan{ source,
+                        target,
+                        target,
+                        sr ? std::optional<SrChoice>{ SrChoice{ SrQuality::Quality, source, target, d.srPreset, false } } : std::nullopt,
+                        proptest::DrawBool(rng),
+                        d.tuning,
+                        backends[proptest::DrawBelow(rng, 3)],
+                        levels,
+                        *finest,
+                        GridSize::One,
+                        PerfLevel::Medium,
+                        *flow,
+                        *scaleX,
+                        *scaleY,
+                        d.depthValue,
+                        d.resetThreshold,
+                        ColorFormat::Rgba8,
+                        DisplayMode::Processed,
+                        false,
+                        true };
 }
 
 [[nodiscard]] FrameInput RandomInput(infra::RngState& rng, std::uint64_t clock, std::uint32_t backBuffer) noexcept
@@ -135,8 +149,10 @@ struct Replay
     const auto buffer = BackBufferIndexTag::Parse(backBuffer % kBackBufferCount);
     const auto unmatched = FractionTag::Parse(proptest::DrawUnit(rng));
     REQUIRE(buffer.has_value() && unmatched.has_value());
-    return FrameInput{ proptest::DrawBelow(rng, 4) != 0, *buffer, proptest::DrawBool(rng) ? std::optional<Fraction>{ *unmatched } : std::nullopt,
-                       InstantTag::Parse(clock), proptest::DrawBelow(rng, 20) == 0, proptest::DrawBelow(rng, 20) == 0, false };
+    return FrameInput{
+        proptest::DrawBelow(rng, 4) != 0,  *buffer, proptest::DrawBool(rng) ? std::optional<Fraction>{ *unmatched } : std::nullopt, InstantTag::Parse(clock), proptest::DrawBelow(rng, 20) == 0,
+        proptest::DrawBelow(rng, 20) == 0, false
+    };
 }
 
 [[nodiscard]] bool PlansAreValidOverRandomSequences(infra::RngState& rng) noexcept
@@ -182,8 +198,7 @@ struct Replay
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
-    return std::ranges::all_of(framePlan->steps.Items(), [](const Step& s)
-    {
+    return std::ranges::all_of(framePlan->steps.Items(), [](const Step& s) {
         return std::visit(infra::Overloaded{ [](const EvaluateSr& e) { return e.reset; }, [](const EvaluateNr& e) { return e.reset; }, [](const auto&) { return true; } }, s);
     });
 }

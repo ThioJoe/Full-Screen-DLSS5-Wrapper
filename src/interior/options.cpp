@@ -18,17 +18,67 @@ namespace {
 
 using infra::Fail;
 
-enum class OptionId : std::uint8_t
-{
-    Help, ListMonitors, Monitor, Target, Nr, NrPreset, NrIntensity, NrStyle, NrLocalStructure, NrLocalTone, NrSkin, NrAutoMask,
-    NrUiCorrection, Sr, SrPreset, Mv, MvLevel, NvofGrid, NvofPerf, DepthValue, ResetThreshold, Cursor, Vsync, Compare, Format,
-    CaptureBorder, NgxPath, NgxAppId, NgxProjectId, NgxLog, AppData, Affinity, Topmost, ClickThrough, RedirectionBitmap,
-    DebugLayer, Adapter, LogLevel, LogFile,
+enum class OptionId : std::uint8_t {
+    Help,
+    ListMonitors,
+    Monitor,
+    Target,
+    Nr,
+    NrPreset,
+    NrIntensity,
+    NrStyle,
+    NrLocalStructure,
+    NrLocalTone,
+    NrSkin,
+    NrAutoMask,
+    NrUiCorrection,
+    Sr,
+    SrPreset,
+    Mv,
+    MvLevel,
+    NvofGrid,
+    NvofPerf,
+    DepthValue,
+    ResetThreshold,
+    Cursor,
+    Vsync,
+    Compare,
+    Format,
+    CaptureBorder,
+    NgxPath,
+    NgxAppId,
+    NgxProjectId,
+    NgxLog,
+    AppData,
+    Affinity,
+    Topmost,
+    ClickThrough,
+    RedirectionBitmap,
+    DebugLayer,
+    Adapter,
+    LogLevel,
+    LogFile,
 };
 
-enum class ValueKind : std::uint8_t
-{
-    Flag, UInt, Float, Hex, Bool, MonitorSel, Cursor, Sr, Motion, Compare, Format, Style, Grid, Perf, NgxLog, Log, Path, Text,
+enum class ValueKind : std::uint8_t {
+    Flag,
+    UInt,
+    Float,
+    Hex,
+    Bool,
+    MonitorSel,
+    Cursor,
+    Sr,
+    Motion,
+    Compare,
+    Format,
+    Style,
+    Grid,
+    Perf,
+    NgxLog,
+    Log,
+    Path,
+    Text,
 };
 
 struct OptionSpec
@@ -99,9 +149,8 @@ struct NarrowBuffer
     std::size_t size;
 };
 
-using OptionValue = std::variant<FlagValue, std::uint32_t, float, std::uint64_t, bool, MonitorSelValue, CursorMode, SrMode,
-                                 MotionBackend, CompareMode, ColorFormat, NrStyle, GridSize, PerfLevel, NgxLogLevel, LogLevel,
-                                 DirectoryPath, AsciiText>;
+using OptionValue = std::variant<FlagValue, std::uint32_t, float, std::uint64_t, bool, MonitorSelValue, CursorMode, SrMode, MotionBackend, CompareMode, ColorFormat, NrStyle, GridSize, PerfLevel,
+                                 NgxLogLevel, LogLevel, DirectoryPath, AsciiText>;
 
 struct ParsedOption
 {
@@ -127,8 +176,9 @@ using ParseResult = Result<ParseState, OptionsError>;
 {
     if (!infra::IsAllAscii(text))
         return Fail(OptionsErrorKind::NonAscii);
-    return AsciiText::Parse(std::string_view(NarrowBuffer{ infra::NarrowedChars<AsciiText::Capacity>(text), text.size() }.chars.data(), text.size()))
-        .transform_error([](infra::StringTooLong) { return OptionsErrorKind::ArgumentTooLong; });
+    return AsciiText::Parse(std::string_view(NarrowBuffer{ infra::NarrowedChars<AsciiText::Capacity>(text), text.size() }.chars.data(), text.size())).transform_error([](infra::StringTooLong) {
+        return OptionsErrorKind::ArgumentTooLong;
+    });
 }
 
 [[nodiscard]] Result<AsciiText, OptionsErrorKind> AsciiOfChecked(std::wstring_view text) noexcept
@@ -147,8 +197,7 @@ using ParseResult = Result<ParseState, OptionsError>;
 
 [[nodiscard]] Result<std::uint32_t, OptionsErrorKind> ParseUInt(std::wstring_view text) noexcept
 {
-    return AsciiOfChecked(text).and_then([](AsciiText ascii) -> Result<std::uint32_t, OptionsErrorKind>
-    {
+    return AsciiOfChecked(text).and_then([](AsciiText ascii) -> Result<std::uint32_t, OptionsErrorKind> {
         std::uint32_t value = 0;
         const std::string_view view = ascii.Get();
         const std::from_chars_result result = std::from_chars(view.data(), view.data() + view.size(), value);
@@ -160,8 +209,7 @@ using ParseResult = Result<ParseState, OptionsError>;
 
 [[nodiscard]] Result<float, OptionsErrorKind> ParseFloat(std::wstring_view text) noexcept
 {
-    return AsciiOfChecked(text).and_then([](AsciiText ascii) -> Result<float, OptionsErrorKind>
-    {
+    return AsciiOfChecked(text).and_then([](AsciiText ascii) -> Result<float, OptionsErrorKind> {
         float value = 0.0f;
         const std::string_view view = ascii.Get();
         const std::from_chars_result result = std::from_chars(view.data(), view.data() + view.size(), value);
@@ -183,8 +231,7 @@ using ParseResult = Result<ParseState, OptionsError>;
 
 [[nodiscard]] Result<std::uint64_t, OptionsErrorKind> ParseHex(std::wstring_view text) noexcept
 {
-    return AsciiOfChecked(text).and_then([](AsciiText ascii) -> Result<std::uint64_t, OptionsErrorKind>
-    {
+    return AsciiOfChecked(text).and_then([](AsciiText ascii) -> Result<std::uint64_t, OptionsErrorKind> {
         std::uint64_t value = 0;
         const std::string_view view = WithoutHexPrefix(ascii.Get());
         const std::from_chars_result result = std::from_chars(view.data(), view.data() + view.size(), value, 16);
@@ -203,21 +250,33 @@ template <class T, std::size_t N>
     return *found;
 }
 
-constexpr std::array<infra::Choice<bool>, 8> kBoolChoices{ { { L"on", true }, { L"1", true }, { L"true", true }, { L"yes", true },
-                                                      { L"off", false }, { L"0", false }, { L"false", false }, { L"no", false } } };
+constexpr std::array<infra::Choice<bool>, 8> kBoolChoices{
+    { { L"on", true }, { L"1", true }, { L"true", true }, { L"yes", true }, { L"off", false }, { L"0", false }, { L"false", false }, { L"no", false } }
+};
 constexpr std::array<infra::Choice<CursorMode>, 3> kCursorChoices{ { { L"auto", CursorMode::Auto }, { L"on", CursorMode::On }, { L"off", CursorMode::Off } } };
 constexpr std::array<infra::Choice<SrMode>, 3> kSrChoices{ { { L"auto", SrMode::Auto }, { L"dlaa", SrMode::Dlaa }, { L"off", SrMode::Off } } };
 constexpr std::array<infra::Choice<MotionBackend>, 3> kMotionChoices{ { { L"builtin", MotionBackend::BuiltIn }, { L"nvof", MotionBackend::NvOpticalFlow }, { L"none", MotionBackend::None } } };
 constexpr std::array<infra::Choice<CompareMode>, 3> kCompareChoices{ { { L"off", CompareMode::Off }, { L"split", CompareMode::Split }, { L"original", CompareMode::Original } } };
 constexpr std::array<infra::Choice<ColorFormat>, 2> kFormatChoices{ { { L"rgba8", ColorFormat::Rgba8 }, { L"rgba16f", ColorFormat::Rgba16f } } };
-constexpr std::array<infra::Choice<NrStyle>, 6> kStyleChoices{ { { L"0", NrStyle::Standard }, { L"standard", NrStyle::Standard }, { L"1", NrStyle::Natural },
-                                                          { L"natural", NrStyle::Natural }, { L"2", NrStyle::Cinematic }, { L"cinematic", NrStyle::Cinematic } } };
+constexpr std::array<infra::Choice<NrStyle>, 6> kStyleChoices{ { { L"0", NrStyle::Standard },
+                                                                 { L"standard", NrStyle::Standard },
+                                                                 { L"1", NrStyle::Natural },
+                                                                 { L"natural", NrStyle::Natural },
+                                                                 { L"2", NrStyle::Cinematic },
+                                                                 { L"cinematic", NrStyle::Cinematic } } };
 constexpr std::array<infra::Choice<GridSize>, 3> kGridChoices{ { { L"1", GridSize::One }, { L"2", GridSize::Two }, { L"4", GridSize::Four } } };
-constexpr std::array<infra::Choice<PerfLevel>, 6> kPerfChoices{ { { L"slow", PerfLevel::Slow }, { L"5", PerfLevel::Slow }, { L"medium", PerfLevel::Medium },
-                                                           { L"10", PerfLevel::Medium }, { L"fast", PerfLevel::Fast }, { L"20", PerfLevel::Fast } } };
+constexpr std::array<infra::Choice<PerfLevel>, 6> kPerfChoices{
+    { { L"slow", PerfLevel::Slow }, { L"5", PerfLevel::Slow }, { L"medium", PerfLevel::Medium }, { L"10", PerfLevel::Medium }, { L"fast", PerfLevel::Fast }, { L"20", PerfLevel::Fast } }
+};
 constexpr std::array<infra::Choice<NgxLogLevel>, 3> kNgxLogChoices{ { { L"0", NgxLogLevel::Off }, { L"1", NgxLogLevel::On }, { L"2", NgxLogLevel::Verbose } } };
-constexpr std::array<infra::Choice<LogLevel>, 8> kLogChoices{ { { L"0", LogLevel::Debug }, { L"debug", LogLevel::Debug }, { L"1", LogLevel::Info }, { L"info", LogLevel::Info },
-                                                         { L"2", LogLevel::Warn }, { L"warn", LogLevel::Warn }, { L"3", LogLevel::Error }, { L"error", LogLevel::Error } } };
+constexpr std::array<infra::Choice<LogLevel>, 8> kLogChoices{ { { L"0", LogLevel::Debug },
+                                                                { L"debug", LogLevel::Debug },
+                                                                { L"1", LogLevel::Info },
+                                                                { L"info", LogLevel::Info },
+                                                                { L"2", LogLevel::Warn },
+                                                                { L"warn", LogLevel::Warn },
+                                                                { L"3", LogLevel::Error },
+                                                                { L"error", LogLevel::Error } } };
 constexpr std::array<infra::Choice<MonitorSelectionKind>, 2> kMonitorKindChoices{ { { L"primary", MonitorSelectionKind::Primary }, { L"all", MonitorSelectionKind::All } } };
 
 [[nodiscard]] Result<MonitorSelValue, OptionsErrorKind> ParseMonitorSel(std::wstring_view text) noexcept
@@ -308,14 +367,11 @@ constexpr std::array<std::wstring_view, 3> kHelpAliases{ L"-h", L"-?", L"/?" };
 
 [[nodiscard]] ParseResult Record(const ParseState& state, const OptionSpec& spec, ArgumentIndex argument, std::wstring_view text) noexcept
 {
-    return ParseValue(spec.kind, text)
-        .transform_error([argument](OptionsErrorKind kind) { return At(kind, argument); })
-        .and_then([&state, &spec, argument](OptionValue value) -> ParseResult
-        {
-            return state.parsed.Push(ParsedOption{ spec.id, argument, value })
-                .transform([](ParsedList list) { return ParseState{ list, std::nullopt, ArgumentIndexTag::Parse(0) }; })
-                .transform_error([argument](infra::CapacityExceeded) { return At(OptionsErrorKind::TooManyArguments, argument); });
-        });
+    return ParseValue(spec.kind, text).transform_error([argument](OptionsErrorKind kind) { return At(kind, argument); }).and_then([&state, &spec, argument](OptionValue value) -> ParseResult {
+        return state.parsed.Push(ParsedOption{ spec.id, argument, value })
+            .transform([](ParsedList list) { return ParseState{ list, std::nullopt, ArgumentIndexTag::Parse(0) }; })
+            .transform_error([argument](infra::CapacityExceeded) { return At(OptionsErrorKind::TooManyArguments, argument); });
+    });
 }
 
 [[nodiscard]] ParseResult RecordWithoutValue(const ParseState& state, const OptionSpec& spec, ArgumentIndex argument) noexcept
@@ -451,9 +507,9 @@ template <class T>
     const std::optional<ParsedOption> option = LastOf<std::uint64_t>(list, OptionId::NgxAppId);
     if (!option.has_value())
         return std::optional<NgxAppId>{};
-    return NgxAppIdTag::Parse(Held<std::uint64_t>(option->value, 0u))
-        .transform([](NgxAppId id) { return std::optional<NgxAppId>{ id }; })
-        .transform_error([&option](UnitError) { return At(OptionsErrorKind::ValueOutOfRange, option->argument); });
+    return NgxAppIdTag::Parse(Held<std::uint64_t>(option->value, 0u)).transform([](NgxAppId id) { return std::optional<NgxAppId>{ id }; }).transform_error([&option](UnitError) {
+        return At(OptionsErrorKind::ValueOutOfRange, option->argument);
+    });
 }
 
 [[nodiscard]] Result<ProjectIdText, OptionsError> ProjectIdOf(const ParsedList& list, ProjectIdText fallback) noexcept
@@ -461,8 +517,7 @@ template <class T>
     const std::optional<ParsedOption> option = LastOf<AsciiText>(list, OptionId::NgxProjectId);
     if (!option.has_value())
         return fallback;
-    return ParseProjectId(Held<AsciiText>(option->value, AsciiText{}).Get())
-        .transform_error([&option](UnitError) { return At(OptionsErrorKind::ValueOutOfRange, option->argument); });
+    return ParseProjectId(Held<AsciiText>(option->value, AsciiText{}).Get()).transform_error([&option](UnitError) { return At(OptionsErrorKind::ValueOutOfRange, option->argument); });
 }
 
 [[nodiscard]] bool IsTargetWithAll(const Options& options) noexcept
@@ -488,16 +543,13 @@ struct ValidatedTuning
 
 [[nodiscard]] Result<ValidatedTuning, OptionsError> TuningOf(const ParsedList& list, const NrTuning& d) noexcept
 {
-    return Validated(list, OptionId::NrPreset, d.preset, NgxPresetTag::Parse).and_then([&](NgxPreset preset)
-    {
-        return Validated(list, OptionId::NrIntensity, d.intensity, StrengthTag::Parse).and_then([&](Strength intensity)
-        {
-            return Validated(list, OptionId::NrLocalStructure, d.localStructure, StrengthTag::Parse).and_then([&](Strength structure)
-            {
-                return Validated(list, OptionId::NrLocalTone, d.localTone, StrengthTag::Parse).and_then([&](Strength tone)
-                {
-                    return Validated(list, OptionId::NrSkin, d.skinStructure, SkinStrengthTag::Parse)
-                        .transform([&](SkinStrength skin) { return ValidatedTuning{ preset, intensity, structure, tone, skin }; });
+    return Validated(list, OptionId::NrPreset, d.preset, NgxPresetTag::Parse).and_then([&](NgxPreset preset) {
+        return Validated(list, OptionId::NrIntensity, d.intensity, StrengthTag::Parse).and_then([&](Strength intensity) {
+            return Validated(list, OptionId::NrLocalStructure, d.localStructure, StrengthTag::Parse).and_then([&](Strength structure) {
+                return Validated(list, OptionId::NrLocalTone, d.localTone, StrengthTag::Parse).and_then([&](Strength tone) {
+                    return Validated(list, OptionId::NrSkin, d.skinStructure, SkinStrengthTag::Parse).transform([&](SkinStrength skin) {
+                        return ValidatedTuning{ preset, intensity, structure, tone, skin };
+                    });
                 });
             });
         });
@@ -506,8 +558,8 @@ struct ValidatedTuning
 
 [[nodiscard]] NrTuning TuningFrom(const ParsedList& list, const ValidatedTuning& v, const NrTuning& d) noexcept
 {
-    return NrTuning{ v.preset, v.intensity, ValueOr(list, OptionId::NrStyle, d.style), v.localStructure, v.localTone, v.skin,
-                     ValueOr(list, OptionId::NrAutoMask, d.autoMask), ValueOr(list, OptionId::NrUiCorrection, d.uiCorrection) };
+    return NrTuning{ v.preset,    v.intensity, ValueOr(list, OptionId::NrStyle, d.style),       v.localStructure,
+                     v.localTone, v.skin,      ValueOr(list, OptionId::NrAutoMask, d.autoMask), ValueOr(list, OptionId::NrUiCorrection, d.uiCorrection) };
 }
 
 struct ValidatedNumbers
@@ -520,21 +572,18 @@ struct ValidatedNumbers
 
 [[nodiscard]] Result<ValidatedNumbers, OptionsError> NumbersOf(const ParsedList& list, const Options& d) noexcept
 {
-    return Validated(list, OptionId::SrPreset, d.srPreset, SrPresetTag::Parse).and_then([&](SrPreset srPreset)
-    {
-        return Validated(list, OptionId::MvLevel, d.motionFinestLevel, LevelIndexTag::Parse).and_then([&](LevelIndex level)
-        {
-            return Validated(list, OptionId::DepthValue, d.depthValue, DepthValueTag::Parse).and_then([&](DepthValue depth)
-            {
-                return Validated(list, OptionId::ResetThreshold, d.resetThreshold, FractionTag::Parse)
-                    .transform([&](Fraction threshold) { return ValidatedNumbers{ srPreset, level, depth, threshold }; });
+    return Validated(list, OptionId::SrPreset, d.srPreset, SrPresetTag::Parse).and_then([&](SrPreset srPreset) {
+        return Validated(list, OptionId::MvLevel, d.motionFinestLevel, LevelIndexTag::Parse).and_then([&](LevelIndex level) {
+            return Validated(list, OptionId::DepthValue, d.depthValue, DepthValueTag::Parse).and_then([&](DepthValue depth) {
+                return Validated(list, OptionId::ResetThreshold, d.resetThreshold, FractionTag::Parse).transform([&](Fraction threshold) {
+                    return ValidatedNumbers{ srPreset, level, depth, threshold };
+                });
             });
         });
     });
 }
 
-[[nodiscard]] Options Assemble(const ParsedList& list, const Options& d, const NrTuning& tuning, const ValidatedNumbers& n,
-                               std::optional<NgxAppId> appId, ProjectIdText projectId) noexcept
+[[nodiscard]] Options Assemble(const ParsedList& list, const Options& d, const NrTuning& tuning, const ValidatedNumbers& n, std::optional<NgxAppId> appId, ProjectIdText projectId) noexcept
 {
     return Options{
         HasFlag(list, OptionId::Help),
@@ -575,14 +624,12 @@ struct ValidatedNumbers
 [[nodiscard]] Result<Options, OptionsError> Build(const ParsedList& list) noexcept
 {
     const Options d = DefaultOptions();
-    return TuningOf(list, d.tuning).and_then([&](ValidatedTuning tuning)
-    {
-        return NumbersOf(list, d).and_then([&](ValidatedNumbers numbers)
-        {
-            return AppIdOf(list).and_then([&](std::optional<NgxAppId> appId)
-            {
-                return ProjectIdOf(list, d.ngxProjectId)
-                    .and_then([&](ProjectIdText projectId) { return RejectConflicts(Assemble(list, d, TuningFrom(list, tuning, d.tuning), numbers, appId, projectId)); });
+    return TuningOf(list, d.tuning).and_then([&](ValidatedTuning tuning) {
+        return NumbersOf(list, d).and_then([&](ValidatedNumbers numbers) {
+            return AppIdOf(list).and_then([&](std::optional<NgxAppId> appId) {
+                return ProjectIdOf(list, d.ngxProjectId).and_then([&](ProjectIdText projectId) {
+                    return RejectConflicts(Assemble(list, d, TuningFrom(list, tuning, d.tuning), numbers, appId, projectId));
+                });
             });
         });
     });
@@ -595,8 +642,7 @@ struct ValidatedNumbers
 
 [[nodiscard]] Result<ParseState, OptionsError> FoldArguments(std::span<const std::wstring_view> arguments) noexcept
 {
-    return infra::FoldResult(std::views::iota(std::uint32_t{ 0 }, static_cast<std::uint32_t>(arguments.size())),
-                             ParseResult(ParseState{ ParsedList{}, std::nullopt, ArgumentIndexTag::Parse(0) }),
+    return infra::FoldResult(std::views::iota(std::uint32_t{ 0 }, static_cast<std::uint32_t>(arguments.size())), ParseResult(ParseState{ ParsedList{}, std::nullopt, ArgumentIndexTag::Parse(0) }),
                              [arguments](const ParseState& state, std::uint32_t index) { return ConsumeIndexed(state, arguments, index); });
 }
 
@@ -618,11 +664,38 @@ static_assert(kDefaultLevel.has_value() && kDefaultProjectId.has_value());
 Options DefaultOptions() noexcept
 {
     return Options{
-        false, false, SourceSelection{ MonitorSelectionKind::Primary, RequestedMonitorTag::Parse(0) }, std::nullopt, true,
+        false,
+        false,
+        SourceSelection{ MonitorSelectionKind::Primary, RequestedMonitorTag::Parse(0) },
+        std::nullopt,
+        true,
         NrTuning{ *kDefaultPreset, *kDefaultIntensity, NrStyle::Standard, *kDefaultIntensity, *kDefaultIntensity, *kDefaultSkin, true, true },
-        SrMode::Auto, *kDefaultSrPreset, MotionBackend::BuiltIn, *kDefaultLevel, GridSize::One, PerfLevel::Medium, *kDefaultDepth,
-        *kDefaultThreshold, CursorMode::Auto, true, CompareMode::Off, ColorFormat::Rgba8, false, DirectoryPath{}, std::nullopt,
-        *kDefaultProjectId, NgxLogLevel::On, DirectoryPath{}, true, true, true, false, false, std::nullopt, LogLevel::Info, DirectoryPath{},
+        SrMode::Auto,
+        *kDefaultSrPreset,
+        MotionBackend::BuiltIn,
+        *kDefaultLevel,
+        GridSize::One,
+        PerfLevel::Medium,
+        *kDefaultDepth,
+        *kDefaultThreshold,
+        CursorMode::Auto,
+        true,
+        CompareMode::Off,
+        ColorFormat::Rgba8,
+        false,
+        DirectoryPath{},
+        std::nullopt,
+        *kDefaultProjectId,
+        NgxLogLevel::On,
+        DirectoryPath{},
+        true,
+        true,
+        true,
+        false,
+        false,
+        std::nullopt,
+        LogLevel::Info,
+        DirectoryPath{},
     };
 }
 

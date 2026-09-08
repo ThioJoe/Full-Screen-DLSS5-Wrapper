@@ -10,8 +10,7 @@
 
 namespace sim {
 
-enum class SimError : std::uint8_t
-{
+enum class SimError : std::uint8_t {
     DeviceRemoved,
     CaptureLost,
     FenceTimeout,

@@ -1,8 +1,8 @@
-# Formatter enforced by the gate (VIII). Column limit 0 keeps the author's line breaks; everything else is normalised.
+# Formatter enforced by the gate (VIII).
 Language: Cpp
 Standard: c++20
 BasedOnStyle: LLVM
-ColumnLimit: 0
+ColumnLimit: 200
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
@@ -11,7 +11,7 @@ BraceWrapping:
   AfterCaseLabel: false
   AfterClass: true
   AfterControlStatement: Always
-  AfterEnum: true
+  AfterEnum: false
   AfterFunction: true
   AfterNamespace: false
   AfterStruct: true
@@ -37,7 +37,7 @@ AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: true
 AllowShortBlocksOnASingleLine: Never
-LambdaBodyIndentation: OuterScope
+LambdaBodyIndentation: Signature
 AlignAfterOpenBracket: Align
 AlignOperands: Align
 BinPackArguments: true
@@ -54,3 +54,4 @@ SpacesInContainerLiterals: false
 MaxEmptyLinesToKeep: 1
 KeepEmptyLinesAtTheStartOfBlocks: false
 AccessModifierOffset: -4
+AlwaysBreakTemplateDeclarations: Yes

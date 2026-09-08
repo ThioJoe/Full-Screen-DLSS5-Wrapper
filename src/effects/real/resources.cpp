@@ -14,8 +14,7 @@ using infra::Status;
 
 [[nodiscard]] D3D12_RESOURCE_DESC TextureDescription(const TextureRequest& r) noexcept
 {
-    return D3D12_RESOURCE_DESC{ D3D12_RESOURCE_DIMENSION_TEXTURE2D, 0, r.extent.width.Get(), r.extent.height.Get(), 1, 1, r.format, { 1, 0 },
-                                D3D12_TEXTURE_LAYOUT_UNKNOWN, r.flags };
+    return D3D12_RESOURCE_DESC{ D3D12_RESOURCE_DIMENSION_TEXTURE2D, 0, r.extent.width.Get(), r.extent.height.Get(), 1, 1, r.format, { 1, 0 }, D3D12_TEXTURE_LAYOUT_UNKNOWN, r.flags };
 }
 
 [[nodiscard]] D3D12_HEAP_PROPERTIES HeapOf(D3D12_HEAP_TYPE type) noexcept
@@ -41,8 +40,8 @@ using infra::Status;
     return Texture{ resource, r.extent, r.format };
 }
 
-[[nodiscard]] Result<Com<ID3D12Resource>, Error> Committed(const GpuDevice& gpu, const D3D12_RESOURCE_DESC& desc, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES state,
-                                                          const D3D12_CLEAR_VALUE* clear, const wchar_t* name) noexcept
+[[nodiscard]] Result<Com<ID3D12Resource>, Error> Committed(const GpuDevice& gpu, const D3D12_RESOURCE_DESC& desc, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES state, const D3D12_CLEAR_VALUE* clear,
+                                                           const wchar_t* name) noexcept
 {
     const D3D12_HEAP_PROPERTIES heap = HeapOf(heapType);
     Com<ID3D12Resource> resource;
@@ -82,13 +81,15 @@ using infra::Status;
 
 [[nodiscard]] D3D12_SHADER_RESOURCE_VIEW_DESC SrvDescription(DXGI_FORMAT format) noexcept
 {
-    return D3D12_SHADER_RESOURCE_VIEW_DESC{ .Format = format, .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D, .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                                            .Texture2D = D3D12_TEX2D_SRV{ 0, 1, 0, 0.0f } };
+    return D3D12_SHADER_RESOURCE_VIEW_DESC{
+        .Format = format, .ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D, .Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING, .Texture2D = D3D12_TEX2D_SRV{ 0, 1, 0, 0.0f }
+    };
 }
 
 [[nodiscard]] D3D12_UNORDERED_ACCESS_VIEW_DESC RawUavDescription(interior::ByteCount bytes) noexcept
 {
-    return D3D12_UNORDERED_ACCESS_VIEW_DESC{ .Format = DXGI_FORMAT_R32_TYPELESS, .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
+    return D3D12_UNORDERED_ACCESS_VIEW_DESC{ .Format = DXGI_FORMAT_R32_TYPELESS,
+                                             .ViewDimension = D3D12_UAV_DIMENSION_BUFFER,
                                              .Buffer = D3D12_BUFFER_UAV{ 0, bytes.Get() / 4, 0, 0, D3D12_BUFFER_UAV_FLAG_RAW } };
 }
 
@@ -96,19 +97,21 @@ using infra::Status;
 
 Result<Texture, Error> CreateTexture(const GpuDevice& gpu, const TextureRequest& request) noexcept
 {
-    return Committed(gpu, TextureDescription(request), D3D12_HEAP_TYPE_DEFAULT, request.initialState, nullptr, request.name)
-        .and_then([&request](const Com<ID3D12Resource>& resource) { return Verified(resource, request); });
+    return Committed(gpu, TextureDescription(request), D3D12_HEAP_TYPE_DEFAULT, request.initialState, nullptr, request.name).and_then([&request](const Com<ID3D12Resource>& resource) {
+        return Verified(resource, request);
+    });
 }
 
 Result<Texture, Error> CreateClearableTexture(const GpuDevice& gpu, const TextureRequest& request, float clearValue) noexcept
 {
     const D3D12_CLEAR_VALUE clear{ request.format, { { clearValue, 0.0f, 0.0f, 0.0f } } };
-    return Committed(gpu, TextureDescription(request), D3D12_HEAP_TYPE_DEFAULT, request.initialState, &clear, request.name)
-        .and_then([&request](const Com<ID3D12Resource>& resource) { return Verified(resource, request); });
+    return Committed(gpu, TextureDescription(request), D3D12_HEAP_TYPE_DEFAULT, request.initialState, &clear, request.name).and_then([&request](const Com<ID3D12Resource>& resource) {
+        return Verified(resource, request);
+    });
 }
 
-Result<Com<ID3D12Resource>, Error> CreateBuffer(const GpuDevice& gpu, interior::ByteCount bytes, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_STATES state,
-                                                D3D12_RESOURCE_FLAGS flags, const wchar_t* name) noexcept
+Result<Com<ID3D12Resource>, Error> CreateBuffer(const GpuDevice& gpu, interior::ByteCount bytes, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_STATES state, D3D12_RESOURCE_FLAGS flags,
+                                                const wchar_t* name) noexcept
 {
     return Committed(gpu, BufferDescription(bytes, flags), heap, state, nullptr, name);
 }

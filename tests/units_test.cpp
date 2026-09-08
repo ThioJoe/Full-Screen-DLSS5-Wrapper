@@ -40,10 +40,8 @@ using namespace interior;
 {
     const std::int32_t left = static_cast<std::int32_t>(proptest::DrawBelow(rng, 200)) - 100;
     const std::int32_t width = static_cast<std::int32_t>(proptest::DrawBelow(rng, 20)) - 5;
-    const auto rect = CoordinateTag::Parse(left).and_then([&](Coordinate l)
-    {
-        return CoordinateTag::Parse(left + width).and_then([&](Coordinate r)
-        {
+    const auto rect = CoordinateTag::Parse(left).and_then([&](Coordinate l) {
+        return CoordinateTag::Parse(left + width).and_then([&](Coordinate r) {
             return CoordinateTag::Parse(0).and_then([&](Coordinate t) { return CoordinateTag::Parse(10).and_then([&](Coordinate b) { return ScreenRectTag::Parse(l, t, r, b); }); });
         });
     });

@@ -48,10 +48,7 @@ using Line = infra::BoundedString<char, kLineCapacity>;
 
 struct LocalFreer
 {
-    void operator()(wchar_t** block) const noexcept
-    {
-        ENSURE(::LocalFree(block) == nullptr);
-    }
+    void operator()(wchar_t** block) const noexcept { ENSURE(::LocalFree(block) == nullptr); }
 };
 using ArgumentBlock = std::unique_ptr<wchar_t*, LocalFreer>;
 
@@ -114,8 +111,8 @@ struct Arguments
 [[nodiscard]] Status<Error> PrintMonitor(std::size_t index, const interior::MonitorInfo& m) noexcept
 {
     const std::array<char, interior::DeviceName::Capacity + 1> name = infra::NarrowedChars<interior::DeviceName::Capacity + 1>(m.name.Get());
-    const Line line = infra::Formatted<kLineCapacity>("{}: {} {}x{} at ({}, {}){}\n", index, name.data(), m.rect.Right().Get() - m.rect.Left().Get(),
-                                                      m.rect.Bottom().Get() - m.rect.Top().Get(), m.rect.Left().Get(), m.rect.Top().Get(), m.primary ? " primary" : "");
+    const Line line = infra::Formatted<kLineCapacity>("{}: {} {}x{} at ({}, {}){}\n", index, name.data(), m.rect.Right().Get() - m.rect.Left().Get(), m.rect.Bottom().Get() - m.rect.Top().Get(),
+                                                      m.rect.Left().Get(), m.rect.Top().Get(), m.primary ? " primary" : "");
     return real::WriteText(stdout, line.Get());
 }
 
@@ -194,30 +191,23 @@ struct Base
 
 [[nodiscard]] Result<Geometry, Error> ResolvedGeometry(const Console& console, const Options& options) noexcept
 {
-    return real::EnumerateMonitors().and_then([&](const interior::MonitorList& monitors)
-    {
+    return real::EnumerateMonitors().and_then([&](const interior::MonitorList& monitors) {
         return interior::ResolveGeometry(monitors, options).transform_error([&console](interior::MonitorError e) { return Logged(console, ExplainMonitor(e)); });
     });
 }
 
 [[nodiscard]] Status<Error> LogGeometry(const Console& console, const Geometry& g) noexcept
 {
-    const Line line = infra::Formatted<kLineCapacity>("Source {}x{} at ({}, {}); output {}x{} at ({}, {})", g.sourceExtent.width.Get(), g.sourceExtent.height.Get(),
-                                                      g.sourceRect.Left().Get(), g.sourceRect.Top().Get(), g.targetExtent.width.Get(), g.targetExtent.height.Get(),
-                                                      g.targetRect.Left().Get(), g.targetRect.Top().Get());
+    const Line line = infra::Formatted<kLineCapacity>("Source {}x{} at ({}, {}); output {}x{} at ({}, {})", g.sourceExtent.width.Get(), g.sourceExtent.height.Get(), g.sourceRect.Left().Get(),
+                                                      g.sourceRect.Top().Get(), g.targetExtent.width.Get(), g.targetExtent.height.Get(), g.targetRect.Left().Get(), g.targetRect.Top().Get());
     return Log(console, LogLevel::Info, line.Get());
 }
 
 [[nodiscard]] Result<Base, Error> ResolveBase(const Console& console, const Options& options) noexcept
 {
-    return real::SetDpiAwareness()
-        .and_then(real::InitializeRuntime)
-        .and_then(real::RequireCaptureSupport)
-        .and_then(ExecutableDirectory)
-        .and_then([&](const interior::DirectoryPath& directory)
-        {
-            return ResolvedGeometry(console, options).and_then([&](const Geometry& g) { return LogGeometry(console, g).transform([&] { return Base{ options, directory, g }; }); });
-        });
+    return real::SetDpiAwareness().and_then(real::InitializeRuntime).and_then(real::RequireCaptureSupport).and_then(ExecutableDirectory).and_then([&](const interior::DirectoryPath& directory) {
+        return ResolvedGeometry(console, options).and_then([&](const Geometry& g) { return LogGeometry(console, g).transform([&] { return Base{ options, directory, g }; }); });
+    });
 }
 
 [[nodiscard]] bool WantsNgx(const Options& o, const Geometry& g) noexcept
@@ -269,8 +259,9 @@ struct Base
 
 [[nodiscard]] Status<Error> LogRequirements(const Console& console, const real::GpuDevice& device, const real::NgxSettings& settings) noexcept
 {
-    return LogRequirement(console, device, settings, NVSDK_NGX_Feature_SuperSampling, "DLSS Super Resolution")
-        .and_then([&] { return LogRequirement(console, device, settings, real::kNeuralRenderingFeature, "DLSS 5 Neural Rendering"); });
+    return LogRequirement(console, device, settings, NVSDK_NGX_Feature_SuperSampling, "DLSS Super Resolution").and_then([&] {
+        return LogRequirement(console, device, settings, real::kNeuralRenderingFeature, "DLSS 5 Neural Rendering");
+    });
 }
 
 [[nodiscard]] Line AvailabilityText(std::optional<std::uint32_t> available) noexcept
@@ -287,13 +278,14 @@ struct Base
     return Log(console, LogLevel::Info, AvailabilityText(real::NeuralRenderingAvailability(runtime)).Get());
 }
 
-[[nodiscard]] Result<std::optional<real::NgxRuntime>, Error> OptionalRuntime(const Console& console, const real::GpuDevice& device, const Options& o, const real::NgxSettings& settings, bool wanted) noexcept
+[[nodiscard]] Result<std::optional<real::NgxRuntime>, Error> OptionalRuntime(const Console& console, const real::GpuDevice& device, const Options& o, const real::NgxSettings& settings,
+                                                                             bool wanted) noexcept
 {
     if (!wanted)
         return std::optional<real::NgxRuntime>{};
-    return LogRequirements(console, device, settings)
-        .and_then([&] { return real::CreateNgxRuntime(device, settings); })
-        .and_then([&](real::NgxRuntime runtime) { return LogAvailability(console, runtime, o.neuralRendering).transform([&runtime] { return std::optional<real::NgxRuntime>{ std::move(runtime) }; }); });
+    return LogRequirements(console, device, settings).and_then([&] { return real::CreateNgxRuntime(device, settings); }).and_then([&](real::NgxRuntime runtime) {
+        return LogAvailability(console, runtime, o.neuralRendering).transform([&runtime] { return std::optional<real::NgxRuntime>{ std::move(runtime) }; });
+    });
 }
 
 struct Devices
@@ -305,8 +297,7 @@ struct Devices
 [[nodiscard]] Result<Devices, Error> CreateDevices(const Console& console, const Base& b) noexcept
 {
     const bool wantsNgx = WantsNgx(b.options, b.geometry);
-    return real::CreateGpuDevice(real::DeviceSettings{ b.options.debugLayer, b.options.adapter }).and_then([&](real::GpuDevice device)
-    {
+    return real::CreateGpuDevice(real::DeviceSettings{ b.options.debugLayer, b.options.adapter }).and_then([&](real::GpuDevice device) {
         return RequireNvidia(device, wantsNgx)
             .and_then([&] { return OptionalRuntime(console, device, b.options, NgxSettingsOf(b.options, b.executableDirectory), wantsNgx); })
             .transform([&](std::optional<real::NgxRuntime> runtime) { return Devices{ std::move(device), std::move(runtime) }; });
@@ -343,12 +334,11 @@ struct Devices
 [[nodiscard]] Result<SessionPlan, Error> Planned(const Console& console, const Base& b, const Devices& d) noexcept
 {
     const bool wantsSr = interior::WantsSuperResolution(b.options, b.geometry.sourceExtent, b.geometry.targetExtent);
-    return RequireOpticalFlowBuild(b.options)
-        .and_then([&] { return RequireSuperResolutionIf(d.runtime, wantsSr); })
-        .and_then([&]
-        {
-            return interior::PlanSession(b.options, b.geometry, TableFor(d.runtime, b.geometry.targetExtent)).transform_error([&console](interior::PlanError e) { return Logged(console, ExplainPlan(e)); });
+    return RequireOpticalFlowBuild(b.options).and_then([&] { return RequireSuperResolutionIf(d.runtime, wantsSr); }).and_then([&] {
+        return interior::PlanSession(b.options, b.geometry, TableFor(d.runtime, b.geometry.targetExtent)).transform_error([&console](interior::PlanError e) {
+            return Logged(console, ExplainPlan(e));
         });
+    });
 }
 
 [[nodiscard]] std::string_view MotionName(interior::MotionBackend motion) noexcept
@@ -366,8 +356,8 @@ struct Devices
 {
     if (!p.superResolution.has_value())
         return infra::Formatted<kLineCapacity>("no super resolution");
-    return infra::Formatted<kLineCapacity>("DLSS {} {}x{} -> {}x{}", interior::Describe(p.superResolution->quality), p.superResolution->input.width.Get(),
-                                           p.superResolution->input.height.Get(), p.superResolution->output.width.Get(), p.superResolution->output.height.Get());
+    return infra::Formatted<kLineCapacity>("DLSS {} {}x{} -> {}x{}", interior::Describe(p.superResolution->quality), p.superResolution->input.width.Get(), p.superResolution->input.height.Get(),
+                                           p.superResolution->output.width.Get(), p.superResolution->output.height.Get());
 }
 
 [[nodiscard]] std::string_view NeuralRenderingText(const SessionPlan& p) noexcept
@@ -377,9 +367,9 @@ struct Devices
 
 [[nodiscard]] Status<Error> LogTuning(const Console& console, const interior::NrTuning& t) noexcept
 {
-    const Line line = infra::Formatted<kLineCapacity>("Neural rendering tuning: preset {}, intensity {:.2f}, style {}, local structure {:.2f}, local tone {:.2f}, skin {:.2f}, auto mask {}, UI correction {}",
-                                                      t.preset.Get(), t.intensity.Get(), interior::StyleCode(t.style), t.localStructure.Get(), t.localTone.Get(), t.skinStructure.Get(),
-                                                      t.autoMask, t.uiCorrection);
+    const Line line =
+        infra::Formatted<kLineCapacity>("Neural rendering tuning: preset {}, intensity {:.2f}, style {}, local structure {:.2f}, local tone {:.2f}, skin {:.2f}, auto mask {}, UI correction {}",
+                                        t.preset.Get(), t.intensity.Get(), interior::StyleCode(t.style), t.localStructure.Get(), t.localTone.Get(), t.skinStructure.Get(), t.autoMask, t.uiCorrection);
     return Log(console, LogLevel::Info, line.Get());
 }
 
@@ -421,15 +411,14 @@ struct Devices
 
 [[nodiscard]] Result<real::OutputWindow, Error> CreatedWindow(const Console& console, const Base& b) noexcept
 {
-    return WarnFeedback(console, b.options, b.geometry)
-        .and_then([&] { return real::CreateOutputWindow(b.geometry.targetRect, WindowSettingsOf(b.options)); })
-        .and_then([](real::OutputWindow window) { return real::RegisterHotkeys(window).transform([&window] { return std::move(window); }); });
+    return WarnFeedback(console, b.options, b.geometry).and_then([&] { return real::CreateOutputWindow(b.geometry.targetRect, WindowSettingsOf(b.options)); }).and_then([](real::OutputWindow window) {
+        return real::RegisterHotkeys(window).transform([&window] { return std::move(window); });
+    });
 }
 
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan) noexcept
 {
-    return CreatedWindow(console, b).and_then([&](real::OutputWindow window)
-    {
+    return CreatedWindow(console, b).and_then([&](real::OutputWindow window) {
         return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), real::EnvironmentSettings{ b.options.captureBorder }, console);
     });
 }
@@ -445,18 +434,16 @@ struct Devices
 [[nodiscard]] Result<interior::FrameNumber, Error> Drive(const Console& console, const SessionPlan& plan, real::RealEnvironment& env) noexcept
 {
     real::ShowOutputWindow(env.Window());
-    return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit")
-        .and_then([&] { return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit)); });
+    return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit").and_then([&] {
+        return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit));
+    });
 }
 
 [[nodiscard]] Result<interior::FrameNumber, Error> Run(const Console& console, const Options& options) noexcept
 {
-    return ResolveBase(console, options).and_then([&](const Base& b)
-    {
-        return CreateDevices(console, b).and_then([&](Devices d)
-        {
-            return Planned(console, b, d).and_then([&](const SessionPlan& plan)
-            {
+    return ResolveBase(console, options).and_then([&](const Base& b) {
+        return CreateDevices(console, b).and_then([&](Devices d) {
+            return Planned(console, b, d).and_then([&](const SessionPlan& plan) {
                 return LogPlan(console, plan).and_then([&] { return Environment(console, b, std::move(d), plan); }).and_then([&](real::RealEnvironment env) { return Drive(console, plan, env); });
             });
         });

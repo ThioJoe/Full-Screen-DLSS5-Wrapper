@@ -103,10 +103,9 @@ using BoundNrParameters = infra::BoundedVector<BoundNrParameter, interior::NrPar
 [[nodiscard]] std::optional<std::uint32_t> NeuralRenderingAvailability(const NgxRuntime& runtime) noexcept;
 [[nodiscard]] interior::QualityTable QualityTableFor(const NgxRuntime& runtime, const interior::Extent& target) noexcept;
 [[nodiscard]] infra::Result<Feature, Error> CreateSuperResolution(const NgxRuntime& runtime, ID3D12GraphicsCommandList* list, const interior::SrChoice& choice) noexcept;
-[[nodiscard]] infra::Result<Feature, Error> CreateNeuralRendering(const NgxRuntime& runtime, ID3D12GraphicsCommandList* list, const interior::NrTuning& tuning,
-                                                                 const interior::Extent& work) noexcept;
+[[nodiscard]] infra::Result<Feature, Error> CreateNeuralRendering(const NgxRuntime& runtime, ID3D12GraphicsCommandList* list, const interior::NrTuning& tuning, const interior::Extent& work) noexcept;
 [[nodiscard]] infra::Status<Error> EvaluateSuperResolution(const NgxRuntime& runtime, const Feature& feature, ID3D12GraphicsCommandList* list, const SrInputs& inputs) noexcept;
-[[nodiscard]] infra::Status<Error> EvaluateNeuralRendering(const NgxRuntime& runtime, const Feature& feature, ID3D12GraphicsCommandList* list,
-                                                           const interior::NrTuning& tuning, const interior::EvaluateNr& evaluate, const ResourceTable& resources) noexcept;
+[[nodiscard]] infra::Status<Error> EvaluateNeuralRendering(const NgxRuntime& runtime, const Feature& feature, ID3D12GraphicsCommandList* list, const interior::NrTuning& tuning,
+                                                           const interior::EvaluateNr& evaluate, const ResourceTable& resources) noexcept;
 
 } // namespace real

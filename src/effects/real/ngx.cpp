@@ -12,11 +12,12 @@ using infra::Fail;
 using infra::Result;
 using infra::Status;
 
-constexpr std::array<const char*, 6> kPresetNames{ NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_DLAA, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Quality,
-                                                   NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance,
-                                                   NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraPerformance, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraQuality };
-constexpr std::array<interior::SrQuality, 6> kQualities{ interior::SrQuality::Dlaa, interior::SrQuality::UltraQuality, interior::SrQuality::Quality,
-                                                         interior::SrQuality::Balanced, interior::SrQuality::Performance, interior::SrQuality::UltraPerformance };
+constexpr std::array<const char*, 6> kPresetNames{
+    NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_DLAA,        NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Quality,          NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced,
+    NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraPerformance, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraQuality
+};
+constexpr std::array<interior::SrQuality, 6> kQualities{ interior::SrQuality::Dlaa,     interior::SrQuality::UltraQuality, interior::SrQuality::Quality,
+                                                         interior::SrQuality::Balanced, interior::SrQuality::Performance,  interior::SrQuality::UltraPerformance };
 constexpr char kNeuralRenderingAvailable[] = "DLSSNR.Available";
 
 [[nodiscard]] Status<Error> CheckNgx(NVSDK_NGX_Result result, ApiCall call) noexcept
@@ -83,8 +84,7 @@ constexpr char kNeuralRenderingAvailable[] = "DLSSNR.Available";
 
 [[nodiscard]] NVSDK_NGX_Result InitWithProjectId(const NgxSettings& s, ID3D12Device* device, const NVSDK_NGX_FeatureCommonInfo& common) noexcept
 {
-    return NVSDK_NGX_D3D12_Init_with_ProjectID(s.projectId.CString(), NVSDK_NGX_ENGINE_TYPE_CUSTOM, DSCREEN_VERSION_STRING, s.dataPath.CString(), device, &common,
-                                              NVSDK_NGX_Version_API);
+    return NVSDK_NGX_D3D12_Init_with_ProjectID(s.projectId.CString(), NVSDK_NGX_ENGINE_TYPE_CUSTOM, DSCREEN_VERSION_STRING, s.dataPath.CString(), device, &common, NVSDK_NGX_Version_API);
 }
 
 [[nodiscard]] NVSDK_NGX_Result Init(const NgxSettings& s, ID3D12Device* device, const NVSDK_NGX_FeatureCommonInfo& common) noexcept
@@ -180,8 +180,8 @@ struct OptimalSettings
 [[nodiscard]] OptimalSettings Optimal(NVSDK_NGX_Parameter* p, const interior::Extent& target, NVSDK_NGX_PerfQuality_Value quality) noexcept
 {
     OptimalSettings o{};
-    o.result = NGX_DLSS_GET_OPTIMAL_SETTINGS(p, target.width.Get(), target.height.Get(), quality, &o.optimalWidth, &o.optimalHeight, &o.maxWidth, &o.maxHeight,
-                                             &o.minWidth, &o.minHeight, &o.sharpness);
+    o.result =
+        NGX_DLSS_GET_OPTIMAL_SETTINGS(p, target.width.Get(), target.height.Get(), quality, &o.optimalWidth, &o.optimalHeight, &o.maxWidth, &o.maxHeight, &o.minWidth, &o.minHeight, &o.sharpness);
     return o;
 }
 
@@ -197,10 +197,8 @@ struct OptimalSettings
 {
     if (NVSDK_NGX_FAILED(o.result))
         return std::nullopt;
-    return ExtentOf(o.optimalWidth, o.optimalHeight).and_then([&](const interior::Extent& optimal)
-    {
-        return ExtentOf(o.minWidth, o.minHeight).and_then([&](const interior::Extent& minimum)
-        {
+    return ExtentOf(o.optimalWidth, o.optimalHeight).and_then([&](const interior::Extent& optimal) {
+        return ExtentOf(o.minWidth, o.minHeight).and_then([&](const interior::Extent& minimum) {
             return ExtentOf(o.maxWidth, o.maxHeight).transform([&](const interior::Extent& maximum) { return interior::QualityRange{ quality, optimal, minimum, maximum }; });
         });
     });
@@ -230,18 +228,15 @@ void Write(NVSDK_NGX_Parameter* p, const char* name, const NgxSlot& value) noexc
 [[nodiscard]] bool ReadsBack(const NVSDK_NGX_Parameter* p, const char* name, const NgxSlot& value) noexcept
 {
     return std::visit(infra::Overloaded{
-                          [p, name](unsigned int v)
-                          {
+                          [p, name](unsigned int v) {
                               unsigned int back = 0;
                               return !NVSDK_NGX_FAILED(p->Get(name, &back)) && back == v;
                           },
-                          [p, name](float v)
-                          {
+                          [p, name](float v) {
                               float back = 0.0f;
                               return !NVSDK_NGX_FAILED(p->Get(name, &back)) && back == v;
                           },
-                          [p, name](ID3D12Resource* v)
-                          {
+                          [p, name](ID3D12Resource* v) {
                               ID3D12Resource* back = nullptr;
                               return !NVSDK_NGX_FAILED(p->Get(name, &back)) && back == v;
                           },
@@ -396,8 +391,7 @@ std::optional<std::uint32_t> NeuralRenderingAvailability(const NgxRuntime& runti
 
 interior::QualityTable QualityTableFor(const NgxRuntime& runtime, const interior::Extent& target) noexcept
 {
-    return std::ranges::fold_left(kQualities, interior::QualityTable{}, [&](const interior::QualityTable& acc, interior::SrQuality quality)
-    {
+    return std::ranges::fold_left(kQualities, interior::QualityTable{}, [&](const interior::QualityTable& acc, interior::SrQuality quality) {
         return WithRange(acc, RangeFrom(quality, Optimal(runtime.parameters.get(), target, PerfQualityOf(quality))));
     });
 }
@@ -406,8 +400,7 @@ Result<Feature, Error> CreateSuperResolution(const NgxRuntime& runtime, ID3D12Gr
 {
     NVSDK_NGX_DLSS_Create_Params create = CreateParamsOf(choice);
     NVSDK_NGX_Handle* raw = nullptr;
-    return WritePresets(runtime.parameters.get(), choice.preset)
-        .and_then([&] { return Created(raw, NGX_D3D12_CREATE_DLSS_EXT(list, 1, 1, &raw, runtime.parameters.get(), &create)); });
+    return WritePresets(runtime.parameters.get(), choice.preset).and_then([&] { return Created(raw, NGX_D3D12_CREATE_DLSS_EXT(list, 1, 1, &raw, runtime.parameters.get(), &create)); });
 }
 
 Result<Feature, Error> CreateNeuralRendering(const NgxRuntime& runtime, ID3D12GraphicsCommandList* list, const interior::NrTuning& tuning, const interior::Extent& work) noexcept
@@ -424,8 +417,8 @@ Status<Error> EvaluateSuperResolution(const NgxRuntime& runtime, const Feature& 
     return CheckNgx(NGX_D3D12_EVALUATE_DLSS_EXT(list, feature.get(), runtime.parameters.get(), &eval), ApiCall::NgxEvaluateFeature);
 }
 
-Status<Error> EvaluateNeuralRendering(const NgxRuntime& runtime, const Feature& feature, ID3D12GraphicsCommandList* list, const interior::NrTuning& tuning,
-                                      const interior::EvaluateNr& evaluate, const ResourceTable& resources) noexcept
+Status<Error> EvaluateNeuralRendering(const NgxRuntime& runtime, const Feature& feature, ID3D12GraphicsCommandList* list, const interior::NrTuning& tuning, const interior::EvaluateNr& evaluate,
+                                      const ResourceTable& resources) noexcept
 {
     return BoundOrFull(interior::NrEvaluationParameters(tuning, evaluate), resources)
         .and_then([&](const BoundNrParameters& parameters) { return WriteAll(runtime.parameters.get(), parameters); })

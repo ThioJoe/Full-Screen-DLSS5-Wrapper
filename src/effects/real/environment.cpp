@@ -110,8 +110,8 @@ using TableResult = Result<ResourceTable, Error>;
     return CreateClearableTexture(d, DepthRequest(plan), plan.depth.Get()).transform([&](const Texture& texture) { return WithResource(t, SimpleId(ResourceKind::Depth), texture.resource); });
 }
 
-[[nodiscard]] TableResult WithBufferResource(const ResourceTable& t, const GpuDevice& d, const ResourceId& id, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_STATES state,
-                                            D3D12_RESOURCE_FLAGS flags, const wchar_t* name) noexcept
+[[nodiscard]] TableResult WithBufferResource(const ResourceTable& t, const GpuDevice& d, const ResourceId& id, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_STATES state, D3D12_RESOURCE_FLAGS flags,
+                                             const wchar_t* name) noexcept
 {
     return CreateBuffer(d, interior::ByteCountTag::Parse(interior::kStatsBytes), heap, state, flags, name).transform([&](const Com<ID3D12Resource>& buffer) { return WithResource(t, id, buffer); });
 }
@@ -119,8 +119,7 @@ using TableResult = Result<ResourceTable, Error>;
 [[nodiscard]] TableResult WithZeroBuffer(const ResourceTable& t, const GpuDevice& d) noexcept
 {
     return CreateBuffer(d, interior::ByteCountTag::Parse(interior::kStatsBytes), D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_FLAG_NONE, L"Zero source")
-        .and_then([&](const Com<ID3D12Resource>& buffer)
-        {
+        .and_then([&](const Com<ID3D12Resource>& buffer) {
             return WriteZeros(buffer.Get(), interior::ByteCountTag::Parse(interior::kStatsBytes)).transform([&] { return WithResource(t, SimpleId(ResourceKind::ZeroBuffer), buffer); });
         });
 }
@@ -230,8 +229,7 @@ struct Pyramid
 
 [[nodiscard]] TableResult WithReadbacks(const ResourceTable& t, const GpuDevice& d) noexcept
 {
-    return infra::FoldResult(std::views::iota(std::uint32_t{ 0 }, interior::kFrameSlotCount), TableResult(t), [&](const ResourceTable& acc, std::uint32_t slot)
-    {
+    return infra::FoldResult(std::views::iota(std::uint32_t{ 0 }, interior::kFrameSlotCount), TableResult(t), [&](const ResourceTable& acc, std::uint32_t slot) {
         return WithBufferResource(acc, d, ReadbackIdOf(slot), D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_FLAG_NONE, L"Statistics readback");
     });
 }
@@ -282,16 +280,14 @@ struct Recording
 
 [[nodiscard]] Result<Allocators, Error> CreateAllocators(const GpuDevice& d) noexcept
 {
-    return infra::FoldResult(std::views::iota(std::size_t{ 0 }, std::tuple_size_v<Allocators>), Result<Allocators, Error>(Allocators{}), [&](const Allocators& acc, std::size_t i)
-    {
+    return infra::FoldResult(std::views::iota(std::size_t{ 0 }, std::tuple_size_v<Allocators>), Result<Allocators, Error>(Allocators{}), [&](const Allocators& acc, std::size_t i) {
         return CreateAllocator(d).transform([&](const Com<ID3D12CommandAllocator>& allocator) { return infra::WithElement(acc, i, allocator); });
     });
 }
 
 [[nodiscard]] Result<Recording, Error> CreateRecording(const GpuDevice& d) noexcept
 {
-    return CreateAllocators(d).and_then([&](const Allocators& allocators)
-    {
+    return CreateAllocators(d).and_then([&](const Allocators& allocators) {
         return CreateClosedCommandList(d, allocators[0].Get()).transform([&](const Com<ID3D12GraphicsCommandList>& list) { return Recording{ allocators, list }; });
     });
 }
@@ -302,14 +298,11 @@ struct Recording
 }
 
 [[nodiscard]] Result<Gpu, Error> WithResourcesAndCapture(GpuDevice device, Presenter presenter, const Pipelines& pipelines, const Recording& recording, const SessionPlan& plan,
-                                                        const interior::Geometry& geometry, const EnvironmentSettings& settings, const interior::LevelExtents& extents) noexcept
+                                                         const interior::Geometry& geometry, const EnvironmentSettings& settings, const interior::LevelExtents& extents) noexcept
 {
-    return CreateResources(device, plan, presenter, extents).and_then([&](const ResourceTable& resources)
-    {
-        return Lookup(resources, SimpleId(ResourceKind::Canvas)).and_then([&](ID3D12Resource* canvas)
-        {
-            return CreateCapture(device, canvas, geometry.sourceRect, plan.source, geometry.source, CaptureSettingsOf(plan, settings)).transform([&](Capture capture)
-            {
+    return CreateResources(device, plan, presenter, extents).and_then([&](const ResourceTable& resources) {
+        return Lookup(resources, SimpleId(ResourceKind::Canvas)).and_then([&](ID3D12Resource* canvas) {
+            return CreateCapture(device, canvas, geometry.sourceRect, plan.source, geometry.source, CaptureSettingsOf(plan, settings)).transform([&](Capture capture) {
                 return Gpu{ std::move(device), pipelines, std::move(presenter), std::move(capture), recording.allocators, recording.list, resources, Models{}, OpticalFlowSlot{} };
             });
         });
@@ -317,16 +310,12 @@ struct Recording
 }
 
 [[nodiscard]] Result<Gpu, Error> AssembledGpu(GpuDevice device, const SessionPlan& plan, const interior::Geometry& geometry, HWND window, const EnvironmentSettings& settings,
-                                             const interior::LevelExtents& extents) noexcept
+                                              const interior::LevelExtents& extents) noexcept
 {
-    return CreatePresenter(device, window, plan.target).and_then([&](Presenter presenter)
-    {
-        return CreatePipelines(device, kSwapChainFormat).and_then([&](const Pipelines& pipelines)
-        {
-            return CreateRecording(device).and_then([&](const Recording& recording)
-            {
-                return WithResourcesAndCapture(std::move(device), std::move(presenter), pipelines, recording, plan, geometry, settings, extents);
-            });
+    return CreatePresenter(device, window, plan.target).and_then([&](Presenter presenter) {
+        return CreatePipelines(device, kSwapChainFormat).and_then([&](const Pipelines& pipelines) {
+            return CreateRecording(device).and_then(
+                [&](const Recording& recording) { return WithResourcesAndCapture(std::move(device), std::move(presenter), pipelines, recording, plan, geometry, settings, extents); });
         });
     });
 }
@@ -342,10 +331,8 @@ void RecordDepthClear(const Gpu& gpu, ID3D12Resource* depth, interior::DepthValu
 
 [[nodiscard]] Result<interior::FenceValue, Error> ClearedDepth(const Gpu& gpu, const SessionPlan& plan, interior::FenceValue previous) noexcept
 {
-    return Lookup(gpu.resources, SimpleId(ResourceKind::Depth)).and_then([&](ID3D12Resource* depth)
-    {
-        return OpenList(gpu, *kZeroSlot).and_then([&]
-        {
+    return Lookup(gpu.resources, SimpleId(ResourceKind::Depth)).and_then([&](ID3D12Resource* depth) {
+        return OpenList(gpu, *kZeroSlot).and_then([&] {
             RecordDepthClear(gpu, depth, plan.depth);
             return FlushList(gpu, previous);
         });
@@ -363,12 +350,11 @@ struct Created
     if (!plan.superResolution.has_value())
         return Created{ std::move(c.models), c.fence };
     REQUIRE(c.models.runtime.has_value());
-    return OpenList(gpu, *kZeroSlot)
-        .and_then([&] { return CreateSuperResolution(*c.models.runtime, gpu.list.Get(), *plan.superResolution); })
-        .and_then([&](Feature feature)
-        {
-            return FlushList(gpu, c.fence).transform([&](interior::FenceValue fence) { return Created{ Models{ std::move(c.models.runtime), std::move(feature), std::move(c.models.neuralRendering) }, fence }; });
+    return OpenList(gpu, *kZeroSlot).and_then([&] { return CreateSuperResolution(*c.models.runtime, gpu.list.Get(), *plan.superResolution); }).and_then([&](Feature feature) {
+        return FlushList(gpu, c.fence).transform([&](interior::FenceValue fence) {
+            return Created{ Models{ std::move(c.models.runtime), std::move(feature), std::move(c.models.neuralRendering) }, fence };
         });
+    });
 }
 
 [[nodiscard]] Result<Created, Error> WithNeuralRendering(const Gpu& gpu, const SessionPlan& plan, Created c) noexcept
@@ -376,22 +362,24 @@ struct Created
     if (!plan.neuralRendering)
         return Created{ std::move(c.models), c.fence };
     REQUIRE(c.models.runtime.has_value());
-    return OpenList(gpu, *kZeroSlot)
-        .and_then([&] { return CreateNeuralRendering(*c.models.runtime, gpu.list.Get(), plan.tuning, plan.work); })
-        .and_then([&](Feature feature)
-        {
-            return FlushList(gpu, c.fence).transform([&](interior::FenceValue fence) { return Created{ Models{ std::move(c.models.runtime), std::move(c.models.superResolution), std::move(feature) }, fence }; });
+    return OpenList(gpu, *kZeroSlot).and_then([&] { return CreateNeuralRendering(*c.models.runtime, gpu.list.Get(), plan.tuning, plan.work); }).and_then([&](Feature feature) {
+        return FlushList(gpu, c.fence).transform([&](interior::FenceValue fence) {
+            return Created{ Models{ std::move(c.models.runtime), std::move(c.models.superResolution), std::move(feature) }, fence };
         });
+    });
 }
 
 [[nodiscard]] Gpu WithModels(Gpu g, Models m) noexcept
 {
-    return Gpu{ std::move(g.device), std::move(g.pipelines), std::move(g.presenter), std::move(g.capture), std::move(g.allocators), std::move(g.list), g.resources, std::move(m), std::move(g.opticalFlow) };
+    return Gpu{ std::move(g.device), std::move(g.pipelines), std::move(g.presenter),  std::move(g.capture), std::move(g.allocators), std::move(g.list),
+                g.resources,         std::move(m),           std::move(g.opticalFlow) };
 }
 
 [[nodiscard]] Gpu WithOpticalFlowSlot(Gpu g, OpticalFlowSlot slot) noexcept
 {
-    return Gpu{ std::move(g.device), std::move(g.pipelines), std::move(g.presenter), std::move(g.capture), std::move(g.allocators), std::move(g.list), g.resources, std::move(g.models), std::move(slot) };
+    return Gpu{
+        std::move(g.device), std::move(g.pipelines), std::move(g.presenter), std::move(g.capture), std::move(g.allocators), std::move(g.list), g.resources, std::move(g.models), std::move(slot)
+    };
 }
 
 #if DSCREEN_HAVE_NVOF
@@ -437,8 +425,7 @@ struct Ready
 
 [[nodiscard]] Result<RealEnvironment, Error> Assembled(Ready r, const SessionPlan& plan, OutputWindow window, const Console& console, const interior::LevelExtents& extents) noexcept
 {
-    return FinestPixels(plan, extents).and_then([&](std::uint32_t finest)
-    {
+    return FinestPixels(plan, extents).and_then([&](std::uint32_t finest) {
         return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), console, finest, r.fence, start); });
     });
 }
@@ -455,8 +442,9 @@ struct Prepared
 
 [[nodiscard]] Status<Error> AwaitSlot(const Gpu& gpu, const interior::FrameState& state, interior::FrameSlot slot) noexcept
 {
-    return WaitForFence(gpu.device, state.slotFences[slot.Get()], interior::MicrosecondsTag::Parse(kFenceTimeoutMicroseconds))
-        .and_then([&] { return Check(gpu.allocators[slot.Get()]->Reset(), ApiCall::ResetAllocator); });
+    return WaitForFence(gpu.device, state.slotFences[slot.Get()], interior::MicrosecondsTag::Parse(kFenceTimeoutMicroseconds)).and_then([&] {
+        return Check(gpu.allocators[slot.Get()]->Reset(), ApiCall::ResetAllocator);
+    });
 }
 
 [[nodiscard]] Result<interior::Fraction, Error> FractionOf(std::uint32_t count, std::uint32_t total) noexcept
@@ -478,12 +466,9 @@ struct Prepared
 
 [[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, std::optional<interior::Fraction> unmatched) noexcept
 {
-    return AcquireFrames(gpu.capture).and_then([&](bool fresh)
-    {
-        return Now().and_then([&](interior::Instant now)
-        {
-            return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) { return Prepared{ fresh, index, unmatched, now }; });
-        });
+    return AcquireFrames(gpu.capture).and_then([&](bool fresh) {
+        return Now().and_then(
+            [&](interior::Instant now) { return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) { return Prepared{ fresh, index, unmatched, now }; }); });
     });
 }
 
@@ -513,10 +498,8 @@ struct Prepared
 [[nodiscard]] Result<Begun, Error> Begin(const Gpu& gpu, const OutputWindow& window, std::uint32_t finestPixels, interior::FenceValue fence, const interior::FrameState& state) noexcept
 {
     const interior::FrameSlot slot = interior::SlotOfFrame(state.number);
-    return PumpEvents(window).and_then([&](const WindowEvents& events)
-    {
-        return Prepare(gpu, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; });
-    });
+    return PumpEvents(window).and_then(
+        [&](const WindowEvents& events) { return Prepare(gpu, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; }); });
 }
 
 [[nodiscard]] bool IsReportDue(const Statistics& s, interior::Instant now) noexcept
@@ -561,8 +544,8 @@ struct Prepared
 
 RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, const Console& console, std::uint32_t finestPixels, interior::FenceValue fence,
                                  interior::Instant start) noexcept
-    : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), console_(console), finestPixels_(finestPixels),
-      frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }
+    : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), console_(console), finestPixels_(finestPixels), frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence },
+      stats_{ start, 0, 0 }
 {
 }
 
@@ -590,7 +573,7 @@ Result<ExecutionReport, Error> RealEnvironment::Execute(const interior::FramePla
     if (!fence.has_value())
         return Fail(fence.error());
     frame_ = WithFence(frame_, *fence); // WAIVER(R2): the last signalled fence is effect-layer state, replaced whole per frame.
-    stats_ = Presented(stats_);          // WAIVER(R2): throughput counters, replaced whole per frame.
+    stats_ = Presented(stats_);         // WAIVER(R2): throughput counters, replaced whole per frame.
     return ExecutionReport{ *fence, static_cast<std::uint32_t>(plan.steps.Size()) };
 }
 
@@ -602,8 +585,7 @@ Error RealEnvironment::FromPlanError(interior::PlanFrameError error) noexcept
 Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const SessionPlan& plan, const interior::Geometry& geometry, OutputWindow window,
                                                  const EnvironmentSettings& settings, const Console& console) noexcept
 {
-    return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents)
-    {
+    return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
         return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents)
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
             .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), console, extents); });

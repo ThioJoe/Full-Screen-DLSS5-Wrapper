@@ -95,8 +95,7 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
     return Emit(b, Step{ Transition{ id, from, to } }).transform([&id, to](const Builder& next) { return WithState(next, id, to); });
 }
 
-[[nodiscard]] Binding Bind(std::optional<ResourceId> s0, std::optional<ResourceId> s1, std::optional<ResourceId> s2, std::optional<ResourceId> u0,
-                           std::optional<ResourceId> u1) noexcept
+[[nodiscard]] Binding Bind(std::optional<ResourceId> s0, std::optional<ResourceId> s1, std::optional<ResourceId> s2, std::optional<ResourceId> u0, std::optional<ResourceId> u1) noexcept
 {
     return Binding{ { s0, s1, s2, std::nullopt }, { u0, u1 } };
 }
@@ -141,14 +140,11 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 
 [[nodiscard]] BuildResult DownsampleLevel(const Builder& b, const LevelExtents& extents, SetIndex set, std::uint32_t level) noexcept
 {
-    return Level(level).and_then([&](LevelIndex dst)
-    {
-        return Level(level - 1).and_then([&](LevelIndex src)
-        {
+    return Level(level).and_then([&](LevelIndex dst) {
+        return Level(level - 1).and_then([&](LevelIndex src) {
             return MoveTo(b, LumaId(set, src), ResourceState::ShaderRead)
                 .and_then([&](const Builder& n) { return MoveTo(n, LumaId(set, dst), ResourceState::UnorderedAccess); })
-                .and_then([&](const Builder& n)
-                {
+                .and_then([&](const Builder& n) {
                     return EmitDispatch(n, PassId::Downsample, Bind(LumaId(set, src), std::nullopt, std::nullopt, LumaId(set, dst), std::nullopt),
                                         DownsampleConstants(extents.At(level), extents.At(level - 1)), extents.At(level));
                 });
@@ -183,9 +179,9 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 
 [[nodiscard]] BuildResult PhaseOne(const Builder& b, const SessionPlan& plan, const LevelExtents& extents, SetIndex set) noexcept
 {
-    return ConvertSteps(b, plan, set)
-        .and_then([&](const Builder& n) { return MotionPhaseOne(n, plan, extents, set); })
-        .and_then([](const Builder& n) { return Emit(n, Step{ Submit{ Phase::One } }); });
+    return ConvertSteps(b, plan, set).and_then([&](const Builder& n) { return MotionPhaseOne(n, plan, extents, set); }).and_then([](const Builder& n) {
+        return Emit(n, Step{ Submit{ Phase::One } });
+    });
 }
 
 // --- phase two: matching ------------------------------------------------------------------
@@ -253,8 +249,7 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 
 [[nodiscard]] BuildResult MatchLevel(const Builder& b, const SessionPlan& plan, const LevelExtents& extents, SetIndex set, std::uint32_t level) noexcept
 {
-    return Level(level).and_then([&](LevelIndex index)
-    {
+    return Level(level).and_then([&](LevelIndex index) {
         return MoveTo(b, LumaId(set, index), ResourceState::ShaderRead)
             .and_then([&](const Builder& n) { return MoveTo(n, LumaId(OtherSet(set), index), ResourceState::ShaderRead); })
             .and_then([&](const Builder& n) { return MoveTo(n, FlowId(index), ResourceState::UnorderedAccess); })
@@ -283,8 +278,9 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 
 [[nodiscard]] BuildResult StatsReadback(const Builder& b, FrameSlot slot) noexcept
 {
-    return MoveTo(b, SimpleId(ResourceKind::Stats), ResourceState::CopySource)
-        .and_then([slot](const Builder& n) { return Emit(n, Step{ CopyBuffer{ SimpleId(ResourceKind::Stats), ReadbackId(slot), ByteCountTag::Parse(4) } }); });
+    return MoveTo(b, SimpleId(ResourceKind::Stats), ResourceState::CopySource).and_then([slot](const Builder& n) {
+        return Emit(n, Step{ CopyBuffer{ SimpleId(ResourceKind::Stats), ReadbackId(slot), ByteCountTag::Parse(4) } });
+    });
 }
 
 [[nodiscard]] BuildResult FinalizeSteps(const Builder& b, const SessionPlan& plan, const LevelExtents& extents) noexcept
@@ -293,8 +289,7 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
     const float scale = static_cast<float>(1u << plan.finestLevel.Get());
     return MoveTo(b, FlowId(plan.finestLevel), ResourceState::ShaderRead)
         .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::MotionVectors), ResourceState::UnorderedAccess); })
-        .and_then([&](const Builder& n)
-        {
+        .and_then([&](const Builder& n) {
             return EmitDispatch(n, PassId::Finalize, Bind(std::nullopt, std::nullopt, FlowId(plan.finestLevel), SimpleId(ResourceKind::MotionVectors), std::nullopt),
                                 FinalizeConstants(finest, plan.source, scale), plan.source);
         })
@@ -318,8 +313,7 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 {
     return MoveTo(b, SimpleId(ResourceKind::OpticalFlowOutput), ResourceState::ShaderRead)
         .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::MotionVectors), ResourceState::UnorderedAccess); })
-        .and_then([&](const Builder& n)
-        {
+        .and_then([&](const Builder& n) {
             return EmitDispatch(n, PassId::FlowToMv, Bind(SimpleId(ResourceKind::OpticalFlowOutput), std::nullopt, std::nullopt, SimpleId(ResourceKind::MotionVectors), std::nullopt),
                                 FlowToMvConstants(plan, hasPrevious ? 1.0f : 0.0f), plan.source);
         })
@@ -332,8 +326,7 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
     if (written)
         return b;
     return MoveTo(b, SimpleId(ResourceKind::MotionVectors), ResourceState::UnorderedAccess)
-        .and_then([&](const Builder& n)
-        {
+        .and_then([&](const Builder& n) {
             return EmitDispatch(n, PassId::Finalize, Bind(std::nullopt, std::nullopt, std::nullopt, SimpleId(ResourceKind::MotionVectors), std::nullopt),
                                 FinalizeConstants(plan.source, plan.source, 0.0f), plan.source);
         })
@@ -367,9 +360,9 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 {
     if (!plan.superResolution.has_value())
         return b;
-    return MoveTo(b, SimpleId(ResourceKind::SrOutput), ResourceState::UnorderedAccess)
-        .and_then([&](const Builder& n) { return Emit(n, Step{ SrStep(plan, reset) }); })
-        .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::SrOutput), ResourceState::ShaderRead); });
+    return MoveTo(b, SimpleId(ResourceKind::SrOutput), ResourceState::UnorderedAccess).and_then([&](const Builder& n) { return Emit(n, Step{ SrStep(plan, reset) }); }).and_then([](const Builder& n) {
+        return MoveTo(n, SimpleId(ResourceKind::SrOutput), ResourceState::ShaderRead);
+    });
 }
 
 [[nodiscard]] ResourceKind ColorSourceOf(const SessionPlan& plan) noexcept
@@ -391,9 +384,9 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 {
     if (!plan.neuralRendering)
         return b;
-    return MoveTo(b, SimpleId(ResourceKind::NrOutput), ResourceState::UnorderedAccess)
-        .and_then([&](const Builder& n) { return Emit(n, Step{ NrStep(plan, reset) }); })
-        .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::NrOutput), ResourceState::ShaderRead); });
+    return MoveTo(b, SimpleId(ResourceKind::NrOutput), ResourceState::UnorderedAccess).and_then([&](const Builder& n) { return Emit(n, Step{ NrStep(plan, reset) }); }).and_then([](const Builder& n) {
+        return MoveTo(n, SimpleId(ResourceKind::NrOutput), ResourceState::ShaderRead);
+    });
 }
 
 // --- blit and present --------------------------------------------------------------------------
@@ -458,10 +451,18 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 
 [[nodiscard]] FrameState NextState(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const StateTable& states, FrameSlot slot) noexcept
 {
-    return FrameState{ FrameNumberTag::Parse(state.number.Get() + 1), NextSet(state, input.freshCapture), states, OrFresh(state.hasOutput, input),
-                       OrFresh(state.hasPrevious, input), ExceedsThreshold(input.unmatched, plan.resetThreshold), OrFresh(state.zeroMotionWritten, input),
-                       NextCapture(state, input), NextDisplay(state.display, input.toggleOriginal, input.toggleSplit), state.slotFences,
-                       infra::WithElement(state.statsPending, slot.Get(), EmitsStats(plan, input.freshCapture)), DisplaySourceOf(plan) };
+    return FrameState{ FrameNumberTag::Parse(state.number.Get() + 1),
+                       NextSet(state, input.freshCapture),
+                       states,
+                       OrFresh(state.hasOutput, input),
+                       OrFresh(state.hasPrevious, input),
+                       ExceedsThreshold(input.unmatched, plan.resetThreshold),
+                       OrFresh(state.zeroMotionWritten, input),
+                       NextCapture(state, input),
+                       NextDisplay(state.display, input.toggleOriginal, input.toggleSplit),
+                       state.slotFences,
+                       infra::WithElement(state.statsPending, slot.Get(), EmitsStats(plan, input.freshCapture)),
+                       DisplaySourceOf(plan) };
 }
 
 [[nodiscard]] BuildResult FreshSteps(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const LevelExtents& extents, FrameSlot slot) noexcept
@@ -543,9 +544,15 @@ struct InitialEntry
     ResourceState state;
 };
 
-constexpr std::array<InitialEntry, 10> kInitialEntries{ { { 0, ResourceState::CopyDest }, { 2, ResourceState::ShaderRead }, { 4, ResourceState::CopyDest },
-                                                          { 5, ResourceState::GenericRead }, { 8, ResourceState::Common }, { 9, ResourceState::Present },
-                                                          { 10, ResourceState::Present }, { 11, ResourceState::Present }, { 12, ResourceState::CopyDest },
+constexpr std::array<InitialEntry, 10> kInitialEntries{ { { 0, ResourceState::CopyDest },
+                                                          { 2, ResourceState::ShaderRead },
+                                                          { 4, ResourceState::CopyDest },
+                                                          { 5, ResourceState::GenericRead },
+                                                          { 8, ResourceState::Common },
+                                                          { 9, ResourceState::Present },
+                                                          { 10, ResourceState::Present },
+                                                          { 11, ResourceState::Present },
+                                                          { 12, ResourceState::CopyDest },
                                                           { 13, ResourceState::CopyDest } } };
 
 [[nodiscard]] StateTable WithEntry(const StateTable& table, const InitialEntry& entry) noexcept
@@ -560,8 +567,10 @@ StateTable InitialStates() noexcept
 
 FrameState InitialFrameState(const SessionPlan& plan) noexcept
 {
-    return FrameState{ FrameNumberTag::Parse(0), *kZeroSet, InitialStates(), false, false, false, false, std::nullopt, plan.initialDisplay,
-                       { FenceValueTag::Parse(0), FenceValueTag::Parse(0) }, { false, false }, DisplaySourceOf(plan) };
+    return FrameState{
+        FrameNumberTag::Parse(0), *kZeroSet, InitialStates(), false, false, false, false, std::nullopt, plan.initialDisplay, { FenceValueTag::Parse(0), FenceValueTag::Parse(0) }, { false, false },
+        DisplaySourceOf(plan)
+    };
 }
 
 FrameSlot SlotOfFrame(FrameNumber number) noexcept
@@ -599,10 +608,8 @@ bool ExceedsThreshold(std::optional<Fraction> unmatched, Fraction threshold) noe
 Result<FramePlan, PlanFrameError> PlanFrame(const SessionPlan& plan, const FrameState& state, const FrameInput& input) noexcept
 {
     const FrameSlot slot = SlotOfFrame(state.number);
-    return LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const LevelExtents& extents)
-    {
-        return StepsFor(plan, state, input, extents, slot)
-            .transform([&](const Builder& built) { return FramePlan{ built.steps, NextState(plan, state, input, built.states, slot), input.quit }; });
+    return LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const LevelExtents& extents) {
+        return StepsFor(plan, state, input, extents, slot).transform([&](const Builder& built) { return FramePlan{ built.steps, NextState(plan, state, input, built.states, slot), input.quit }; });
     });
 }
 

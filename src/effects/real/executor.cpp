@@ -104,8 +104,7 @@ void CreateResourceView(const GpuDevice& device, ViewKind kind, ID3D12Resource* 
 
 [[nodiscard]] Status<Error> WriteViews(const Gpu& gpu, ViewKind kind, std::span<const std::optional<ResourceId>> ids, std::uint32_t base) noexcept
 {
-    return infra::ForEach(std::views::iota(std::size_t{ 0 }, ids.size()), Status<Error>{},
-                          [&](std::size_t i) { return WriteView(gpu, kind, ids[i], base + static_cast<std::uint32_t>(i)); });
+    return infra::ForEach(std::views::iota(std::size_t{ 0 }, ids.size()), Status<Error>{}, [&](std::size_t i) { return WriteView(gpu, kind, ids[i], base + static_cast<std::uint32_t>(i)); });
 }
 
 [[nodiscard]] Status<Error> WriteBinding(const Gpu& gpu, const interior::Binding& b, std::uint32_t base) noexcept
@@ -142,8 +141,7 @@ void SetComputeState(const Gpu& gpu, const interior::Dispatch& d, std::uint32_t 
 
 [[nodiscard]] StepResult RecordTransition(const Gpu& gpu, const interior::Transition& t, const Cursor& c) noexcept
 {
-    return Lookup(gpu.resources, t.resource).transform([&](ID3D12Resource* resource)
-    {
+    return Lookup(gpu.resources, t.resource).transform([&](ID3D12Resource* resource) {
         RecordBarrier(gpu.list.Get(), resource, t.from, t.to);
         return c;
     });
@@ -151,10 +149,8 @@ void SetComputeState(const Gpu& gpu, const interior::Dispatch& d, std::uint32_t 
 
 [[nodiscard]] StepResult RecordCopy(const Gpu& gpu, const interior::CopyBuffer& copy, const Cursor& c) noexcept
 {
-    return Lookup(gpu.resources, copy.source).and_then([&](ID3D12Resource* source)
-    {
-        return Lookup(gpu.resources, copy.destination).transform([&](ID3D12Resource* destination)
-        {
+    return Lookup(gpu.resources, copy.source).and_then([&](ID3D12Resource* source) {
+        return Lookup(gpu.resources, copy.destination).transform([&](ID3D12Resource* destination) {
             gpu.list->CopyBufferRegion(destination, 0, source, 0, copy.bytes.Get());
             return c;
         });
@@ -170,12 +166,9 @@ void SetComputeState(const Gpu& gpu, const interior::Dispatch& d, std::uint32_t 
 
 [[nodiscard]] Result<ModelIo, Error> ResolvedIo(const ResourceTable& table, const interior::ModelIo& io) noexcept
 {
-    return Lookup(table, io.color).and_then([&](ID3D12Resource* color)
-    {
-        return Lookup(table, io.depth).and_then([&](ID3D12Resource* depth)
-        {
-            return Lookup(table, io.motionVectors).and_then([&](ID3D12Resource* motionVectors)
-            {
+    return Lookup(table, io.color).and_then([&](ID3D12Resource* color) {
+        return Lookup(table, io.depth).and_then([&](ID3D12Resource* depth) {
+            return Lookup(table, io.motionVectors).and_then([&](ID3D12Resource* motionVectors) {
                 return Lookup(table, io.output).transform([&](ID3D12Resource* output) { return ModelIo{ color, depth, motionVectors, output }; });
             });
         });

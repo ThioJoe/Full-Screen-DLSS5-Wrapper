@@ -11,10 +11,7 @@ namespace real {
 
 struct FileCloser
 {
-    void operator()(std::FILE* file) const noexcept
-    {
-        ENSURE(std::fclose(file) == 0);
-    }
+    void operator()(std::FILE* file) const noexcept { ENSURE(std::fclose(file) == 0); }
 };
 using UniqueFile = std::unique_ptr<std::FILE, FileCloser>;
 

@@ -36,9 +36,8 @@ struct Capture
 
 [[nodiscard]] infra::Status<Error> InitializeRuntime() noexcept;
 [[nodiscard]] infra::Status<Error> RequireCaptureSupport() noexcept;
-[[nodiscard]] infra::Result<Capture, Error> CreateCapture(const GpuDevice& gpu, ID3D12Resource* canvas, const interior::ScreenRect& canvasRect,
-                                                          const interior::Extent& canvasExtent, const interior::MonitorList& monitors,
-                                                          const CaptureSettings& settings) noexcept;
+[[nodiscard]] infra::Result<Capture, Error> CreateCapture(const GpuDevice& gpu, ID3D12Resource* canvas, const interior::ScreenRect& canvasRect, const interior::Extent& canvasExtent,
+                                                          const interior::MonitorList& monitors, const CaptureSettings& settings) noexcept;
 [[nodiscard]] infra::Result<bool, Error> AcquireFrames(const Capture& capture) noexcept;
 
 } // namespace real

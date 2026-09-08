@@ -41,10 +41,7 @@ public:
 private:
     explicit constexpr BoundedString(View text) noexcept : chars_(Copied(text)), size_(text.size()) {}
 
-    [[nodiscard]] static constexpr std::array<Char, N + 1> Copied(View text) noexcept
-    {
-        return CopiedImpl(text, std::make_index_sequence<N + 1>{});
-    }
+    [[nodiscard]] static constexpr std::array<Char, N + 1> Copied(View text) noexcept { return CopiedImpl(text, std::make_index_sequence<N + 1>{}); }
 
     template <std::size_t... I>
     [[nodiscard]] static constexpr std::array<Char, N + 1> CopiedImpl(View text, std::index_sequence<I...>) noexcept

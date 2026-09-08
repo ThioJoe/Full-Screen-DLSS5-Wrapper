@@ -132,19 +132,34 @@ constexpr QualityOrder kUltraOrder{ SrQuality::UltraPerformance, SrQuality::Perf
     return *clamped;
 }
 
-[[nodiscard]] SessionPlan Assemble(const Options& o, const Geometry& g, const std::optional<SrChoice>& sr, const Extent& work,
-                                   const Extent& flow, Scale scaleX, Scale scaleY) noexcept
+[[nodiscard]] SessionPlan Assemble(const Options& o, const Geometry& g, const std::optional<SrChoice>& sr, const Extent& work, const Extent& flow, Scale scaleX, Scale scaleY) noexcept
 {
     const LevelCount levels = LevelCountFor(g.sourceExtent);
-    return SessionPlan{ g.sourceExtent, g.targetExtent, work, sr, o.neuralRendering, o.tuning, o.motion, levels, ClampedFinest(o.motionFinestLevel, levels),
-                        o.nvofGrid, o.nvofPerf, flow, scaleX, scaleY, o.depthValue, o.resetThreshold, o.format, InitialDisplay(o.compare),
-                        WantsCursor(o, g), o.vsync };
+    return SessionPlan{ g.sourceExtent,
+                        g.targetExtent,
+                        work,
+                        sr,
+                        o.neuralRendering,
+                        o.tuning,
+                        o.motion,
+                        levels,
+                        ClampedFinest(o.motionFinestLevel, levels),
+                        o.nvofGrid,
+                        o.nvofPerf,
+                        flow,
+                        scaleX,
+                        scaleY,
+                        o.depthValue,
+                        o.resetThreshold,
+                        o.format,
+                        InitialDisplay(o.compare),
+                        WantsCursor(o, g),
+                        o.vsync };
 }
 
 [[nodiscard]] Result<SessionPlan, PlanError> WithScales(const Options& o, const Geometry& g, const std::optional<SrChoice>& sr, const Extent& work, const Extent& flow) noexcept
 {
-    return ScaleBetween(work.width, g.sourceExtent.width).and_then([&](Scale scaleX)
-    {
+    return ScaleBetween(work.width, g.sourceExtent.width).and_then([&](Scale scaleX) {
         return ScaleBetween(work.height, g.sourceExtent.height).transform([&](Scale scaleY) { return Assemble(o, g, sr, work, flow, scaleX, scaleY); });
     });
 }
@@ -178,11 +193,10 @@ DisplayMode InitialDisplay(CompareMode compare) noexcept
 
 Result<SessionPlan, PlanError> PlanSession(const Options& options, const Geometry& geometry, const QualityTable& table) noexcept
 {
-    return ChooseSuperResolution(options, geometry, table).and_then([&](const std::optional<SrChoice>& sr)
-    {
-        return GridExtent(geometry.sourceExtent, GridCells(options.nvofGrid))
-            .transform_error([](PyramidError) { return PlanError::Arithmetic; })
-            .and_then([&](const Extent& flow) { return WithScales(options, geometry, sr, WorkExtent(sr, geometry.sourceExtent), flow); });
+    return ChooseSuperResolution(options, geometry, table).and_then([&](const std::optional<SrChoice>& sr) {
+        return GridExtent(geometry.sourceExtent, GridCells(options.nvofGrid)).transform_error([](PyramidError) { return PlanError::Arithmetic; }).and_then([&](const Extent& flow) {
+            return WithScales(options, geometry, sr, WorkExtent(sr, geometry.sourceExtent), flow);
+        });
     });
 }
 

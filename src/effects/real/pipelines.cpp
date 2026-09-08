@@ -67,8 +67,7 @@ using infra::Status;
 {
     Com<ID3DBlob> blob;
     Com<ID3DBlob> errors;
-    return Check(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1_0, &blob, &errors), ApiCall::SerializeRootSignature).and_then([&]() -> Result<Com<ID3D12RootSignature>, Error>
-    {
+    return Check(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1_0, &blob, &errors), ApiCall::SerializeRootSignature).and_then([&]() -> Result<Com<ID3D12RootSignature>, Error> {
         Com<ID3D12RootSignature> root;
         const HRESULT hr = gpu.device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&root));
         return Check(hr, ApiCall::CreateRootSignature).transform([&root] { return root; });
@@ -80,7 +79,8 @@ using infra::Status;
     const D3D12_DESCRIPTOR_RANGE srvRange = Range(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, kComputeSrvCount);
     const D3D12_DESCRIPTOR_RANGE uavRange = Range(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, kComputeUavCount);
     const std::array<D3D12_ROOT_PARAMETER, 3> params{ ConstantsParameter(), TableParameter(&srvRange, D3D12_SHADER_VISIBILITY_ALL), TableParameter(&uavRange, D3D12_SHADER_VISIBILITY_ALL) };
-    const std::array<D3D12_STATIC_SAMPLER_DESC, 2> samplers{ Sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_SHADER_VISIBILITY_ALL), Sampler(1, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_SHADER_VISIBILITY_ALL) };
+    const std::array<D3D12_STATIC_SAMPLER_DESC, 2> samplers{ Sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_SHADER_VISIBILITY_ALL),
+                                                             Sampler(1, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_SHADER_VISIBILITY_ALL) };
     return Serialize(gpu, D3D12_ROOT_SIGNATURE_DESC{ 3, params.data(), 2, samplers.data(), D3D12_ROOT_SIGNATURE_FLAG_NONE });
 }
 
@@ -93,7 +93,8 @@ using infra::Status;
 {
     const D3D12_DESCRIPTOR_RANGE srvRange = Range(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, kBlitSrvCount);
     const std::array<D3D12_ROOT_PARAMETER, 2> params{ ConstantsParameter(), TableParameter(&srvRange, D3D12_SHADER_VISIBILITY_PIXEL) };
-    const std::array<D3D12_STATIC_SAMPLER_DESC, 2> samplers{ Sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_SHADER_VISIBILITY_PIXEL), Sampler(1, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_SHADER_VISIBILITY_PIXEL) };
+    const std::array<D3D12_STATIC_SAMPLER_DESC, 2> samplers{ Sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR, D3D12_SHADER_VISIBILITY_PIXEL),
+                                                             Sampler(1, D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_SHADER_VISIBILITY_PIXEL) };
     return Serialize(gpu, D3D12_ROOT_SIGNATURE_DESC{ 2, params.data(), 2, samplers.data(), BlitFlags() });
 }
 
@@ -156,22 +157,16 @@ struct ComputePsos
 
 [[nodiscard]] Result<Roots, Error> CreateRoots(const GpuDevice& gpu) noexcept
 {
-    return CreateComputeRoot(gpu).and_then([&gpu](const Com<ID3D12RootSignature>& compute)
-    {
-        return CreateBlitRoot(gpu).transform([&compute](const Com<ID3D12RootSignature>& blit) { return Roots{ compute, blit }; });
-    });
+    return CreateComputeRoot(gpu).and_then(
+        [&gpu](const Com<ID3D12RootSignature>& compute) { return CreateBlitRoot(gpu).transform([&compute](const Com<ID3D12RootSignature>& blit) { return Roots{ compute, blit }; }); });
 }
 
 [[nodiscard]] Result<ComputePsos, Error> CreateComputePsos(const GpuDevice& gpu, ID3D12RootSignature* root) noexcept
 {
-    return CreateCompute(gpu, root, kConvertCS).and_then([&](const Com<ID3D12PipelineState>& convert)
-    {
-        return CreateCompute(gpu, root, kDownsampleCS).and_then([&](const Com<ID3D12PipelineState>& downsample)
-        {
-            return CreateCompute(gpu, root, kMatchCS).and_then([&](const Com<ID3D12PipelineState>& match)
-            {
-                return CreateCompute(gpu, root, kFinalizeCS).and_then([&](const Com<ID3D12PipelineState>& finalize)
-                {
+    return CreateCompute(gpu, root, kConvertCS).and_then([&](const Com<ID3D12PipelineState>& convert) {
+        return CreateCompute(gpu, root, kDownsampleCS).and_then([&](const Com<ID3D12PipelineState>& downsample) {
+            return CreateCompute(gpu, root, kMatchCS).and_then([&](const Com<ID3D12PipelineState>& match) {
+                return CreateCompute(gpu, root, kFinalizeCS).and_then([&](const Com<ID3D12PipelineState>& finalize) {
                     return CreateCompute(gpu, root, kFlowToMvCS).transform([&](const Com<ID3D12PipelineState>& flowToMv) { return ComputePsos{ convert, downsample, match, finalize, flowToMv }; });
                 });
             });
@@ -183,12 +178,11 @@ struct ComputePsos
 
 Result<Pipelines, Error> CreatePipelines(const GpuDevice& gpu, DXGI_FORMAT swapChainFormat) noexcept
 {
-    return CreateRoots(gpu).and_then([&](const Roots& roots)
-    {
-        return CreateComputePsos(gpu, roots.compute.Get()).and_then([&](const ComputePsos& c)
-        {
-            return CreateBlit(gpu, roots.blit.Get(), swapChainFormat)
-                .transform([&](const Com<ID3D12PipelineState>& blit) { return Pipelines{ roots.compute, roots.blit, c.convert, c.downsample, c.match, c.finalize, c.flowToMv, blit }; });
+    return CreateRoots(gpu).and_then([&](const Roots& roots) {
+        return CreateComputePsos(gpu, roots.compute.Get()).and_then([&](const ComputePsos& c) {
+            return CreateBlit(gpu, roots.blit.Get(), swapChainFormat).transform([&](const Com<ID3D12PipelineState>& blit) {
+                return Pipelines{ roots.compute, roots.blit, c.convert, c.downsample, c.match, c.finalize, c.flowToMv, blit };
+            });
         });
     });
 }

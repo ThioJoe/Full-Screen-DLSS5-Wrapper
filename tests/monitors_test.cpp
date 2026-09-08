@@ -15,11 +15,11 @@ using namespace interior;
     const std::int32_t top = static_cast<std::int32_t>(proptest::DrawBelow(rng, 4000)) - 2000;
     const std::int32_t width = static_cast<std::int32_t>(proptest::DrawBetween(rng, 640, 3840));
     const std::int32_t height = static_cast<std::int32_t>(proptest::DrawBetween(rng, 480, 2160));
-    const auto rect = CoordinateTag::Parse(left).and_then([&](Coordinate l)
-    {
-        return CoordinateTag::Parse(top).and_then([&](Coordinate t)
-        {
-            return CoordinateTag::Parse(left + width).and_then([&](Coordinate r) { return CoordinateTag::Parse(top + height).and_then([&](Coordinate b) { return ScreenRectTag::Parse(l, t, r, b); }); });
+    const auto rect = CoordinateTag::Parse(left).and_then([&](Coordinate l) {
+        return CoordinateTag::Parse(top).and_then([&](Coordinate t) {
+            return CoordinateTag::Parse(left + width).and_then([&](Coordinate r) {
+                return CoordinateTag::Parse(top + height).and_then([&](Coordinate b) { return ScreenRectTag::Parse(l, t, r, b); });
+            });
         });
     });
     const auto h = MonitorHandleTag::Parse(handle);
@@ -59,10 +59,9 @@ using namespace interior;
 {
     const MonitorList monitors = RandomMonitors(rng);
     const auto rect = UnionRect(monitors);
-    return rect.has_value() && std::ranges::all_of(monitors.Items(), [&](const MonitorInfo& m)
-    {
-        return m.rect.Left() >= rect->Left() && m.rect.Right() <= rect->Right() && m.rect.Top() >= rect->Top() && m.rect.Bottom() <= rect->Bottom();
-    });
+    return rect.has_value() && std::ranges::all_of(monitors.Items(), [&](const MonitorInfo& m) {
+               return m.rect.Left() >= rect->Left() && m.rect.Right() <= rect->Right() && m.rect.Top() >= rect->Top() && m.rect.Bottom() <= rect->Bottom();
+           });
 }
 
 [[nodiscard]] bool IndexSelectionMatchesOrdering(infra::RngState& rng) noexcept

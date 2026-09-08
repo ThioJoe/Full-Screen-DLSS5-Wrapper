@@ -146,14 +146,10 @@ struct Collector
 
 [[nodiscard]] Result<interior::ScreenRect, interior::UnitError> RectOf(const RECT& r) noexcept
 {
-    return interior::CoordinateTag::Parse(r.left).and_then([&](interior::Coordinate l)
-    {
-        return interior::CoordinateTag::Parse(r.top).and_then([&](interior::Coordinate t)
-        {
-            return interior::CoordinateTag::Parse(r.right).and_then([&](interior::Coordinate rr)
-            {
-                return interior::CoordinateTag::Parse(r.bottom).and_then([&](interior::Coordinate b) { return interior::ScreenRectTag::Parse(l, t, rr, b); });
-            });
+    return interior::CoordinateTag::Parse(r.left).and_then([&](interior::Coordinate l) {
+        return interior::CoordinateTag::Parse(r.top).and_then([&](interior::Coordinate t) {
+            return interior::CoordinateTag::Parse(r.right).and_then(
+                [&](interior::Coordinate rr) { return interior::CoordinateTag::Parse(r.bottom).and_then([&](interior::Coordinate b) { return interior::ScreenRectTag::Parse(l, t, rr, b); }); });
         });
     });
 }
@@ -165,11 +161,11 @@ struct Collector
 
 [[nodiscard]] std::optional<MonitorInfo> InfoOf(HMONITOR handle, const MONITORINFOEXW& info) noexcept
 {
-    return infra::AsOptional(interior::MonitorHandleTag::Parse(reinterpret_cast<std::uintptr_t>(handle))).and_then([&](interior::MonitorHandle h)
-    {
-        return infra::AsOptional(RectOf(info.rcMonitor)).and_then([&](const interior::ScreenRect& rect)
-        {
-            return infra::AsOptional(interior::DeviceName::Parse(std::wstring_view(info.szDevice))).transform([&](const interior::DeviceName& name) { return MonitorInfo{ h, rect, IsPrimary(info), name }; });
+    return infra::AsOptional(interior::MonitorHandleTag::Parse(reinterpret_cast<std::uintptr_t>(handle))).and_then([&](interior::MonitorHandle h) {
+        return infra::AsOptional(RectOf(info.rcMonitor)).and_then([&](const interior::ScreenRect& rect) {
+            return infra::AsOptional(interior::DeviceName::Parse(std::wstring_view(info.szDevice))).transform([&](const interior::DeviceName& name) {
+                return MonitorInfo{ h, rect, IsPrimary(info), name };
+            });
         });
     });
 }
@@ -282,17 +278,16 @@ Result<MonitorList, Error> EnumerateMonitors() noexcept
 
 Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept
 {
-    return RegisterClass().and_then([&] { return CreateHandle(rect, settings); }).and_then([&](UniqueWindow handle)
-    {
+    return RegisterClass().and_then([&] { return CreateHandle(rect, settings); }).and_then([&](UniqueWindow handle) {
         return Configure(handle.get(), rect, settings).transform([&] { return OutputWindow{ std::move(handle), rect }; });
     });
 }
 
 Status<Error> RegisterHotkeys(const OutputWindow& window) noexcept
 {
-    return RegisterOne(window.handle.get(), kHotkeyToggleOriginal, 'O')
-        .and_then([&] { return RegisterOne(window.handle.get(), kHotkeyToggleSplit, 'C'); })
-        .and_then([&] { return RegisterOne(window.handle.get(), kHotkeyQuit, 'Q'); });
+    return RegisterOne(window.handle.get(), kHotkeyToggleOriginal, 'O').and_then([&] { return RegisterOne(window.handle.get(), kHotkeyToggleSplit, 'C'); }).and_then([&] {
+        return RegisterOne(window.handle.get(), kHotkeyQuit, 'Q');
+    });
 }
 
 void ShowOutputWindow(const OutputWindow& window) noexcept
@@ -302,8 +297,8 @@ void ShowOutputWindow(const OutputWindow& window) noexcept
 
 Result<WindowEvents, Error> PumpEvents(const OutputWindow&) noexcept
 {
-    const Pump pumped = std::ranges::fold_left(std::views::iota(std::uint32_t{ 0 }, kMaxMessagesPerPump), Pump{ WindowEvents{ false, false, false }, false },
-                                               [](const Pump& p, std::uint32_t) { return PumpOne(p); });
+    const Pump pumped =
+        std::ranges::fold_left(std::views::iota(std::uint32_t{ 0 }, kMaxMessagesPerPump), Pump{ WindowEvents{ false, false, false }, false }, [](const Pump& p, std::uint32_t) { return PumpOne(p); });
     return pumped.events;
 }
 

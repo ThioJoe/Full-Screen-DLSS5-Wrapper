@@ -9,13 +9,44 @@
 namespace interior {
 
 // Names accepted by nvngx_dlssnr.dll (NGX feature 18), as established by OptiScaler's dlssnr module.
-enum class NrParameter : std::uint8_t
-{
-    Enabled, Width, Height, CreationNodeMask, VisibilityNodeMask, HintRenderPreset, Intensity, Style, LocalStructureStrength,
-    LocalToneStrength, SkinStructureStrength, UseAutoMask, UiCorrection, Color, Depth, MVec, Output, DepthInverted, Reset,
-    ColorSubrectBaseX, ColorSubrectBaseY, ColorSubrectWidth, ColorSubrectHeight, OutputSubrectBaseX, OutputSubrectBaseY,
-    OutputSubrectWidth, OutputSubrectHeight, DepthSubrectBaseX, DepthSubrectBaseY, DepthSubrectWidth, DepthSubrectHeight,
-    MVecSubrectBaseX, MVecSubrectBaseY, MVecSubrectWidth, MVecSubrectHeight, MVecScaleX, MVecScaleY,
+enum class NrParameter : std::uint8_t {
+    Enabled,
+    Width,
+    Height,
+    CreationNodeMask,
+    VisibilityNodeMask,
+    HintRenderPreset,
+    Intensity,
+    Style,
+    LocalStructureStrength,
+    LocalToneStrength,
+    SkinStructureStrength,
+    UseAutoMask,
+    UiCorrection,
+    Color,
+    Depth,
+    MVec,
+    Output,
+    DepthInverted,
+    Reset,
+    ColorSubrectBaseX,
+    ColorSubrectBaseY,
+    ColorSubrectWidth,
+    ColorSubrectHeight,
+    OutputSubrectBaseX,
+    OutputSubrectBaseY,
+    OutputSubrectWidth,
+    OutputSubrectHeight,
+    DepthSubrectBaseX,
+    DepthSubrectBaseY,
+    DepthSubrectWidth,
+    DepthSubrectHeight,
+    MVecSubrectBaseX,
+    MVecSubrectBaseY,
+    MVecSubrectWidth,
+    MVecSubrectHeight,
+    MVecScaleX,
+    MVecScaleY,
 };
 
 using NgxValue = std::variant<std::uint32_t, float, ResourceId>;

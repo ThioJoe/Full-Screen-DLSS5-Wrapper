@@ -9,9 +9,20 @@
 
 namespace interior {
 
-enum class ResourceKind : std::uint8_t
-{
-    Canvas, ModelColor, Depth, MotionVectors, Stats, ZeroBuffer, SrOutput, NrOutput, OpticalFlowOutput, BackBuffer, StatsReadback, Luma, Flow,
+enum class ResourceKind : std::uint8_t {
+    Canvas,
+    ModelColor,
+    Depth,
+    MotionVectors,
+    Stats,
+    ZeroBuffer,
+    SrOutput,
+    NrOutput,
+    OpticalFlowOutput,
+    BackBuffer,
+    StatsReadback,
+    Luma,
+    Flow,
 };
 
 enum class ResourceState : std::uint8_t { CopyDest, CopySource, ShaderRead, UnorderedAccess, RenderTarget, Present, Common, GenericRead };
