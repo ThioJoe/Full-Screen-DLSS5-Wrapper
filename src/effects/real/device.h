@@ -1,5 +1,6 @@
 #pragma once
 #include "effects/real/com.h"
+#include "infrastructure/bounded_vector.h"
 #include "interior/driver.h"
 #include "interior/units.h"
 
@@ -33,11 +34,25 @@ struct GpuDevice
     std::optional<interior::DriverVersion> driverVersion;
 };
 
+constexpr std::uint32_t kMaxAdapterEntries = 16;
+
+// One adapter as DXGI names it, for a panel that would rather offer names than an index to guess at.
+struct AdapterEntry
+{
+    std::uint32_t index;
+    interior::AdapterName name;
+    bool nvidia;
+};
+
+using AdapterList = infra::BoundedVector<AdapterEntry, kMaxAdapterEntries>;
+
 constexpr std::uint32_t kRtvSlots = 8;
 constexpr std::uint32_t kSrvSlots = interior::kDescriptorsPerFrame * interior::kFrameSlotCount;
 constexpr std::uint64_t kFenceTimeoutMicroseconds = 4000000;
 
 [[nodiscard]] infra::Result<GpuDevice, Error> CreateGpuDevice(const DeviceSettings& settings) noexcept;
+// The adapters the session could run on, in the order DXGI reports them, skipping the ones it could not use.
+[[nodiscard]] AdapterList UsableAdapters(IDXGIFactory4* factory) noexcept;
 [[nodiscard]] infra::Result<Com<ID3D12Fence>, Error> CreateFence(ID3D12Device* device, D3D12_FENCE_FLAGS flags) noexcept;
 [[nodiscard]] infra::Result<interior::FenceValue, Error> SignalFence(const GpuDevice& gpu, interior::FenceValue previous) noexcept;
 [[nodiscard]] infra::Status<Error> WaitForFence(const GpuDevice& gpu, interior::FenceValue value, interior::Microseconds timeout) noexcept;

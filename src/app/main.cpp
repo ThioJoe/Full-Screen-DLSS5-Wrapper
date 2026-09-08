@@ -191,13 +191,12 @@ struct Base
     Options options;
     interior::DirectoryPath executableDirectory;
     Geometry geometry;
+    interior::MonitorList monitors; // every monitor, not only the ones being captured, so the panel can name them
 };
 
-[[nodiscard]] Result<Geometry, Error> ResolvedGeometry(const Console& console, const Options& options) noexcept
+[[nodiscard]] Result<Geometry, Error> ResolvedGeometry(const Console& console, const Options& options, const interior::MonitorList& monitors) noexcept
 {
-    return real::EnumerateMonitors().and_then([&](const interior::MonitorList& monitors) {
-        return interior::ResolveGeometry(monitors, options).transform_error([&console](interior::MonitorError e) { return Logged(console, ExplainMonitor(e)); });
-    });
+    return interior::ResolveGeometry(monitors, options).transform_error([&console](interior::MonitorError e) { return Logged(console, ExplainMonitor(e)); });
 }
 
 [[nodiscard]] Status<Error> LogGeometry(const Console& console, const Geometry& g) noexcept
@@ -207,10 +206,17 @@ struct Base
     return Log(console, LogLevel::Info, line.Get());
 }
 
+[[nodiscard]] Result<Base, Error> BasedOn(const Console& console, const Options& options, const interior::DirectoryPath& directory, const interior::MonitorList& monitors) noexcept
+{
+    return ResolvedGeometry(console, options, monitors).and_then([&](const Geometry& g) {
+        return LogGeometry(console, g).transform([&] { return Base{ options, directory, g, interior::Ordered(monitors) }; });
+    });
+}
+
 [[nodiscard]] Result<Base, Error> ResolveBase(const Console& console, const Options& options) noexcept
 {
     return real::SetDpiAwareness().and_then(real::InitializeRuntime).and_then(real::RequireCaptureSupport).and_then(ExecutableDirectory).and_then([&](const interior::DirectoryPath& directory) {
-        return ResolvedGeometry(console, options).and_then([&](const Geometry& g) { return LogGeometry(console, g).transform([&] { return Base{ options, directory, g }; }); });
+        return real::EnumerateMonitors().and_then([&](const interior::MonitorList& monitors) { return BasedOn(console, options, directory, monitors); });
     });
 }
 
@@ -478,12 +484,91 @@ struct Devices
     });
 }
 
-// The panel is the ordinary way in: it opens unless --gui off asks for the overlay alone.
-[[nodiscard]] Result<std::optional<real::ControlPanel>, Error> CreatedPanel(const Options& o, const SessionPlan& plan) noexcept
+// --- naming what the machine turned out to have --------------------------------------------------------
+
+// How many presets the panel offers. The model itself will not say, so this is the range the command line
+// has always accepted; asking the model is a separate matter from offering the answer by name.
+constexpr std::uint32_t kOfferedPresets = 8;
+
+using Caption = real::ChoiceText;
+
+[[nodiscard]] Caption Named(std::wstring_view text) noexcept
 {
-    if (!o.gui)
+    return Caption::Parse(text.substr(0, std::min(text.size(), Caption::Capacity))).value_or(Caption{});
+}
+
+[[nodiscard]] Caption MonitorCaption(std::size_t index, const interior::MonitorInfo& m) noexcept
+{
+    const infra::BoundedString<char, Caption::Capacity> line =
+        infra::Formatted<Caption::Capacity>("{}: {}x{}{}", index, m.rect.Right().Get() - m.rect.Left().Get(), m.rect.Bottom().Get() - m.rect.Top().Get(), m.primary ? " primary" : "");
+    return Named(infra::WidenedChars<Caption::Capacity + 1>(line.Get()).data());
+}
+
+[[nodiscard]] real::PanelList WithMonitors(real::PanelList list, const interior::MonitorList& monitors) noexcept
+{
+    const auto add = [&monitors](const real::PanelList& so, std::size_t i) { return real::PanelList{ so.choices.Push(MonitorCaption(i, monitors.At(i))).value_or(so.choices), so.chosen }; };
+    return std::ranges::fold_left(std::views::iota(std::size_t{ 0 }, monitors.Size()), list, add);
+}
+
+[[nodiscard]] real::PanelList Started(std::wstring_view first, std::size_t chosen) noexcept
+{
+    return real::PanelList{ real::PanelList{}.choices.Push(Named(first)).value_or(real::ChoiceTexts{}), chosen };
+}
+
+// Which monitor the session is capturing: the two answers that name none come first, so a named one sits
+// at its own index plus two.
+[[nodiscard]] std::size_t SourceChoice(const Options& o) noexcept
+{
+    if (o.source.kind != interior::MonitorSelectionKind::Index)
+        return static_cast<std::size_t>(o.source.kind);
+    return o.source.index.Get() + 2u;
+}
+
+[[nodiscard]] real::PanelList SourceList(const Options& o, const interior::MonitorList& monitors) noexcept
+{
+    const real::PanelList primary = Started(L"Primary monitor", SourceChoice(o));
+    const real::PanelList both{ primary.choices.Push(Named(L"All monitors")).value_or(primary.choices), primary.chosen };
+    return WithMonitors(both, monitors);
+}
+
+[[nodiscard]] real::PanelList TargetList(const Options& o, const interior::MonitorList& monitors) noexcept
+{
+    return WithMonitors(Started(L"Same as the source", o.target.has_value() ? o.target->Get() + 1u : 0u), monitors);
+}
+
+[[nodiscard]] real::PanelList WithAdapters(real::PanelList list, const real::AdapterList& adapters) noexcept
+{
+    const auto add = [&adapters](const real::PanelList& so, std::size_t i) { return real::PanelList{ so.choices.Push(Named(adapters.At(i).name.Get())).value_or(so.choices), so.chosen }; };
+    return std::ranges::fold_left(std::views::iota(std::size_t{ 0 }, adapters.Size()), list, add);
+}
+
+[[nodiscard]] real::PanelList AdapterList(const Options& o, const real::AdapterList& adapters) noexcept
+{
+    return WithAdapters(Started(L"First NVIDIA adapter", o.adapter.has_value() ? o.adapter->Get() + 1u : 0u), adapters);
+}
+
+// The presets the model will admit to carrying. Nothing here leaves the choice off the panel entirely.
+[[nodiscard]] real::PanelList PresetList(const Options& o, std::uint32_t count) noexcept
+{
+    const auto add = [](const real::PanelList& so, std::uint32_t i) {
+        return real::PanelList{ so.choices.Push(Named(infra::WidenedChars<Caption::Capacity + 1>(infra::Formatted<Caption::Capacity>("Preset {}", i).Get()).data())).value_or(so.choices), so.chosen };
+    };
+    return std::ranges::fold_left(std::views::iota(std::uint32_t{ 0 }, count), real::PanelList{ real::ChoiceTexts{}, o.tuning.preset.Get() }, add);
+}
+
+[[nodiscard]] real::PanelLists ListsFor(const Base& b, const real::AdapterList& adapters, std::uint32_t presets) noexcept
+{
+    return real::PanelLists{ PresetList(b.options, presets), SourceList(b.options, b.monitors), TargetList(b.options, b.monitors), AdapterList(b.options, adapters) };
+}
+
+// The panel is the ordinary way in: it opens unless --gui off asks for the overlay alone.
+[[nodiscard]] Result<std::optional<real::ControlPanel>, Error> CreatedPanel(const Base& b, const SessionPlan& plan, const real::PanelLists& lists) noexcept
+{
+    if (!b.options.gui)
         return std::optional<real::ControlPanel>{};
-    return real::CreateControlPanel(o, interior::StartingLive(plan), plan.initialDisplay).transform([](real::ControlPanel panel) { return std::optional<real::ControlPanel>{ std::move(panel) }; });
+    return real::CreateControlPanel(b.options, interior::StartingLive(plan), plan.initialDisplay, lists).transform([](real::ControlPanel panel) {
+        return std::optional<real::ControlPanel>{ std::move(panel) };
+    });
 }
 
 [[nodiscard]] real::EnvironmentSettings SettingsOf(const Options& o, const SessionPlan& plan) noexcept
@@ -493,8 +578,9 @@ struct Devices
 
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan) noexcept
 {
+    const real::PanelLists lists = ListsFor(b, real::UsableAdapters(d.device.factory.Get()), kOfferedPresets);
     return CreatedWindow(console, b).and_then([&](real::OutputWindow window) {
-        return CreatedPanel(b.options, plan).and_then([&](std::optional<real::ControlPanel> panel) {
+        return CreatedPanel(b, plan, lists).and_then([&](std::optional<real::ControlPanel> panel) {
             return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), std::move(panel), SettingsOf(b.options, plan), console);
         });
     });

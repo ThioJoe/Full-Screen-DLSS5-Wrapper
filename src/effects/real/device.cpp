@@ -115,6 +115,18 @@ struct Candidate
     return found.has_value() ? found : WantedAt(factory, index, request);
 }
 
+[[nodiscard]] bool IsListable(const std::optional<Candidate>& c) noexcept
+{
+    return c.has_value() && IsUsable(*c);
+}
+
+[[nodiscard]] AdapterList WithUsable(const AdapterList& so, const std::optional<Candidate>& c) noexcept
+{
+    if (!IsListable(c))
+        return so;
+    return so.Push(AdapterEntry{ c->index, NameOf(*c), IsNvidia(*c) }).value_or(so);
+}
+
 [[nodiscard]] Result<Candidate, Error> SelectAdapter(IDXGIFactory4* factory, const std::optional<interior::RequestedAdapter>& request) noexcept
 {
     const std::optional<Candidate> found = std::ranges::fold_left(std::views::iota(std::uint32_t{ 0 }, kMaxAdapters), std::optional<Candidate>{},
@@ -317,6 +329,12 @@ Status<Error> OpenCommandList(const GpuDevice& gpu, ID3D12GraphicsCommandList* l
 Result<interior::FenceValue, Error> FlushCommandList(const GpuDevice& gpu, ID3D12GraphicsCommandList* list, interior::FenceValue previous) noexcept
 {
     return Check(list->Close(), ApiCall::CloseCommandList).and_then([&] { return ExecuteList(gpu, list); }).and_then([&] { return WaitIdle(gpu, previous); });
+}
+
+AdapterList UsableAdapters(IDXGIFactory4* factory) noexcept
+{
+    const auto add = [factory](const AdapterList& so, std::uint32_t index) { return WithUsable(so, CandidateAt(factory, index)); };
+    return std::ranges::fold_left(std::views::iota(std::uint32_t{ 0 }, kMaxAdapters), AdapterList{}, add);
 }
 
 } // namespace real

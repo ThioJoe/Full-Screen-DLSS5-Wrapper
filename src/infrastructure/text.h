@@ -49,6 +49,19 @@ template <std::size_t N>
     return NarrowedCharsImpl<N>(text, std::make_index_sequence<N>{});
 }
 
+template <std::size_t N, std::size_t... I>
+[[nodiscard]] constexpr std::array<wchar_t, N> WidenedCharsImpl(std::string_view text, std::index_sequence<I...>) noexcept
+{
+    return std::array<wchar_t, N>{ (I < text.size() ? static_cast<wchar_t>(static_cast<unsigned char>(text[I])) : wchar_t{})... };
+}
+
+// Widening is a character-for-character copy, which is only right for text that is already ASCII.
+template <std::size_t N>
+[[nodiscard]] constexpr std::array<wchar_t, N> WidenedChars(std::string_view text) noexcept
+{
+    return WidenedCharsImpl<N>(text, std::make_index_sequence<N>{});
+}
+
 template <class T>
 struct Choice
 {
