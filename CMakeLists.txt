@@ -29,7 +29,7 @@ set(NVOF_SDK_DIR "$ENV{NVOF_SDK_DIR}" CACHE PATH "Root of the NVIDIA Optical Flo
 # --- warnings as errors, pedantic ------------------------------------------------------------
 add_library(dscreen_flags INTERFACE)
 if(MSVC)
-  target_compile_options(dscreen_flags INTERFACE /W4 /WX /permissive- /utf-8 /EHsc /Zc:__cplusplus /bigobj /Bt+ /d2cgsummary /external:anglebrackets /external:W0 /w14062 /w14254 /w14265 /w14296 /w14545 /w14546 /w14547 /w14549 /w14555 /w14619 /w14640 /w14826 /w14905 /w14906 /w14928 /w15038)
+  target_compile_options(dscreen_flags INTERFACE /W4 /WX /permissive- /utf-8 /EHsc /Zc:__cplusplus /bigobj /external:anglebrackets /external:W0 /w14062 /w14254 /w14265 /w14296 /w14545 /w14546 /w14547 /w14549 /w14555 /w14619 /w14640 /w14826 /w14905 /w14906 /w14928 /w15038)
   target_compile_definitions(dscreen_flags INTERFACE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00 WINVER=0x0A00 NTDDI_VERSION=0x0A000008 _CRT_SECURE_NO_WARNINGS)
   if(CMAKE_GENERATOR MATCHES "Visual Studio")
     target_compile_options(dscreen_flags INTERFACE /MP) # MSBuild compiles a project's files one at a time otherwise

@@ -3,6 +3,7 @@
 #include "infrastructure/contracts.h"
 #include "infrastructure/result.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <string_view>
@@ -41,12 +42,11 @@ public:
 private:
     explicit constexpr BoundedString(View text) noexcept : chars_(Copied(text)), size_(text.size()) {}
 
-    [[nodiscard]] static constexpr std::array<Char, N + 1> Copied(View text) noexcept { return CopiedImpl(text, std::make_index_sequence<N + 1>{}); }
-
-    template <std::size_t... I>
-    [[nodiscard]] static constexpr std::array<Char, N + 1> CopiedImpl(View text, std::index_sequence<I...>) noexcept
+    [[nodiscard]] static constexpr std::array<Char, N + 1> Copied(View text) noexcept
     {
-        return std::array<Char, N + 1>{ (I < text.size() ? text[I] : Char{})... };
+        std::array<Char, N + 1> chars{};
+        std::copy_n(text.data(), text.size(), chars.data()); // WAIVER(R2): the fresh buffer is filled once before it is returned.
+        return chars;
     }
 
     std::array<Char, N + 1> chars_{};
