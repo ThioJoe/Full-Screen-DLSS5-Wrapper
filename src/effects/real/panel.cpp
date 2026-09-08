@@ -211,7 +211,9 @@ struct Metrics
     [[nodiscard]] int ControlHeight() const noexcept { return std::max(Of(22), line + Of(9)); }
     [[nodiscard]] int RowHeight() const noexcept { return LabelHeight() + ControlHeight() + Of(10); }
     [[nodiscard]] int PageTop() const noexcept { return Of(kMargin + kTabHeight); }
-    [[nodiscard]] int PageHeight() const noexcept { return kRowsPerColumn * RowHeight() + Of(2 * kMargin); }
+    // The rows, then the button that starts a new session below them, then the margin under it.
+    [[nodiscard]] int PageHeight() const noexcept { return kRowsPerColumn * RowHeight() + ControlHeight() + Of(2 * kMargin); }
+    [[nodiscard]] int ButtonTop() const noexcept { return PageTop() + kRowsPerColumn * RowHeight(); }
 };
 
 struct Placement
@@ -1070,7 +1072,7 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
     HWND parent = window.get();
     const HWND tabs = CreateTabs(parent, m);
     const Built built = BuildAll(parent, m, o, live, display);
-    const HWND restart = CreateButton(parent, m, L"Start a new session with these", 0, kMargin, m.PageTop() + (kRowsPerColumn - 1) * m.RowHeight() + m.LabelHeight(), kColumnWidth);
+    const HWND restart = CreateButton(parent, m, L"Start a new session with these", 0, kMargin, m.ButtonTop(), kColumnWidth);
     return ControlPanel{ std::move(window),
                          std::move(font),
                          tabs,

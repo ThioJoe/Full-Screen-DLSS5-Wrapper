@@ -483,7 +483,7 @@ struct Devices
 {
     if (!o.gui)
         return std::optional<real::ControlPanel>{};
-    return real::CreateControlPanel(o, interior::DefaultLive(o), plan.initialDisplay).transform([](real::ControlPanel panel) { return std::optional<real::ControlPanel>{ std::move(panel) }; });
+    return real::CreateControlPanel(o, interior::StartingLive(plan), plan.initialDisplay).transform([](real::ControlPanel panel) { return std::optional<real::ControlPanel>{ std::move(panel) }; });
 }
 
 [[nodiscard]] real::EnvironmentSettings SettingsOf(const Options& o, const SessionPlan& plan) noexcept

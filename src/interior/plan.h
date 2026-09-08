@@ -62,6 +62,9 @@ enum class PlanError : std::uint8_t { SuperResolutionCannotBridge, ScaleOutOfRan
 [[nodiscard]] std::optional<SrQuality> ChooseQuality(const QualityTable& table, const Extent& input, const Extent& output) noexcept;
 [[nodiscard]] Result<SessionPlan, PlanError> PlanSession(const Options& options, const Geometry& geometry, const QualityTable& table) noexcept;
 [[nodiscard]] DisplayMode InitialDisplay(CompareMode compare) noexcept;
+// What the session starts running with, which is what the panel starts showing. The motion scales are the
+// planner's answer rather than the options', so a session left to work them out shows the numbers it uses.
+[[nodiscard]] LiveSettings StartingLive(const SessionPlan& plan) noexcept;
 [[nodiscard]] std::string_view Describe(PlanError error) noexcept;
 [[nodiscard]] std::string_view Describe(SrQuality quality) noexcept;
 

@@ -188,6 +188,11 @@ std::optional<SrQuality> ChooseQuality(const QualityTable& table, const Extent& 
     return *found;
 }
 
+LiveSettings StartingLive(const SessionPlan& plan) noexcept
+{
+    return LiveSettings{ plan.neuralRendering, plan.tuning, plan.depthInverted, plan.mvScaleX, plan.mvScaleY, plan.vsync, plan.resetThreshold, plan.depth };
+}
+
 DisplayMode InitialDisplay(CompareMode compare) noexcept
 {
     switch (compare)

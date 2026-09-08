@@ -619,7 +619,7 @@ FrameState InitialFrameState(const SessionPlan& plan) noexcept
                        { false, false },
                        DisplaySourceOf(plan, plan.neuralRendering),
                        kCentreSplit,
-                       LiveSettings{ plan.neuralRendering, plan.tuning, plan.depthInverted, plan.mvScaleX, plan.mvScaleY, plan.vsync, plan.resetThreshold, plan.depth } };
+                       StartingLive(plan) };
 }
 
 FrameSlot SlotOfFrame(FrameNumber number) noexcept
