@@ -1,0 +1,100 @@
+name: Build DlssScreen
+
+# Runs on demand (pick the branch, the configuration and the NVIDIA/DLSS SDK revision) or on a push
+# whose commit message contains "[!Build]". A push builds the pushed commit in Release. The job builds
+# DlssScreen.exe with MSVC, runs the portable tests and uploads the usable files (DlssScreen.exe, its
+# PDB, nvngx_dlss.dll from the SDK, README and LICENSE) as an artifact.
+# The push trigger only sees this file on the pushed branch, so keep the copies on main and on the
+# development branches identical.
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit of this repository to build
+        required: true
+        default: claude/dlss5-screen-ai-rules
+        type: string
+      configuration:
+        description: Build configuration
+        required: true
+        default: Release
+        type: choice
+        options:
+          - Release
+          - RelWithDebInfo
+          - Debug
+      dlss_sdk_ref:
+        description: Revision of https://github.com/NVIDIA/DLSS to build against
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[!Build]')
+    name: Windows x64 ${{ inputs.configuration || 'Release' }}
+    runs-on: windows-2022
+    env:
+      CONFIGURATION: ${{ inputs.configuration || 'Release' }}
+    steps:
+      - name: Check out DlssScreen
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Check out the NVIDIA DLSS SDK
+        uses: actions/checkout@v4
+        with:
+          repository: NVIDIA/DLSS
+          ref: ${{ inputs.dlss_sdk_ref || 'main' }}
+          path: dlss-sdk
+          sparse-checkout: |
+            include
+            lib/Windows_x86_64
+          sparse-checkout-cone-mode: true
+
+      - name: Describe the sources
+        id: describe
+        shell: pwsh
+        run: |
+          "sha=$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
+          Get-ChildItem -Recurse -Path dlss-sdk -Include nvsdk_ngx_d3d12.lib, nvngx_dlss.dll | ForEach-Object { $_.FullName }
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 "-DDLSS_SDK_DIR=${{ github.workspace }}\dlss-sdk"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config $env:CONFIGURATION --parallel
+
+      - name: Run the portable tests
+        shell: pwsh
+        run: ctest --test-dir build -C $env:CONFIGURATION --output-on-failure --no-tests=ignore
+
+      - name: Stage the usable files
+        shell: pwsh
+        run: |
+          $out = "build/$env:CONFIGURATION"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "$out/DlssScreen.exe" dist
+          if (Test-Path "$out/DlssScreen.pdb") { Copy-Item "$out/DlssScreen.pdb" dist }
+          $dll = Get-ChildItem -Recurse -Path dlss-sdk -Filter nvngx_dlss.dll | Where-Object { $_.FullName -like '*Windows_x86_64*rel*' } | Select-Object -First 1
+          if ($null -eq $dll) { $dll = Get-ChildItem -Recurse -Path dlss-sdk -Filter nvngx_dlss.dll | Select-Object -First 1 }
+          if ($null -eq $dll) { throw "nvngx_dlss.dll was not found in the DLSS SDK checkout" }
+          Copy-Item $dll.FullName dist
+          foreach ($doc in "README.md", "LICENSE") { if (Test-Path $doc) { Copy-Item $doc dist } }
+          Get-ChildItem dist
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DlssScreen-${{ env.CONFIGURATION }}-${{ steps.describe.outputs.sha }}
+          path: dist
+          if-no-files-found: error
