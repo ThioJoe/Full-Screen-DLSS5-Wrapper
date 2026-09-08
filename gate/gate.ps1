@@ -17,6 +17,8 @@ cmake -S . -B $BuildDir -G "Visual Studio 17 2022" -A x64 "-DDLSS_SDK_DIR=$DlssS
 if ($LASTEXITCODE -ne 0) { throw "configure failed" }
 cmake --build $BuildDir --config Release
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
+cmake --build $BuildDir --config Release --target rules_lint
+if ($LASTEXITCODE -ne 0) { throw "lint build failed" }
 if ($nvof -eq "OFF") {
     Write-Host "== the other value of the feature flag (R31): NVOF=ON is built when NvofSdkDir is given"
 }

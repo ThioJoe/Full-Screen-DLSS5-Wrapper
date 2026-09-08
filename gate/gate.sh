@@ -12,6 +12,7 @@ asan=${ASAN_DIR:-build-gate-asan}
 echo "== configure and build (warnings as errors, tracing on)"
 cmake -S . -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo >/dev/null
 cmake --build "$build"
+cmake --build "$build" --target rules_lint
 
 echo "== formatter"
 if command -v clang-format >/dev/null; then

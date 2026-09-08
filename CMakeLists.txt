@@ -93,7 +93,7 @@ add_test(NAME properties_seed_2000 COMMAND dscreen_tests 2000)
 add_test(NAME properties_seed_3000 COMMAND dscreen_tests 3000)
 
 # --- gate tools ----------------------------------------------------------------------------------
-add_executable(rules_lint gate/rules_lint.cpp)
+add_executable(rules_lint EXCLUDE_FROM_ALL gate/rules_lint.cpp) # built on demand by the gate, not by a plain build
 target_link_libraries(rules_lint PRIVATE dscreen_flags)
 add_custom_target(lint
   COMMAND rules_lint "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/gate"
