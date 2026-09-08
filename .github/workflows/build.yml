@@ -98,10 +98,6 @@ jobs:
         shell: pwsh
         run: sccache --show-stats
 
-      - name: Run the portable tests
-        shell: pwsh
-        run: ctest --test-dir build --output-on-failure --no-tests=ignore
-
       - name: Stage the usable files
         shell: pwsh
         run: |
@@ -122,3 +118,8 @@ jobs:
           name: DlssScreen-${{ env.CONFIGURATION }}-${{ steps.describe.outputs.sha }}
           path: dist
           if-no-files-found: error
+
+      # After the upload so the files can be tried while the tests still run; a test failure still fails the run.
+      - name: Run the portable tests
+        shell: pwsh
+        run: ctest --test-dir build --output-on-failure --no-tests=ignore
