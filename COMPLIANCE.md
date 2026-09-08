@@ -51,7 +51,7 @@ environment; `real::RealEnvironment` records the steps into Direct3D 12 command 
 | R23 All non-determinism is an input | The clock enters as `FrameInput.now`, capture arrival as `freshCapture`, hotkeys as toggles; the simulator draws all of them from a seeded SplitMix64 generator. Production code draws no randomness. | `interior/frame.h`, `effects/sim` |
 | R24 No direct contact with reality | Only `src/effects/real` reads the clock, the GPU, the capture pool or the console. The simulator runs the same session loop from a numeric seed and injects device loss, capture loss, fence timeouts, NGX failures, scene cuts and clock jumps between frames; every failure reproduces from its seed. The tool is long-running and writes no persistent state except the optional append-only log mirror, so kill-at-random-point leaves nothing to recover. | `tests/simulation_test.cpp`; ctest seeds 1000, 2000, 3000; gate seeds 4000, 5000, 6000 |
 | R25 Every call is traced | The compiler instruments every function outside `trace.cpp` (`-finstrument-functions`, or `/Gh /GH` with `trace_msvc.asm`); the ring records entry and exit addresses and is dumped on a contract violation. C++ has no reflection, so argument values are not serialised; the replay of a run is the seed under the simulator. | `CMakeLists.txt` (`DSCREEN_TRACE`), `trace.cpp` |
-| R26 Tests are properties, and tests are tested | About forty properties over generated inputs, including every failure variant of the parsers and planners; the option parser is fuzzed with random argument vectors; the simulator seed fuzzer runs whole sessions. `gate/mutate.py` introduces defects (`<`/`<=`, `==`/`!=`, `+`/`-`, `true`/`false`, `&&`/`||`) and fails the gate when the tests keep passing. | ctest; gate (mutation threshold 0.8) |
+| R26 Tests are properties, and tests are tested | Fifty-one properties over generated inputs, including every failure variant of the parsers and planners; the option parser is fuzzed with random argument vectors; the simulator seed fuzzer runs whole sessions. `gate/mutate.py` introduces defects (`<`/`<=`, `==`/`!=`, `+`/`-`, `true`/`false`, `&&`/`||`) and fails the gate when the tests keep passing. Last sampled run: 60 of 135 mutants, 52 killed, 8 survived, score 0.87 (test seed 1000, sample seed 1). | ctest; gate (mutation threshold 0.8) |
 | R27 No speculative generality | The environment abstraction has two implementations (real and simulated); every option is consumed by the plan; the single feature flag is inventoried. | Lint feature-flag inventory; review |
 | R28 Comments are the last resort | Comments are waivers, citations or invariants, two lines at most; no doc comments, banners or commented-out code. | Lint R28 |
 | R29 Standard library first | `std::expected`, ranges, `std::format`, `std::to_chars`; the only external code is NVIDIA's (DLSS SDK, optical flow SDK) and the platform. | `gate/dependencies.lock`, `gate/check_lock.py` |
@@ -92,7 +92,9 @@ The current inventory falls into these groups:
 3. the lint with the function index, the waiver, growth-site and feature-flag inventories (VIII.2, 5, 9, 10);
 4. the property tests under the ctest seeds and three further seeds (VIII.4, 6);
 5. the address and undefined-behaviour sanitizers (portable targets);
-6. mutation testing with the threshold (VIII.4);
+6. mutation testing with the threshold (VIII.4); the surviving mutants of the last run are the open test gaps:
+   `monitors.cpp` ordering and union arithmetic, `options.cpp` value validation, `plan.cpp` cursor and quality
+   choice, `frame.cpp` finest-level flags and history staleness;
 7. the dependency-lock check against the installed SDK headers (VIII.8).
 
 ## Differences from the first implementation
