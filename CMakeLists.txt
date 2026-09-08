@@ -49,8 +49,11 @@ endif()
 add_library(dscreen_trace STATIC src/infrastructure/trace.cpp)
 target_link_libraries(dscreen_trace PUBLIC dscreen_flags)
 if(DSCREEN_TRACE AND MSVC)
+  # The hooks are assembled in their own target: ml64 rejects the C++ switches (/W4, /permissive-, ...).
   enable_language(ASM_MASM)
-  target_sources(dscreen_trace PRIVATE src/infrastructure/trace_msvc.asm)
+  add_library(dscreen_trace_hooks STATIC src/infrastructure/trace_msvc.asm)
+  set_target_properties(dscreen_trace_hooks PROPERTIES LINKER_LANGUAGE CXX)
+  target_link_libraries(dscreen_trace PUBLIC dscreen_trace_hooks)
 endif()
 
 add_library(dscreen_core STATIC
