@@ -10,6 +10,10 @@ enum class MotionBackend : std::uint8_t { BuiltIn, NvOpticalFlow, None };
 enum class CompareMode : std::uint8_t { Off, Split, Original };
 enum class ColorFormat : std::uint8_t { Rgba8, Rgba16f };
 enum class NrStyle : std::uint8_t { Standard, Natural, Cinematic };
+
+// Auto: use the console the program was launched from, and go without one when there is none, so a
+// double-click opens no window. On: make one either way. Off: never write to one.
+enum class ConsoleMode : std::uint8_t { Auto, On, Off };
 enum class GridSize : std::uint8_t { One, Two, Four };
 enum class PerfLevel : std::uint8_t { Slow, Medium, Fast };
 enum class NgxLogLevel : std::uint8_t { Off, On, Verbose };

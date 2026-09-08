@@ -30,6 +30,9 @@ struct Models
     std::optional<NgxRuntime> runtime;
     std::optional<Feature> superResolution;
     std::optional<Feature> neuralRendering;
+    // The model reads its tuning when the feature is built, not at evaluate, so a changed value means a
+    // rebuild. This is what the current feature was built with.
+    std::optional<interior::NrTuning> builtWith;
 };
 
 using Allocators = std::array<Com<ID3D12CommandAllocator>, interior::kFrameSlotCount>;

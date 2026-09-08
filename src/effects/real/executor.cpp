@@ -183,11 +183,11 @@ void SetComputeState(const Gpu& gpu, const interior::Dispatch& d, std::uint32_t 
         .transform([&c] { return c; });
 }
 
-[[nodiscard]] StepResult RecordNeuralRendering(const Gpu& gpu, const interior::SessionPlan& plan, const interior::EvaluateNr& e, const Cursor& c) noexcept
+[[nodiscard]] StepResult RecordNeuralRendering(const Gpu& gpu, const interior::EvaluateNr& e, const Cursor& c) noexcept
 {
     REQUIRE(gpu.models.runtime.has_value());
     REQUIRE(gpu.models.neuralRendering.has_value());
-    return EvaluateNeuralRendering(*gpu.models.runtime, *gpu.models.neuralRendering, gpu.list.Get(), plan.tuning, e, gpu.resources).transform([&c] { return c; });
+    return EvaluateNeuralRendering(*gpu.models.runtime, *gpu.models.neuralRendering, gpu.list.Get(), e.tuning, e, gpu.resources).transform([&c] { return c; });
 }
 
 [[nodiscard]] std::uint32_t ModeCode(interior::DisplayMode mode) noexcept
@@ -310,7 +310,7 @@ void SetBlitPipeline(const Gpu& gpu, const interior::Draw& d, std::uint32_t base
                           [&](const interior::CopyBuffer& copy) { return RecordCopy(gpu, copy, c); },
                           [&](const interior::ClearTarget& clear) { return RecordClear(gpu, clear, c); },
                           [&](const interior::EvaluateSr& e) { return RecordSuperResolution(gpu, e, c); },
-                          [&](const interior::EvaluateNr& e) { return RecordNeuralRendering(gpu, plan, e, c); },
+                          [&](const interior::EvaluateNr& e) { return RecordNeuralRendering(gpu, e, c); },
                           [&](const interior::Draw& d) { return RecordDraw(gpu, f.slot, d, c); },
                           [&](const interior::Submit& s) { return RecordSubmit(gpu, f, s, c); },
                           [&](const interior::Present&) { return RecordPresent(gpu, plan, c); },

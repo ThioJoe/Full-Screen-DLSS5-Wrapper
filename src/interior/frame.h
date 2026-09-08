@@ -1,5 +1,6 @@
 #pragma once
 #include "infrastructure/bounded_vector.h"
+#include "interior/options.h"
 #include "interior/plan.h"
 #include "interior/units.h"
 
@@ -120,6 +121,7 @@ struct EvaluateNr
     Scale mvScaleX;
     Scale mvScaleY;
     bool reset;
+    NrTuning tuning;
     [[nodiscard]] friend constexpr bool operator==(const EvaluateNr&, const EvaluateNr&) noexcept = default;
 };
 
@@ -166,6 +168,7 @@ struct FrameState
     std::array<bool, kFrameSlotCount> statsPending;
     ResourceKind displaySource;
     Fraction split;
+    ModelControls controls;
     [[nodiscard]] friend constexpr bool operator==(const FrameState&, const FrameState&) noexcept = default;
 };
 
@@ -178,6 +181,7 @@ struct FrameInput
     bool toggleOriginal;
     bool toggleSplit;
     std::optional<Fraction> splitRequest;
+    std::optional<ModelControls> controlRequest;
     bool quit;
     [[nodiscard]] friend constexpr bool operator==(const FrameInput&, const FrameInput&) noexcept = default;
 };
@@ -201,6 +205,7 @@ constexpr std::uint64_t kPauseResetMicroseconds = 1000000;
 [[nodiscard]] Result<FramePlan, PlanFrameError> PlanFrame(const SessionPlan& plan, const FrameState& state, const FrameInput& input) noexcept;
 [[nodiscard]] DisplayMode NextDisplay(DisplayMode current, bool toggleOriginal, bool toggleSplit) noexcept;
 [[nodiscard]] Fraction NextSplit(Fraction current, const std::optional<Fraction>& request) noexcept;
+[[nodiscard]] ModelControls NextControls(const ModelControls& current, const std::optional<ModelControls>& request) noexcept;
 [[nodiscard]] bool IsLongPause(const FrameState& state, Instant now) noexcept;
 [[nodiscard]] bool ExceedsThreshold(std::optional<Fraction> unmatched, Fraction threshold) noexcept;
 [[nodiscard]] std::string_view Describe(PlanFrameError error) noexcept;

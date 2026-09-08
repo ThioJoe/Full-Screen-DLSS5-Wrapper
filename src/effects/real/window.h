@@ -31,6 +31,8 @@ constexpr int kHotkeyToggleOriginal = 1;
 constexpr int kHotkeyToggleSplit = 2;
 constexpr int kHotkeyQuit = 3;
 
+// Registers a window class, treating "already registered" as success. Shared with the control panel.
+[[nodiscard]] infra::Status<Error> RegisterWindowClass(const WNDCLASSEXW& description) noexcept;
 [[nodiscard]] infra::Status<Error> SetDpiAwareness() noexcept;
 [[nodiscard]] infra::Result<interior::MonitorList, Error> EnumerateMonitors() noexcept;
 [[nodiscard]] infra::Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept;

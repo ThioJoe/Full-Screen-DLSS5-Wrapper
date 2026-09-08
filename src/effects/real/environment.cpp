@@ -346,7 +346,19 @@ struct Created
     REQUIRE(c.models.runtime.has_value());
     return OpenList(gpu, *kZeroSlot).and_then([&] { return CreateSuperResolution(*c.models.runtime, gpu.list.Get(), *plan.superResolution); }).and_then([&](Feature feature) {
         return FlushList(gpu, c.fence).transform([&](interior::FenceValue fence) {
-            return Created{ Models{ std::move(c.models.runtime), std::move(feature), std::move(c.models.neuralRendering) }, fence };
+            return Created{ Models{ std::move(c.models.runtime), std::move(feature), std::move(c.models.neuralRendering), c.models.builtWith }, fence };
+        });
+    });
+}
+
+// Builds the neural rendering feature at the given tuning, replacing whatever was there. The model reads
+// its tuning while the feature is built, so a value the operator changes is only honoured by rebuilding.
+[[nodiscard]] Result<Created, Error> BuiltNeuralRendering(const Gpu& gpu, const SessionPlan& plan, const interior::NrTuning& tuning, Created c) noexcept
+{
+    REQUIRE(c.models.runtime.has_value());
+    return OpenList(gpu, *kZeroSlot).and_then([&] { return CreateNeuralRendering(*c.models.runtime, gpu.list.Get(), tuning, plan.work); }).and_then([&](Feature feature) {
+        return FlushList(gpu, c.fence).transform([&](interior::FenceValue fence) {
+            return Created{ Models{ std::move(c.models.runtime), std::move(c.models.superResolution), std::move(feature), tuning }, fence };
         });
     });
 }
@@ -355,12 +367,7 @@ struct Created
 {
     if (!plan.neuralRendering)
         return Created{ std::move(c.models), c.fence };
-    REQUIRE(c.models.runtime.has_value());
-    return OpenList(gpu, *kZeroSlot).and_then([&] { return CreateNeuralRendering(*c.models.runtime, gpu.list.Get(), plan.tuning, plan.work); }).and_then([&](Feature feature) {
-        return FlushList(gpu, c.fence).transform([&](interior::FenceValue fence) {
-            return Created{ Models{ std::move(c.models.runtime), std::move(c.models.superResolution), std::move(feature) }, fence };
-        });
-    });
+    return BuiltNeuralRendering(gpu, plan, plan.tuning, std::move(c));
 }
 
 [[nodiscard]] Gpu WithModels(Gpu g, Models m) noexcept
@@ -406,7 +413,7 @@ struct Ready
 [[nodiscard]] Result<Ready, Error> Started(Gpu gpu, std::optional<NgxRuntime> runtime, const SessionPlan& plan) noexcept
 {
     return ClearedDepth(gpu, plan, interior::FenceValueTag::Parse(0))
-        .and_then([&](interior::FenceValue fence) { return WithSuperResolution(gpu, plan, Created{ Models{ std::move(runtime), std::nullopt, std::nullopt }, fence }); })
+        .and_then([&](interior::FenceValue fence) { return WithSuperResolution(gpu, plan, Created{ Models{ std::move(runtime), std::nullopt, std::nullopt, std::nullopt }, fence }); })
         .and_then([&](Created c) { return WithNeuralRendering(gpu, plan, std::move(c)); })
         .and_then([&](Created c) { return WithOpticalFlow(WithModels(std::move(gpu), std::move(c.models)), plan, c.fence); });
 }
@@ -417,14 +424,22 @@ struct Ready
     return infra::CheckedMul(finest.width.Get(), finest.height.Get()).transform_error(FromArithmetic);
 }
 
-[[nodiscard]] Result<RealEnvironment, Error> Assembled(Ready r, const SessionPlan& plan, OutputWindow window, const Console& console, const interior::LevelExtents& extents) noexcept
+[[nodiscard]] Result<RealEnvironment, Error> Assembled(Ready r, const SessionPlan& plan, OutputWindow window, std::optional<ControlPanel> panel, const Console& console,
+                                                       const interior::LevelExtents& extents) noexcept
 {
     return FinestPixels(plan, extents).and_then([&](std::uint32_t finest) {
-        return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), console, finest, r.fence, start); });
+        return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), std::move(panel), console, finest, r.fence, start); });
     });
 }
 
 // --- per frame ----------------------------------------------------------------------------------------------
+
+// What the frame is read from besides the GPU: the output window and, when there is one, the panel.
+struct Surroundings
+{
+    const OutputWindow& window;
+    const std::optional<ControlPanel>& panel;
+};
 
 struct Prepared
 {
@@ -433,6 +448,8 @@ struct Prepared
     std::optional<interior::Fraction> unmatched;
     interior::Instant now;
     std::optional<interior::Fraction> splitRequest;
+    std::optional<interior::ModelControls> controlRequest;
+    bool panelClosed;
 };
 
 [[nodiscard]] Status<Error> AwaitSlot(const Gpu& gpu, const interior::FrameState& state, interior::FrameSlot slot) noexcept
@@ -459,26 +476,40 @@ struct Prepared
         .transform([](interior::Fraction f) { return std::optional<interior::Fraction>{ f }; });
 }
 
-[[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, const OutputWindow& window, std::optional<interior::Fraction> unmatched, interior::FrameNumber number) noexcept
+[[nodiscard]] std::optional<interior::ModelControls> PanelReading(const std::optional<ControlPanel>& panel, const interior::ModelControls& current) noexcept
 {
-    return AcquireFrames(gpu.capture, number).and_then([&](bool fresh) {
+    if (!panel.has_value())
+        return std::nullopt;
+    return ReadControlPanel(*panel, current);
+}
+
+[[nodiscard]] bool PanelWasClosed(const std::optional<ControlPanel>& panel) noexcept
+{
+    return panel.has_value() && IsPanelClosed(*panel);
+}
+
+[[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, const Surroundings& s, std::optional<interior::Fraction> unmatched, const interior::FrameState& state) noexcept
+{
+    return AcquireFrames(gpu.capture, state.number).and_then([&](bool fresh) {
         return Now().and_then([&](interior::Instant now) {
-            return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) { return Prepared{ fresh, index, unmatched, now, SplitRequest(window) }; });
+            return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) {
+                return Prepared{ fresh, index, unmatched, now, SplitRequest(s.window), PanelReading(s.panel, state.controls), PanelWasClosed(s.panel) };
+            });
         });
     });
 }
 
-[[nodiscard]] Result<Prepared, Error> Prepare(const Gpu& gpu, const OutputWindow& window, std::uint32_t finestPixels, const interior::FrameState& state, interior::FrameSlot slot) noexcept
+[[nodiscard]] Result<Prepared, Error> Prepare(const Gpu& gpu, const Surroundings& s, std::uint32_t finestPixels, const interior::FrameState& state, interior::FrameSlot slot) noexcept
 {
     return WaitForNextFrame(gpu.presenter)
         .and_then([&] { return AwaitSlot(gpu, state, slot); })
         .and_then([&] { return ReadUnmatched(gpu, finestPixels, state, slot); })
-        .and_then([&](std::optional<interior::Fraction> unmatched) { return Sampled(gpu, window, unmatched, state.number); });
+        .and_then([&](std::optional<interior::Fraction> unmatched) { return Sampled(gpu, s, unmatched, state); });
 }
 
 [[nodiscard]] interior::FrameInput InputOf(const WindowEvents& events, const Prepared& p) noexcept
 {
-    return interior::FrameInput{ p.fresh, p.backBuffer, p.unmatched, p.now, events.toggleOriginal, events.toggleSplit, p.splitRequest, events.quit };
+    return interior::FrameInput{ p.fresh, p.backBuffer, p.unmatched, p.now, events.toggleOriginal, events.toggleSplit, p.splitRequest, p.controlRequest, events.quit || p.panelClosed };
 }
 
 [[nodiscard]] FrameContext ContextOf(const interior::FrameState& state, interior::FrameSlot slot, interior::FenceValue fence) noexcept
@@ -491,11 +522,11 @@ struct Prepared
     return FrameContext{ f.number, f.slot, f.set, f.hasPrevious, fence };
 }
 
-[[nodiscard]] Result<Begun, Error> Begin(const Gpu& gpu, const OutputWindow& window, std::uint32_t finestPixels, interior::FenceValue fence, const interior::FrameState& state) noexcept
+[[nodiscard]] Result<Begun, Error> Begin(const Gpu& gpu, const Surroundings& s, std::uint32_t finestPixels, interior::FenceValue fence, const interior::FrameState& state) noexcept
 {
     const interior::FrameSlot slot = interior::SlotOfFrame(state.number);
-    return PumpEvents(window).and_then([&](const WindowEvents& events) {
-        return Prepare(gpu, window, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; });
+    return PumpEvents(s.window).and_then([&](const WindowEvents& events) {
+        return Prepare(gpu, s, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; });
     });
 }
 
@@ -539,16 +570,16 @@ struct Prepared
 
 } // namespace
 
-RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, const Console& console, std::uint32_t finestPixels, interior::FenceValue fence,
-                                 interior::Instant start) noexcept
-    : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), console_(console), finestPixels_(finestPixels), frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence },
-      stats_{ start, 0, 0 }
+RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, std::optional<ControlPanel> panel, const Console& console, std::uint32_t finestPixels,
+                                 interior::FenceValue fence, interior::Instant start) noexcept
+    : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(std::move(panel)), console_(console), finestPixels_(finestPixels),
+      frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }
 {
 }
 
 Result<FrameStart, Error> RealEnvironment::BeginFrame(const interior::FrameState& state) noexcept
 {
-    const Result<Begun, Error> begun = Begin(gpu_, window_, finestPixels_, frame_.fence, state);
+    const Result<Begun, Error> begun = Begin(gpu_, Surroundings{ window_, panel_ }, finestPixels_, frame_.fence, state);
     if (!begun.has_value())
         return Fail(begun.error());
     return Accept(*begun);
@@ -564,7 +595,30 @@ Result<FrameStart, Error> RealEnvironment::Accept(const Begun& begun) noexcept
     return FrameStart{ begun.input };
 }
 
-Result<ExecutionReport, Error> RealEnvironment::Execute(const interior::FramePlan& plan) noexcept
+[[nodiscard]] bool HasBuiltModel(const Models& models) noexcept
+{
+    return models.neuralRendering.has_value();
+}
+
+[[nodiscard]] bool NeedsRebuild(const Models& models, const interior::ModelControls& controls) noexcept
+{
+    return HasBuiltModel(models) && models.builtWith != controls.tuning;
+}
+
+Result<ExecutionReport, Error> RealEnvironment::Retuned(const interior::ModelControls& controls) noexcept
+{
+    if (!NeedsRebuild(gpu_.models, controls))
+        return ExecutionReport{ frame_.fence, 0 };
+    return WaitIdle(gpu_.device, frame_.fence)
+        .and_then([&](interior::FenceValue idle) { return BuiltNeuralRendering(gpu_, plan_, controls.tuning, Created{ std::move(gpu_.models), idle }); })
+        .transform([this](Created rebuilt) {
+            gpu_ = WithModels(std::move(gpu_), std::move(rebuilt.models)); // WAIVER(R2): the built model is effect-layer state, replaced whole when the operator retunes.
+            frame_ = WithFence(frame_, rebuilt.fence);                     // WAIVER(R2): the last signalled fence, replaced whole.
+            return ExecutionReport{ rebuilt.fence, 0 };
+        });
+}
+
+Result<ExecutionReport, Error> RealEnvironment::Ran(const interior::FramePlan& plan) noexcept
 {
     const Result<interior::FenceValue, Error> fence = ExecuteSteps(gpu_, plan_, frame_, plan.steps);
     if (!fence.has_value())
@@ -574,18 +628,23 @@ Result<ExecutionReport, Error> RealEnvironment::Execute(const interior::FramePla
     return ExecutionReport{ *fence, static_cast<std::uint32_t>(plan.steps.Size()) };
 }
 
+Result<ExecutionReport, Error> RealEnvironment::Execute(const interior::FramePlan& plan) noexcept
+{
+    return Retuned(plan.next.controls).and_then([this, &plan](const ExecutionReport&) { return Ran(plan); });
+}
+
 Error RealEnvironment::FromPlanError(interior::PlanFrameError error) noexcept
 {
     return Error{ ApiCall::PlanFrame, static_cast<std::uint32_t>(error) };
 }
 
 Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const SessionPlan& plan, const interior::Geometry& geometry, OutputWindow window,
-                                                 const EnvironmentSettings& settings, const Console& console) noexcept
+                                                 std::optional<ControlPanel> panel, const EnvironmentSettings& settings, const Console& console) noexcept
 {
     return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
         return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents)
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
-            .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), console, extents); });
+            .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), std::move(panel), console, extents); });
     });
 }
 

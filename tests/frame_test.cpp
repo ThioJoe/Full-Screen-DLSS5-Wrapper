@@ -158,6 +158,7 @@ struct Replay
                        proptest::DrawBelow(rng, 20) == 0,
                        proptest::DrawBelow(rng, 20) == 0,
                        proptest::DrawBelow(rng, 8) == 0 ? std::optional<Fraction>{ *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f) } : std::nullopt,
+                       std::nullopt,
                        false };
 }
 
@@ -186,7 +187,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -200,7 +201,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -213,7 +214,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
+    const FrameInput input = FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -225,7 +226,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(2), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, true };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(2), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, true };
     const auto framePlan = PlanFrame(plan, state, input);
     return framePlan.has_value() && framePlan->stop;
 }
@@ -253,7 +254,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -275,7 +276,8 @@ struct Replay
 
 [[nodiscard]] FrameState WithLastCapture(const FrameState& s, Instant at) noexcept
 {
-    return FrameState{ s.number, s.currentSet, s.states, s.hasOutput, s.hasPrevious, s.resetPending, s.zeroMotionWritten, at, s.display, s.slotFences, s.statsPending, s.displaySource, s.split };
+    return FrameState{ s.number, s.currentSet, s.states,     s.hasOutput,    s.hasPrevious,   s.resetPending, s.zeroMotionWritten,
+                       at,       s.display,    s.slotFences, s.statsPending, s.displaySource, s.split,        s.controls };
 }
 
 [[nodiscard]] bool LongPauseNeedsACaptureAndMoreThanTheLimit(infra::RngState& rng) noexcept
@@ -333,12 +335,12 @@ struct Replay
 
 [[nodiscard]] FrameInput FreshInput() noexcept
 {
-    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
+    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
 }
 
 [[nodiscard]] FrameInput RepeatInput() noexcept
 {
-    return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, std::nullopt, false };
+    return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, std::nullopt, std::nullopt, false };
 }
 
 [[nodiscard]] bool MatchDispatchesPredictFromTheCoarserFlow(infra::RngState& rng) noexcept
@@ -379,9 +381,8 @@ struct Replay
 
 [[nodiscard]] FrameState WithSplitPosition(const FrameState& s, Fraction split) noexcept
 {
-    return FrameState{
-        s.number, s.currentSet, s.states, s.hasOutput, s.hasPrevious, s.resetPending, s.zeroMotionWritten, s.lastCapture, s.display, s.slotFences, s.statsPending, s.displaySource, split
-    };
+    return FrameState{ s.number,      s.currentSet, s.states,     s.hasOutput,    s.hasPrevious,   s.resetPending, s.zeroMotionWritten,
+                       s.lastCapture, s.display,    s.slotFences, s.statsPending, s.displaySource, split,          s.controls };
 }
 
 [[nodiscard]] const Draw* DrawIn(const StepList& steps) noexcept
@@ -393,13 +394,65 @@ struct Replay
     return nullptr;
 }
 
+// The random plan may or may not run the model; these properties need one that does.
+[[nodiscard]] SessionPlan WithNeuralRendering(const SessionPlan& p) noexcept
+{
+    SessionPlan plan = p; // WAIVER(R2): a test fixture, copied and adjusted before use.
+    plan.neuralRendering = true;
+    return plan;
+}
+
+[[nodiscard]] const EvaluateNr* NeuralStepIn(const StepList& steps) noexcept
+{
+    // WAIVER(R2): a search over the emitted steps; the cursor is the loop's own.
+    for (std::size_t i = 0; i < steps.Size(); ++i)
+        if (const EvaluateNr* step = std::get_if<EvaluateNr>(&steps.At(i)); step != nullptr)
+            return step;
+    return nullptr;
+}
+
+[[nodiscard]] NrTuning WithIntensity(const NrTuning& t, Strength intensity) noexcept
+{
+    return NrTuning{ t.preset, intensity, t.style, t.localStructure, t.localTone, t.skinStructure, t.autoMask, t.uiCorrection };
+}
+
+[[nodiscard]] FrameInput RequestingControls(const ModelControls& controls) noexcept
+{
+    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, controls, false };
+}
+
+// A value moved on the panel has to reach the step that evaluates the model, not just the state.
+[[nodiscard]] bool ANewIntensityReachesTheEvaluatedStep(infra::RngState& rng) noexcept
+{
+    const SessionPlan plan = WithNeuralRendering(RandomPlan(rng));
+    const Strength intensity = *StrengthTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1000)) / 100.0f);
+    const ModelControls controls = ModelControls{ true, WithIntensity(plan.tuning, intensity) };
+    const auto framePlan = PlanFrame(plan, InitialFrameState(plan), RequestingControls(controls));
+    if (!framePlan.has_value())
+        return false;
+    const EvaluateNr* step = NeuralStepIn(framePlan->steps);
+    return step != nullptr && step->tuning.intensity == intensity && framePlan->next.controls == controls;
+}
+
+// Switching the model off has to drop its step and show the picture that skips it.
+[[nodiscard]] bool SwitchingTheModelOffDropsItsStep(infra::RngState& rng) noexcept
+{
+    const SessionPlan plan = WithNeuralRendering(RandomPlan(rng));
+    const ModelControls off = ModelControls{ false, plan.tuning };
+    const auto framePlan = PlanFrame(plan, InitialFrameState(plan), RequestingControls(off));
+    if (!framePlan.has_value())
+        return false;
+    const Draw* draw = DrawIn(framePlan->steps);
+    return NeuralStepIn(framePlan->steps) == nullptr && draw != nullptr && draw->processed.kind != ResourceKind::NrOutput && !framePlan->next.controls.neuralRendering;
+}
+
 // Dragging the divider must reach the blit, not merely be recorded in the state.
 [[nodiscard]] bool ADragMovesTheDividerInTheDrawnStep(infra::RngState& rng) noexcept
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
     const Fraction requested = *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, requested, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, requested, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -413,7 +466,7 @@ struct Replay
     const SessionPlan plan = RandomPlan(rng);
     const Fraction held = *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f);
     const FrameState state = WithSplitPosition(InitialFrameState(plan), held);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -442,6 +495,8 @@ std::uint32_t FrameSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("stats readback only with built-in motion", seed, 300, StatsReadbackRequiresBuiltInMotion));
     failures += Failures(proptest::ForAll("a drag moves the divider in the drawn step", seed, 200, ADragMovesTheDividerInTheDrawnStep));
     failures += Failures(proptest::ForAll("without a drag the divider holds", seed, 200, WithoutADragTheDividerHolds));
+    failures += Failures(proptest::ForAll("a new intensity reaches the evaluated step", seed, 200, ANewIntensityReachesTheEvaluatedStep));
+    failures += Failures(proptest::ForAll("switching the model off drops its step", seed, 200, SwitchingTheModelOffDropsItsStep));
     return failures;
 }
 

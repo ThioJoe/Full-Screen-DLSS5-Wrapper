@@ -5,6 +5,7 @@
 #include "effects/real/device.h"
 #include "effects/real/environment.h"
 #include "effects/real/ngx.h"
+#include "effects/real/panel.h"
 #include "effects/real/window.h"
 #include "infrastructure/array_util.h"
 #include "infrastructure/fold.h"
@@ -88,6 +89,7 @@ struct Arguments
 [[nodiscard]] int ReportEarly(const Error& error) noexcept
 {
     const Line line = infra::Formatted<kLineCapacity>("DlssScreen: {}\n", real::Describe(error).Get());
+    real::ShowMessage(line.Get());
     return real::WriteText(stderr, line.Get()).transform([] { return kExitFailure; }).value_or(kExitFailure);
 }
 
@@ -475,10 +477,23 @@ struct Devices
     });
 }
 
+// The panel is the ordinary way in: it opens unless --gui off asks for the overlay alone.
+[[nodiscard]] Result<std::optional<real::ControlPanel>, Error> CreatedPanel(const Options& o, const SessionPlan& plan) noexcept
+{
+    if (!o.gui)
+        return std::optional<real::ControlPanel>{};
+    return real::CreateControlPanel(interior::ModelControls{ plan.neuralRendering, plan.tuning }).transform([](real::ControlPanel panel) {
+        return std::optional<real::ControlPanel>{ std::move(panel) };
+    });
+}
+
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan) noexcept
 {
     return CreatedWindow(console, b).and_then([&](real::OutputWindow window) {
-        return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), real::EnvironmentSettings{ b.options.captureBorder }, console);
+        return CreatedPanel(b.options, plan).and_then([&](std::optional<real::ControlPanel> panel) {
+            return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), std::move(panel), real::EnvironmentSettings{ b.options.captureBorder },
+                                           console);
+        });
     });
 }
 
@@ -509,33 +524,47 @@ struct Devices
     });
 }
 
+[[nodiscard]] int Failed(const Console& console, const Error& error) noexcept
+{
+    const real::ErrorText text = real::Describe(error);
+    if (!console.attached)
+        real::ShowMessage(text.Get());
+    return Log(console, LogLevel::Error, text.Get()).transform([] { return kExitFailure; }).value_or(kExitFailure);
+}
+
 [[nodiscard]] int Finish(const Console& console, const Result<interior::FrameNumber, Error>& result) noexcept
 {
     if (!result.has_value())
-        return Log(console, LogLevel::Error, real::Describe(result.error()).Get()).transform([] { return kExitFailure; }).value_or(kExitFailure);
+        return Failed(console, result.error());
     return Log(console, LogLevel::Info, infra::Formatted<kLineCapacity>("Stopped after {} frames", result->Get()).Get()).transform([] { return kExitOk; }).value_or(kExitFailure);
 }
 
 [[nodiscard]] int RunWithConsole(const Options& options) noexcept
 {
-    const Result<Console, Error> console = real::OpenConsole(options.logLevel, options.logFile);
+    const Result<Console, Error> console = real::OpenConsole(options.logLevel, options.logFile, options.console);
     if (!console.has_value())
         return ReportEarly(console.error());
     return Finish(*console, Run(*console, options));
 }
 
+// Printing to a console the operator does not have helps nobody, so these two ask for one.
+[[nodiscard]] Result<Console, Error> ConsoleForReading(const Options& options) noexcept
+{
+    return real::OpenConsole(options.logLevel, options.logFile, interior::ConsoleMode::On);
+}
+
 [[nodiscard]] int ServeOrRun(const Options& options) noexcept
 {
-    if (options.listMonitors)
-        return ExitCodeOf(ListMonitors());
-    return RunWithConsole(options);
+    if (!options.listMonitors)
+        return RunWithConsole(options);
+    return ConsoleForReading(options).transform([](const Console&) { return ExitCodeOf(ListMonitors()); }).value_or(kExitFailure);
 }
 
 [[nodiscard]] int Serve(const Options& options) noexcept
 {
-    if (options.showHelp)
-        return PrintUsage();
-    return ServeOrRun(options);
+    if (!options.showHelp)
+        return ServeOrRun(options);
+    return ConsoleForReading(options).transform([](const Console&) { return PrintUsage(); }).value_or(kExitFailure);
 }
 
 [[nodiscard]] int Dispatch(const Result<Options, interior::OptionsError>& parsed) noexcept

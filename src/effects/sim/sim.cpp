@@ -286,6 +286,17 @@ struct ModelCheck
     return FractionTag::Parse(value).transform([](Fraction f) { return std::optional<Fraction>{ f }; }).value_or(std::nullopt);
 }
 
+// The operator moving the panel's controls: the model toggles and the intensity moves.
+[[nodiscard]] std::optional<ModelControls> ControlsIf(bool present, std::uint64_t value) noexcept
+{
+    if (!present)
+        return std::nullopt;
+    const NrTuning base = DefaultOptions().tuning;
+    const Result<Strength, UnitError> intensity = StrengthTag::Parse(static_cast<float>(value % 400u) / 100.0f);
+    ENSURE(intensity.has_value());
+    return ModelControls{ (value % 2u) == 0u, NrTuning{ base.preset, *intensity, base.style, base.localStructure, base.localTone, base.skinStructure, base.autoMask, base.uiCorrection } };
+}
+
 struct FrameDraws
 {
     bool fresh;
@@ -294,6 +305,7 @@ struct FrameDraws
     std::uint64_t clockJump;
     float unmatched;
     std::optional<Fraction> splitRequest;
+    std::optional<ModelControls> controlRequest;
     SimWorld world;
 };
 
@@ -301,13 +313,15 @@ struct FrameDraws
 {
     const Draw d = DrawFrom(c.next);
     const Draw e = DrawFrom(d.next);
+    const Draw f = DrawFrom(e.next);
     return FrameDraws{ (a.value % 4u) != 0u,
                        (b.value % 97u) == 0u,
                        (b.value % 89u) == 0u,
                        1000u + (c.value % 3000000u),
                        static_cast<float>(d.value % 1001u) / 1000.0f,
                        FractionIf((e.value % 11u) == 0u, static_cast<float>(e.value % 1001u) / 1000.0f), // the operator dragging the divider
-                       WithRng(w, e.next) };
+                       ControlsIf((f.value % 13u) == 0u, f.value),
+                       WithRng(w, f.next) };
 }
 
 [[nodiscard]] FrameDraws DrawFrame(const SimWorld& w) noexcept
@@ -321,7 +335,8 @@ struct FrameDraws
 {
     const Result<BackBufferIndex, UnitError> buffer = BackBufferIndexTag::Parse(w.backBuffer);
     ENSURE(buffer.has_value());
-    return FrameInput{ draws.fresh, *buffer, FractionIf(statsPending, draws.unmatched), InstantTag::Parse(w.clockMicroseconds), draws.toggleOriginal, draws.toggleSplit, draws.splitRequest, quit };
+    return FrameInput{ draws.fresh,          *buffer, FractionIf(statsPending, draws.unmatched), InstantTag::Parse(w.clockMicroseconds), draws.toggleOriginal, draws.toggleSplit, draws.splitRequest,
+                       draws.controlRequest, quit };
 }
 
 } // namespace

@@ -22,6 +22,14 @@ struct NrTuning
     [[nodiscard]] friend constexpr bool operator==(const NrTuning&, const NrTuning&) noexcept = default;
 };
 
+// What the operator can change while the session runs, from the panel or the command line.
+struct ModelControls
+{
+    bool neuralRendering;
+    NrTuning tuning;
+    [[nodiscard]] friend constexpr bool operator==(const ModelControls&, const ModelControls&) noexcept = default;
+};
+
 struct SourceSelection
 {
     MonitorSelectionKind kind;
@@ -63,6 +71,8 @@ struct Options
     std::optional<RequestedAdapter> adapter;
     LogLevel logLevel;
     DirectoryPath logFile;
+    bool gui;
+    ConsoleMode console;
     [[nodiscard]] friend constexpr bool operator==(const Options&, const Options&) noexcept = default;
 };
 

@@ -130,7 +130,7 @@ constexpr std::array<std::pair<std::wstring_view, bool>, 8> kSpellings{
 [[nodiscard]] bool DefaultModelsMatchTheDocumentation(const Options& d) noexcept
 {
     const NrTuning& t = d.tuning;
-    const bool tuning = t.preset.Get() == 0 && t.intensity.Get() == 1.0f && t.style == NrStyle::Standard && t.localStructure.Get() == 1.0f && t.localTone.Get() == 1.0f &&
+    const bool tuning = t.preset.Get() == kShippedNgxPreset && t.intensity.Get() == 1.0f && t.style == NrStyle::Standard && t.localStructure.Get() == 1.0f && t.localTone.Get() == 1.0f &&
                         t.skinStructure.Get() == -1.0f && t.autoMask && t.uiCorrection;
     return d.neuralRendering && d.sr == SrMode::Auto && d.srPreset.Get() == 0 && tuning;
 }

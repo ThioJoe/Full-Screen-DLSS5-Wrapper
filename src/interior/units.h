@@ -36,7 +36,7 @@ constexpr std::uint32_t kMaxPixelCount = 16384;
 constexpr std::int32_t kMaxCoordinate = 65536;
 constexpr std::uint32_t kMaxMonitors = 16;
 constexpr std::uint32_t kMaxLevels = 8;
-constexpr std::uint32_t kMaxNgxPreset = 3;
+constexpr std::uint32_t kShippedNgxPreset = 1; // the only preset in the 310.8 model; others fall back to it
 constexpr std::uint32_t kMaxSrPreset = 15;
 constexpr std::uint32_t kDescriptorsPerFrame = 512;
 constexpr std::uint32_t kBackBufferCount = 3;
@@ -455,10 +455,10 @@ constexpr Result<LevelCount, UnitError> LevelCountTag::Parse(std::uint32_t raw) 
     return ParseNonZero(raw);
 }
 
+// The model resolves a preset it does not carry to the one it ships with and says so in its log, so a
+// number it has never heard of is not an error here either. This build of the model carries preset 1 only.
 constexpr Result<NgxPreset, UnitError> NgxPresetTag::Parse(std::uint32_t raw) noexcept
 {
-    if (raw > kMaxNgxPreset)
-        return infra::Fail(UnitError::PresetOutOfRange);
     return NgxPreset(raw);
 }
 

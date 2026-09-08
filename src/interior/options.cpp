@@ -58,6 +58,8 @@ enum class OptionId : std::uint8_t {
     Adapter,
     LogLevel,
     LogFile,
+    Gui,
+    Console,
 };
 
 enum class ValueKind : std::uint8_t {
@@ -77,6 +79,7 @@ enum class ValueKind : std::uint8_t {
     Perf,
     NgxLog,
     Log,
+    Console,
     Path,
     Text,
 };
@@ -88,7 +91,7 @@ struct OptionSpec
     ValueKind kind;
 };
 
-constexpr std::array<OptionSpec, 39> kSpecs{ {
+constexpr std::array<OptionSpec, 41> kSpecs{ {
     { L"help", OptionId::Help, ValueKind::Flag },
     { L"list-monitors", OptionId::ListMonitors, ValueKind::Flag },
     { L"monitor", OptionId::Monitor, ValueKind::MonitorSel },
@@ -128,6 +131,8 @@ constexpr std::array<OptionSpec, 39> kSpecs{ {
     { L"adapter", OptionId::Adapter, ValueKind::UInt },
     { L"log-level", OptionId::LogLevel, ValueKind::Log },
     { L"log-file", OptionId::LogFile, ValueKind::Path },
+    { L"gui", OptionId::Gui, ValueKind::Bool },
+    { L"console", OptionId::Console, ValueKind::Console },
 } };
 
 struct FlagValue
@@ -150,7 +155,7 @@ struct NarrowBuffer
 };
 
 using OptionValue = std::variant<FlagValue, std::uint32_t, float, std::uint64_t, bool, MonitorSelValue, CursorMode, SrMode, MotionBackend, CompareMode, ColorFormat, NrStyle, GridSize, PerfLevel,
-                                 NgxLogLevel, LogLevel, DirectoryPath, AsciiText>;
+                                 ConsoleMode, NgxLogLevel, LogLevel, DirectoryPath, AsciiText>;
 
 struct ParsedOption
 {
@@ -253,6 +258,7 @@ template <class T, std::size_t N>
 constexpr std::array<infra::Choice<bool>, 8> kBoolChoices{
     { { L"on", true }, { L"1", true }, { L"true", true }, { L"yes", true }, { L"off", false }, { L"0", false }, { L"false", false }, { L"no", false } }
 };
+constexpr std::array<infra::Choice<ConsoleMode>, 3> kConsoleChoices{ { { L"auto", ConsoleMode::Auto }, { L"on", ConsoleMode::On }, { L"off", ConsoleMode::Off } } };
 constexpr std::array<infra::Choice<CursorMode>, 3> kCursorChoices{ { { L"auto", CursorMode::Auto }, { L"on", CursorMode::On }, { L"off", CursorMode::Off } } };
 constexpr std::array<infra::Choice<SrMode>, 3> kSrChoices{ { { L"auto", SrMode::Auto }, { L"dlaa", SrMode::Dlaa }, { L"off", SrMode::Off } } };
 constexpr std::array<infra::Choice<MotionBackend>, 3> kMotionChoices{ { { L"builtin", MotionBackend::BuiltIn }, { L"nvof", MotionBackend::NvOpticalFlow }, { L"none", MotionBackend::None } } };
@@ -302,6 +308,7 @@ constexpr std::array<infra::Choice<MonitorSelectionKind>, 2> kMonitorKindChoices
     case ValueKind::Hex: return ParseHex(text).transform([](std::uint64_t v) { return OptionValue{ v }; });
     case ValueKind::Bool: return ParseChoice(kBoolChoices, text).transform([](bool v) { return OptionValue{ v }; });
     case ValueKind::MonitorSel: return ParseMonitorSel(text).transform([](MonitorSelValue v) { return OptionValue{ v }; });
+    case ValueKind::Console: return ParseChoice(kConsoleChoices, text).transform([](ConsoleMode v) { return OptionValue{ v }; });
     case ValueKind::Cursor: return ParseChoice(kCursorChoices, text).transform([](CursorMode v) { return OptionValue{ v }; });
     case ValueKind::Sr: return ParseChoice(kSrChoices, text).transform([](SrMode v) { return OptionValue{ v }; });
     case ValueKind::Motion: return ParseChoice(kMotionChoices, text).transform([](MotionBackend v) { return OptionValue{ v }; });
@@ -618,6 +625,8 @@ struct ValidatedNumbers
         RequestedAdapterOf(list),
         ValueOr(list, OptionId::LogLevel, d.logLevel),
         ValueOr(list, OptionId::LogFile, d.logFile),
+        ValueOr(list, OptionId::Gui, d.gui),
+        ValueOr(list, OptionId::Console, d.console),
     };
 }
 
@@ -650,7 +659,7 @@ constexpr auto kDefaultIntensity = StrengthTag::Parse(1.0f);
 constexpr auto kDefaultSkin = SkinStrengthTag::Parse(-1.0f);
 constexpr auto kDefaultDepth = DepthValueTag::Parse(0.5f);
 constexpr auto kDefaultThreshold = FractionTag::Parse(0.5f);
-constexpr auto kDefaultPreset = NgxPresetTag::Parse(0);
+constexpr auto kDefaultPreset = NgxPresetTag::Parse(kShippedNgxPreset); // asking for the one the model has avoids its fallback warning
 constexpr auto kDefaultSrPreset = SrPresetTag::Parse(0);
 constexpr auto kDefaultLevel = LevelIndexTag::Parse(1);
 constexpr auto kDefaultProjectId = ProjectIdText::Parse("5e9b2a44-7c31-4d0e-9f2b-8d3c1a6e7f10");
@@ -696,6 +705,8 @@ Options DefaultOptions() noexcept
         std::nullopt,
         LogLevel::Info,
         DirectoryPath{},
+        true,
+        ConsoleMode::Auto,
     };
 }
 

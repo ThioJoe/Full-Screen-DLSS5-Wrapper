@@ -51,6 +51,7 @@ enum class ApiCall : std::uint8_t {
     CreateComputePipelineState,
     CreateGraphicsPipelineState,
     RegisterClassExW,
+    InitCommonControls,
     CreateWindowExW,
     SetWindowDisplayAffinity,
     RegisterHotKey,

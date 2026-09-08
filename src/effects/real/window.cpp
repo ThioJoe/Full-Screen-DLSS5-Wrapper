@@ -57,14 +57,6 @@ constexpr std::uint32_t kMaxMessagesPerPump = 64;
     return atom == 0 && !IsAlreadyRegistered();
 }
 
-[[nodiscard]] Status<Error> RegisterClass() noexcept
-{
-    const WNDCLASSEXW wc = ClassDescription();
-    if (IsRegistrationFailure(::RegisterClassExW(&wc)))
-        return Fail(LastError(ApiCall::RegisterClassExW));
-    return {};
-}
-
 [[nodiscard]] DWORD TopmostStyle(const WindowSettings& s) noexcept
 {
     return s.topmost ? WS_EX_TOPMOST : 0u;
@@ -308,7 +300,7 @@ Result<MonitorList, Error> EnumerateMonitors() noexcept
 
 Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept
 {
-    return RegisterClass().and_then([&] { return CreateHandle(rect, settings); }).and_then([&](UniqueWindow handle) {
+    return RegisterWindowClass(ClassDescription()).and_then([&] { return CreateHandle(rect, settings); }).and_then([&](UniqueWindow handle) {
         return Configure(handle.get(), rect, settings).transform([&] { return OutputWindow{ std::move(handle), rect }; });
     });
 }
@@ -318,6 +310,13 @@ std::optional<interior::Fraction> SplitRequest(const OutputWindow& window) noexc
     if (!AreModifiersHeld())
         return std::nullopt;
     return CursorPosition().and_then([&window](POINT cursor) { return FractionAcross(window.rect, cursor.x); });
+}
+
+Status<Error> RegisterWindowClass(const WNDCLASSEXW& description) noexcept
+{
+    if (IsRegistrationFailure(::RegisterClassExW(&description)))
+        return Fail(LastError(ApiCall::RegisterClassExW));
+    return {};
 }
 
 Status<Error> RegisterHotkeys(const OutputWindow& window) noexcept

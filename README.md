@@ -45,6 +45,12 @@ cmake -S . -B build-linux -G Ninja && cmake --build build-linux && ctest --test-
 
 ## Run
 
+Double-clicking the executable opens the control panel and the overlay, with no console window. Every
+value the model reads is a control on the panel, and moving one rebuilds the feature so the change takes
+effect: the model reads its tuning while the feature is built, not on each frame. Closing the panel ends
+the session. Started from a console instead, the program attaches to it and logs there; `--console on`
+forces one, `--gui off` leaves the overlay to run alone.
+
 ```
 DlssScreen.exe                       # neural rendering on the primary monitor
 DlssScreen.exe --monitor 1 --target 0  # capture monitor 1, upscale with DLSS and present on monitor 0
@@ -58,6 +64,16 @@ Every failure stops the program with a message and a non-zero exit code. There a
 if neural rendering is requested and unavailable, the tool exits instead of running as a passthrough
 (pass `--nr off` or `--sr off` to run without a model). A contract violation aborts and writes the call
 trace ring to `dlssscreen-trace.txt` next to the working directory.
+
+## What the model does with these values
+
+The 310.8 model carries a single set of weights, under preset 1, which is what DlssScreen asks for; any
+other number falls back to it and says so in the NGX log. Style takes 0, 1 or 2 and is clamped by the
+model itself. The strengths are unbounded floats: the model applies no limit of its own, so DlssScreen
+imposes none either, though the values it was authored around sit between 0 and 1. Skin structure and
+local structure only do anything while auto mask is on, and UI correction reads a UI layer that
+DlssScreen does not supply, so it is inert as wired. The model runs one-to-one and does no scaling; any
+resizing comes from the separate super resolution pass.
 
 ## How it works
 
