@@ -181,6 +181,7 @@ struct FrameInput
     bool toggleOriginal;
     bool toggleSplit;
     std::optional<Fraction> splitRequest;
+    std::optional<DisplayMode> displayRequest;
     std::optional<ModelControls> controlRequest;
     bool quit;
     [[nodiscard]] friend constexpr bool operator==(const FrameInput&, const FrameInput&) noexcept = default;

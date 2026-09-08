@@ -442,6 +442,23 @@ struct Display
     return fresh && plan.motion == MotionBackend::BuiltIn;
 }
 
+// Capture delivers a frame only when the desktop changes, so a still screen sends nothing and would keep
+// whatever the model last made of it. A changed setting is its own reason to run the frame again.
+[[nodiscard]] bool Retuned(const FrameState& state, const FrameInput& input) noexcept
+{
+    return input.controlRequest.has_value() && *input.controlRequest != state.controls;
+}
+
+[[nodiscard]] bool HasSomethingToRedo(const FrameState& state, const FrameInput& input) noexcept
+{
+    return state.hasOutput && Retuned(state, input);
+}
+
+[[nodiscard]] bool ProcessesFrame(const FrameState& state, const FrameInput& input) noexcept
+{
+    return input.freshCapture || HasSomethingToRedo(state, input);
+}
+
 [[nodiscard]] SetIndex NextSet(const FrameState& state, bool fresh) noexcept
 {
     return fresh ? OtherSet(state.currentSet) : state.currentSet;
@@ -452,24 +469,29 @@ struct Display
     return input.freshCapture ? std::optional<Instant>{ input.now } : state.lastCapture;
 }
 
-[[nodiscard]] bool OrFresh(bool flag, const FrameInput& input) noexcept
+[[nodiscard]] bool OrProcessed(bool flag, const FrameState& state, const FrameInput& input) noexcept
 {
-    return flag || input.freshCapture;
+    return flag || ProcessesFrame(state, input);
+}
+
+[[nodiscard]] DisplayMode NextMode(const FrameState& state, const FrameInput& input) noexcept
+{
+    return input.displayRequest.value_or(NextDisplay(state.display, input.toggleOriginal, input.toggleSplit));
 }
 
 [[nodiscard]] FrameState NextState(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const StateTable& states, FrameSlot slot) noexcept
 {
     return FrameState{ FrameNumberTag::Parse(state.number.Get() + 1),
-                       NextSet(state, input.freshCapture),
+                       NextSet(state, ProcessesFrame(state, input)),
                        states,
-                       OrFresh(state.hasOutput, input),
-                       OrFresh(state.hasPrevious, input),
+                       OrProcessed(state.hasOutput, state, input),
+                       OrProcessed(state.hasPrevious, state, input),
                        ExceedsThreshold(input.unmatched, plan.resetThreshold),
-                       OrFresh(state.zeroMotionWritten, input),
+                       OrProcessed(state.zeroMotionWritten, state, input),
                        NextCapture(state, input),
-                       NextDisplay(state.display, input.toggleOriginal, input.toggleSplit),
+                       NextMode(state, input),
                        state.slotFences,
-                       infra::WithElement(state.statsPending, slot.Get(), EmitsStats(plan, input.freshCapture)),
+                       infra::WithElement(state.statsPending, slot.Get(), EmitsStats(plan, ProcessesFrame(state, input))),
                        DisplaySourceOf(plan, NextControls(state.controls, input.controlRequest).neuralRendering),
                        NextSplit(state.split, input.splitRequest),
                        NextControls(state.controls, input.controlRequest) };
@@ -477,7 +499,7 @@ struct Display
 
 [[nodiscard]] Display DisplayOf(const FrameState& state, const FrameInput& input) noexcept
 {
-    return Display{ NextDisplay(state.display, input.toggleOriginal, input.toggleSplit), NextSplit(state.split, input.splitRequest) };
+    return Display{ NextMode(state, input), NextSplit(state.split, input.splitRequest) };
 }
 
 [[nodiscard]] BuildResult FreshSteps(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const LevelExtents& extents, FrameSlot slot) noexcept
@@ -499,7 +521,7 @@ struct Display
 
 [[nodiscard]] BuildResult StepsFor(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const LevelExtents& extents, FrameSlot slot) noexcept
 {
-    return input.freshCapture ? FreshSteps(plan, state, input, extents, slot) : RepeatSteps(plan, state, input);
+    return ProcessesFrame(state, input) ? FreshSteps(plan, state, input, extents, slot) : RepeatSteps(plan, state, input);
 }
 
 } // namespace

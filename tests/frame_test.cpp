@@ -159,6 +159,7 @@ struct Replay
                        proptest::DrawBelow(rng, 20) == 0,
                        proptest::DrawBelow(rng, 8) == 0 ? std::optional<Fraction>{ *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f) } : std::nullopt,
                        std::nullopt,
+                       std::nullopt,
                        false };
 }
 
@@ -187,7 +188,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -201,7 +202,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -214,7 +215,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
+    const FrameInput input = FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -226,7 +227,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(2), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, true };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(2), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, std::nullopt, true };
     const auto framePlan = PlanFrame(plan, state, input);
     return framePlan.has_value() && framePlan->stop;
 }
@@ -254,7 +255,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -335,12 +336,12 @@ struct Replay
 
 [[nodiscard]] FrameInput FreshInput() noexcept
 {
-    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
+    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, std::nullopt, false };
 }
 
 [[nodiscard]] FrameInput RepeatInput() noexcept
 {
-    return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, std::nullopt, std::nullopt, false };
+    return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, std::nullopt, std::nullopt, std::nullopt, false };
 }
 
 [[nodiscard]] bool MatchDispatchesPredictFromTheCoarserFlow(infra::RngState& rng) noexcept
@@ -418,7 +419,45 @@ struct Replay
 
 [[nodiscard]] FrameInput RequestingControls(const ModelControls& controls) noexcept
 {
-    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, controls, false };
+    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, controls, false };
+}
+
+// A settings change has to redraw the picture even when the desktop has sent no new frame: the capture
+// is silent while nothing moves, and the operator would otherwise keep seeing the old model's work.
+[[nodiscard]] std::optional<FrameState> AfterFirstCapture(const SessionPlan& plan) noexcept
+{
+    const auto first = PlanFrame(plan, InitialFrameState(plan), RequestingControls(ModelControls{ true, plan.tuning }));
+    if (!first.has_value())
+        return std::nullopt;
+    return first->next;
+}
+
+[[nodiscard]] FrameInput StillScreen(const ModelControls& controls) noexcept
+{
+    return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, std::nullopt, std::nullopt, controls, false };
+}
+
+[[nodiscard]] bool RetuningReprocessesAStillScreen(infra::RngState& rng) noexcept
+{
+    const SessionPlan plan = WithNeuralRendering(RandomPlan(rng));
+    const std::optional<FrameState> captured = AfterFirstCapture(plan);
+    const Strength louder = *StrengthTag::Parse(plan.tuning.intensity.Get() + 1.0f);
+    if (!captured.has_value() || !captured->hasOutput)
+        return false;
+    const auto framePlan = PlanFrame(plan, *captured, StillScreen(ModelControls{ true, WithIntensity(plan.tuning, louder) }));
+    const EvaluateNr* step = framePlan.has_value() ? NeuralStepIn(framePlan->steps) : nullptr;
+    return step != nullptr && step->tuning.intensity == louder;
+}
+
+// Without a change there is nothing to redo, so a still screen only presents what it already has.
+[[nodiscard]] bool AStillScreenWithoutAChangeOnlyPresents(infra::RngState& rng) noexcept
+{
+    const SessionPlan plan = WithNeuralRendering(RandomPlan(rng));
+    const std::optional<FrameState> captured = AfterFirstCapture(plan);
+    if (!captured.has_value())
+        return false;
+    const auto framePlan = PlanFrame(plan, *captured, StillScreen(ModelControls{ true, plan.tuning }));
+    return framePlan.has_value() && NeuralStepIn(framePlan->steps) == nullptr;
 }
 
 // A value moved on the panel has to reach the step that evaluates the model, not just the state.
@@ -452,7 +491,7 @@ struct Replay
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
     const Fraction requested = *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, requested, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, requested, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -466,7 +505,7 @@ struct Replay
     const SessionPlan plan = RandomPlan(rng);
     const Fraction held = *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f);
     const FrameState state = WithSplitPosition(InitialFrameState(plan), held);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -497,6 +536,8 @@ std::uint32_t FrameSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("without a drag the divider holds", seed, 200, WithoutADragTheDividerHolds));
     failures += Failures(proptest::ForAll("a new intensity reaches the evaluated step", seed, 200, ANewIntensityReachesTheEvaluatedStep));
     failures += Failures(proptest::ForAll("switching the model off drops its step", seed, 200, SwitchingTheModelOffDropsItsStep));
+    failures += Failures(proptest::ForAll("retuning reprocesses a still screen", seed, 200, RetuningReprocessesAStillScreen));
+    failures += Failures(proptest::ForAll("a still screen without a change only presents", seed, 200, AStillScreenWithoutAChangeOnlyPresents));
     return failures;
 }
 

@@ -482,7 +482,7 @@ struct Devices
 {
     if (!o.gui)
         return std::optional<real::ControlPanel>{};
-    return real::CreateControlPanel(interior::ModelControls{ plan.neuralRendering, plan.tuning }).transform([](real::ControlPanel panel) {
+    return real::CreateControlPanel(interior::ModelControls{ plan.neuralRendering, plan.tuning }, plan.initialDisplay).transform([](real::ControlPanel panel) {
         return std::optional<real::ControlPanel>{ std::move(panel) };
     });
 }

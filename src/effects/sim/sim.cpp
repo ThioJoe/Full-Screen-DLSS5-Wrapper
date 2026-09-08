@@ -335,8 +335,10 @@ struct FrameDraws
 {
     const Result<BackBufferIndex, UnitError> buffer = BackBufferIndexTag::Parse(w.backBuffer);
     ENSURE(buffer.has_value());
-    return FrameInput{ draws.fresh,          *buffer, FractionIf(statsPending, draws.unmatched), InstantTag::Parse(w.clockMicroseconds), draws.toggleOriginal, draws.toggleSplit, draws.splitRequest,
-                       draws.controlRequest, quit };
+    return FrameInput{
+        draws.fresh,          *buffer, FractionIf(statsPending, draws.unmatched), InstantTag::Parse(w.clockMicroseconds), draws.toggleOriginal, draws.toggleSplit, draws.splitRequest, std::nullopt,
+        draws.controlRequest, quit
+    };
 }
 
 } // namespace

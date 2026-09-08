@@ -46,9 +46,11 @@ cmake -S . -B build-linux -G Ninja && cmake --build build-linux && ctest --test-
 ## Run
 
 Double-clicking the executable opens the control panel and the overlay, with no console window. Every
-value the model reads is a control on the panel, and moving one rebuilds the feature so the change takes
-effect: the model reads its tuning while the feature is built, not on each frame. Closing the panel ends
-the session. Started from a console instead, the program attaches to it and logs there; `--console on`
+value the model reads is a control on the panel: a slider to sweep it, a box to type an exact number, and
+arrows to step it, with a reset beside each and one for the lot. The view, the divider and the style are
+switches rather than numbers. Moving anything rebuilds the model's feature so the change takes effect,
+because the model reads its tuning while the feature is built rather than on each frame, and the frame is
+drawn again even when the desktop has sent nothing new. Closing the panel ends the session. Started from a console instead, the program attaches to it and logs there; `--console on`
 forces one, `--gui off` leaves the overlay to run alone.
 
 ```

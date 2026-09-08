@@ -448,7 +448,7 @@ struct Prepared
     std::optional<interior::Fraction> unmatched;
     interior::Instant now;
     std::optional<interior::Fraction> splitRequest;
-    std::optional<interior::ModelControls> controlRequest;
+    std::optional<PanelReading> reading;
     bool panelClosed;
 };
 
@@ -476,11 +476,33 @@ struct Prepared
         .transform([](interior::Fraction f) { return std::optional<interior::Fraction>{ f }; });
 }
 
-[[nodiscard]] std::optional<interior::ModelControls> PanelReading(const std::optional<ControlPanel>& panel, const interior::ModelControls& current) noexcept
+// The panel is the one place a setting lives while it runs, so the hotkeys and the divider drag move its
+// controls first and are then read back out of it. Without a panel they go straight into the frame.
+[[nodiscard]] bool TogglesTheView(const WindowEvents& events) noexcept
+{
+    return events.toggleOriginal || events.toggleSplit;
+}
+
+void SteerDisplay(const ControlPanel& panel, const WindowEvents& events, const interior::FrameState& state) noexcept
+{
+    if (TogglesTheView(events))
+        ApplyDisplay(panel, interior::NextDisplay(state.display, events.toggleOriginal, events.toggleSplit));
+}
+
+void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std::optional<interior::Fraction>& drag, const interior::FrameState& state) noexcept
+{
+    SteerDisplay(panel, events, state);
+    if (drag.has_value())
+        ApplySplit(panel, *drag);
+}
+
+[[nodiscard]] std::optional<PanelReading> ReadingOf(const std::optional<ControlPanel>& panel, const WindowEvents& events, const std::optional<interior::Fraction>& drag,
+                                                    const interior::FrameState& state) noexcept
 {
     if (!panel.has_value())
         return std::nullopt;
-    return ReadControlPanel(*panel, current);
+    SteerPanel(*panel, events, drag, state);
+    return ReadControlPanel(*panel, state.controls);
 }
 
 [[nodiscard]] bool PanelWasClosed(const std::optional<ControlPanel>& panel) noexcept
@@ -488,28 +510,53 @@ struct Prepared
     return panel.has_value() && IsPanelClosed(*panel);
 }
 
-[[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, const Surroundings& s, std::optional<interior::Fraction> unmatched, const interior::FrameState& state) noexcept
+[[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, const Surroundings& s, const WindowEvents& events, std::optional<interior::Fraction> unmatched,
+                                              const interior::FrameState& state) noexcept
 {
+    const std::optional<interior::Fraction> drag = SplitRequest(s.window);
+    const std::optional<PanelReading> reading = ReadingOf(s.panel, events, drag, state);
     return AcquireFrames(gpu.capture, state.number).and_then([&](bool fresh) {
         return Now().and_then([&](interior::Instant now) {
-            return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) {
-                return Prepared{ fresh, index, unmatched, now, SplitRequest(s.window), PanelReading(s.panel, state.controls), PanelWasClosed(s.panel) };
-            });
+            return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) { return Prepared{ fresh, index, unmatched, now, drag, reading, PanelWasClosed(s.panel) }; });
         });
     });
 }
 
-[[nodiscard]] Result<Prepared, Error> Prepare(const Gpu& gpu, const Surroundings& s, std::uint32_t finestPixels, const interior::FrameState& state, interior::FrameSlot slot) noexcept
+[[nodiscard]] Result<Prepared, Error> Prepare(const Gpu& gpu, const Surroundings& s, const WindowEvents& events, std::uint32_t finestPixels, const interior::FrameState& state,
+                                              interior::FrameSlot slot) noexcept
 {
     return WaitForNextFrame(gpu.presenter)
         .and_then([&] { return AwaitSlot(gpu, state, slot); })
         .and_then([&] { return ReadUnmatched(gpu, finestPixels, state, slot); })
-        .and_then([&](std::optional<interior::Fraction> unmatched) { return Sampled(gpu, s, unmatched, state); });
+        .and_then([&](std::optional<interior::Fraction> unmatched) { return Sampled(gpu, s, events, unmatched, state); });
+}
+
+[[nodiscard]] std::optional<interior::DisplayMode> DisplayFrom(const std::optional<PanelReading>& reading) noexcept
+{
+    if (!reading.has_value())
+        return std::nullopt;
+    return reading->display;
+}
+
+[[nodiscard]] std::optional<interior::Fraction> SplitFrom(const Prepared& p) noexcept
+{
+    if (!p.reading.has_value())
+        return p.splitRequest;
+    return p.reading->split;
+}
+
+[[nodiscard]] std::optional<interior::ModelControls> ControlsFrom(const std::optional<PanelReading>& reading) noexcept
+{
+    if (!reading.has_value())
+        return std::nullopt;
+    return reading->controls;
 }
 
 [[nodiscard]] interior::FrameInput InputOf(const WindowEvents& events, const Prepared& p) noexcept
 {
-    return interior::FrameInput{ p.fresh, p.backBuffer, p.unmatched, p.now, events.toggleOriginal, events.toggleSplit, p.splitRequest, p.controlRequest, events.quit || p.panelClosed };
+    return interior::FrameInput{
+        p.fresh, p.backBuffer, p.unmatched, p.now, events.toggleOriginal, events.toggleSplit, SplitFrom(p), DisplayFrom(p.reading), ControlsFrom(p.reading), events.quit || p.panelClosed
+    };
 }
 
 [[nodiscard]] FrameContext ContextOf(const interior::FrameState& state, interior::FrameSlot slot, interior::FenceValue fence) noexcept
@@ -526,7 +573,7 @@ struct Prepared
 {
     const interior::FrameSlot slot = interior::SlotOfFrame(state.number);
     return PumpEvents(s.window).and_then([&](const WindowEvents& events) {
-        return Prepare(gpu, s, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; });
+        return Prepare(gpu, s, events, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; });
     });
 }
 
