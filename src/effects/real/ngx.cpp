@@ -20,6 +20,9 @@ constexpr std::array<const char*, 6> kPresetNames{
 constexpr std::array<interior::SrQuality, 6> kQualities{ interior::SrQuality::Dlaa,     interior::SrQuality::UltraQuality, interior::SrQuality::Quality,
                                                          interior::SrQuality::Balanced, interior::SrQuality::Performance,  interior::SrQuality::UltraPerformance };
 constexpr char kNeuralRenderingAvailable[] = "DLSSNR.Available";
+// The model is asked how many sets of weights it carries. Nothing in NGX obliges it to answer, and the
+// 310.8 model does not, so both spellings are tried and silence is taken at face value.
+constexpr std::array<const char*, 2> kPresetCountNames{ "DLSSNR.PresetCount", "DLSSNR.Presets" };
 constexpr std::wstring_view kNeuralRenderingModel = L"\\nvngx_dlssnr.dll";
 constexpr std::size_t kModelPathCapacity = interior::DirectoryPath::Capacity + kNeuralRenderingModel.size() + 1;
 
@@ -428,6 +431,13 @@ bool OffersSuperResolution(const NgxRuntime& runtime) noexcept
 std::optional<std::uint32_t> NeuralRenderingAvailability(const NgxRuntime& runtime) noexcept
 {
     return UIntOf(runtime.parameters.get(), kNeuralRenderingAvailable);
+}
+
+std::optional<std::uint32_t> NeuralRenderingPresetCount(const NgxRuntime& runtime) noexcept
+{
+    const NVSDK_NGX_Parameter* p = runtime.parameters.get();
+    const auto answered = [p](const std::optional<std::uint32_t>& so, const char* name) { return so.has_value() ? so : UIntOf(p, name); };
+    return std::ranges::fold_left(kPresetCountNames, std::optional<std::uint32_t>{}, answered);
 }
 
 interior::QualityTable QualityTableFor(const NgxRuntime& runtime, const interior::Extent& target) noexcept

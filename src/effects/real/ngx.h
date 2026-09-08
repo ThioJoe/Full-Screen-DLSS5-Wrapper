@@ -109,6 +109,9 @@ using BoundNrParameters = infra::BoundedVector<BoundNrParameter, interior::NrPar
 // cannot have it runs without it rather than stopping.
 [[nodiscard]] bool OffersSuperResolution(const NgxRuntime& runtime) noexcept;
 [[nodiscard]] std::optional<std::uint32_t> NeuralRenderingAvailability(const NgxRuntime& runtime) noexcept;
+// How many sets of weights the model says it carries, or nothing when it will not say. Nothing means the
+// panel leaves the choice out rather than offering numbers that fall back to the one preset that exists.
+[[nodiscard]] std::optional<std::uint32_t> NeuralRenderingPresetCount(const NgxRuntime& runtime) noexcept;
 [[nodiscard]] interior::QualityTable QualityTableFor(const NgxRuntime& runtime, const interior::Extent& target) noexcept;
 [[nodiscard]] infra::Result<Feature, Error> CreateSuperResolution(const NgxRuntime& runtime, ID3D12GraphicsCommandList* list, const interior::SrChoice& choice) noexcept;
 [[nodiscard]] infra::Result<Feature, Error> CreateNeuralRendering(const NgxRuntime& runtime, ID3D12GraphicsCommandList* list, const interior::NrTuning& tuning, const interior::Extent& work) noexcept;

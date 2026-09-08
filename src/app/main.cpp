@@ -498,10 +498,6 @@ struct Devices
 
 // --- naming what the machine turned out to have --------------------------------------------------------
 
-// How many presets the panel offers. The model itself will not say, so this is the range the command line
-// has always accepted; asking the model is a separate matter from offering the answer by name.
-constexpr std::uint32_t kOfferedPresets = 8;
-
 using Caption = real::ChoiceText;
 
 [[nodiscard]] Caption Named(std::wstring_view text) noexcept
@@ -573,9 +569,18 @@ using Caption = real::ChoiceText;
     return real::PanelLists{ PresetList(b.options, presets), SourceList(b.options, b.monitors), TargetList(b.options, b.monitors), AdapterList(b.options, adapters) };
 }
 
+// The model names its presets or it does not. It does not, so far, and the panel then leaves the choice
+// out rather than offering numbers that all fall back to the single set of weights the model carries.
+[[nodiscard]] std::uint32_t OfferedPresets(const Devices& d) noexcept
+{
+    if (!d.runtime.has_value())
+        return 0;
+    return real::NeuralRenderingPresetCount(*d.runtime).value_or(0);
+}
+
 [[nodiscard]] real::PanelFindings FindingsFor(const Base& b, const Devices& d) noexcept
 {
-    return real::PanelFindings{ ListsFor(b, real::UsableAdapters(d.device.factory.Get()), kOfferedPresets), OffersSuperResolution(d) };
+    return real::PanelFindings{ ListsFor(b, real::UsableAdapters(d.device.factory.Get()), OfferedPresets(d)), OffersSuperResolution(d) };
 }
 
 // The panel is the ordinary way in: it opens unless --gui off asks for the overlay alone.
