@@ -365,9 +365,19 @@ Result<Capture, Error> CreateCapture(const GpuDevice& gpu, ID3D12Resource* canva
     });
 }
 
+// An 11on12 context submits to the D3D12 queue only on Flush, and the capture service queues its copies
+// and fences on this context from its thread; without a flush per poll they stall after the first frame.
+void SubmitQueuedWork(const Capture& capture) noexcept
+{
+    capture.context->Flush();
+}
+
 Result<bool, Error> AcquireFrames(const Capture& capture) noexcept
 {
-    return CollectPending(capture).and_then([&capture](const PendingList& pending) { return CopyAndClose(capture, pending); });
+    return CollectPending(capture).and_then([&capture](const PendingList& pending) { return CopyAndClose(capture, pending); }).transform([&capture](bool fresh) {
+        SubmitQueuedWork(capture);
+        return fresh;
+    });
 }
 
 } // namespace real
