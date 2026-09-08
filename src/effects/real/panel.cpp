@@ -411,14 +411,28 @@ void AddHint(HWND tooltip, HWND parent, HWND control, const wchar_t* text) noexc
     return std::clamp(static_cast<int>(std::lround(value * static_cast<float>(spec.steps))), spec.minimum, spec.maximum);
 }
 
-// The slider, the box and the arrows are three ways to say the same number, so whichever moved decides.
+// The slider, the box and the arrows say the same number, so of the two that disagree the one the operator
+// moved is the one that no longer matches the box, which still shows what all three last agreed on.
+[[nodiscard]] int AwayFromBox(int slider, int spin, int typed) noexcept
+{
+    return slider != typed ? slider : spin;
+}
+
+// Answering with the slider whichever of the two had moved is what made the arrows look dead: they moved
+// the spin, the slider answered, and the old value went straight back over them.
+[[nodiscard]] int Moved(int slider, int spin, const std::optional<int>& typed) noexcept
+{
+    return typed.has_value() ? AwayFromBox(slider, spin, *typed) : slider;
+}
+
 [[nodiscard]] int Settled(const ControlPanel& panel, std::size_t field) noexcept
 {
     const int slider = SliderPosition(panel.sliders[field]);
     const int spin = SpinPosition(panel.spins[field]);
+    const std::optional<int> typed = TypedSteps(panel.boxes[field], kFields[field]);
     if (slider != spin)
-        return slider;
-    return TypedSteps(panel.boxes[field], kFields[field]).value_or(spin);
+        return Moved(slider, spin, typed);
+    return typed.value_or(spin);
 }
 
 [[nodiscard]] infra::BoundedString<char, 15> Printed(int steps, const FieldSpec& spec) noexcept
@@ -568,11 +582,20 @@ void ChooseOnly(std::span<const HWND> group, std::size_t index) noexcept
     return slider;
 }
 
+// One click is one step, which on a hundredths field is a hundredth. Held down, the arrow works up to a
+// tenth of a unit and then to a whole one, so the far end of a range is reachable without a hundred clicks.
+void AccelerateSpin(HWND spin, const FieldSpec& spec) noexcept
+{
+    std::array<UDACCEL, 3> curve{ { { 0, 1 }, { 1, static_cast<UINT>(std::max(spec.steps / 10, 1)) }, { 3, static_cast<UINT>(spec.steps) } } };
+    (void)::SendMessageW(spin, UDM_SETACCEL, curve.size(), reinterpret_cast<LPARAM>(curve.data()));
+}
+
 [[nodiscard]] HWND ArrangedSpin(HWND spin, HWND box, const FieldSpec& spec, int steps) noexcept
 {
     (void)::SendMessageW(spin, UDM_SETBUDDY, reinterpret_cast<WPARAM>(box), 0);
     (void)::SendMessageW(spin, UDM_SETRANGE32, static_cast<WPARAM>(spec.minimum), static_cast<LPARAM>(spec.maximum));
     (void)::SendMessageW(spin, UDM_SETPOS32, 0, steps);
+    AccelerateSpin(spin, spec);
     return spin;
 }
 
