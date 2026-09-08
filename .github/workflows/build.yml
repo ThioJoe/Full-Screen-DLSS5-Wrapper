@@ -53,7 +53,28 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
 
+      # The SDK checkout is the slowest step that never changes between runs, so it is cached against the
+      # commit it resolves to. Asking the remote what a branch points at costs a second and keeps the key
+      # honest: a moved branch misses the cache rather than serving a stale SDK.
+      - name: Resolve the DLSS SDK revision
+        id: sdk
+        shell: pwsh
+        run: |
+          $ref = "${{ inputs.dlss_sdk_ref || 'main' }}"
+          $line = git ls-remote https://github.com/NVIDIA/DLSS $ref | Select-Object -First 1
+          $sha = if ($line) { ($line -split '\s+')[0] } else { $ref }
+          "Using DLSS SDK $ref at $sha"
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+
+      - name: Restore the NVIDIA DLSS SDK
+        id: sdk-cache
+        uses: actions/cache@v6
+        with:
+          path: dlss-sdk
+          key: dlss-sdk-${{ steps.sdk.outputs.sha }}
+
       - name: Check out the NVIDIA DLSS SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v7
         with:
           repository: NVIDIA/DLSS
