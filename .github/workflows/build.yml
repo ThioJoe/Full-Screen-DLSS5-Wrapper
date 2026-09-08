@@ -84,6 +84,7 @@ jobs:
         run: cmake --build build --parallel
 
       - name: Compiler cache statistics
+        if: always()
         shell: pwsh
         run: sccache --show-stats
 
