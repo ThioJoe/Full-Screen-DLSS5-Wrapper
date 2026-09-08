@@ -6,8 +6,15 @@ device and presents the result in its own borderless, topmost, click-through win
 from capture, so the picture never feeds back into itself. Optionally DLSS Super Resolution (feature 1)
 upscales the capture to a larger target monitor first.
 
-The tool never injects into, hooks, or opens handles to any other process. It only uses OS-level screen
-capture and its own GPU device, which keeps it invisible to anti-cheat.
+The tool never injects into, hooks, or opens handles to any other process. It uses only the OS-level
+screen capture API and its own GPU device, and it runs entirely outside whatever it is showing you.
+
+That is a statement about what this code does, not a promise about how any particular anti-cheat will
+treat it. Anti-cheat systems are free to look at running processes, loaded modules, window and capture
+activity, and overlays drawn over a game, and any of that can be noticed. Some also object to a
+third-party overlay on principle, whatever it is doing. Check the rules of anything you run this
+alongside; the design avoids the techniques anti-cheat is built to catch, but it cannot make the tool
+invisible, and nothing here should be read as a guarantee against a ban.
 
 This branch is a from-scratch rewrite under the *Rules for AI-Written Code* (see `COMPLIANCE.md`):
 a pure planning core, a seeded simulator of the effect layer, property tests with mutation testing,
