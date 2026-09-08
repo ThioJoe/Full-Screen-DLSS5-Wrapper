@@ -765,11 +765,19 @@ void ShowPage(const ControlPanel& panel, Page page, bool visible) noexcept
     std::ranges::for_each(RowsOf(page), [&panel, visible](const RowSpec& row) { ShowRow(panel, row, visible); });
 }
 
-// The chosen page is shown and the others hidden. Only done when the choice has moved, so the panel is
-// not asked to redraw itself on every frame.
+// The first control of a row, which stands for the page the row is on. Each kind is indexed only by a row
+// of its own kind, so the index is always in range for the array it picks.
+[[nodiscard]] HWND MarkerOf(const ControlPanel& panel, const RowSpec& row) noexcept
+{
+    const std::array<std::span<const HWND>, 4> byKind{ panel.labels, panel.toggles, panel.groupLabels, panel.textLabels };
+    return byKind[static_cast<std::size_t>(row.kind)][row.index];
+}
+
+// The chosen page is shown and the others hidden, but only when the choice has moved, so the panel is not
+// asked to redraw itself on every frame. Whether it has moved is read from the page's own first control.
 [[nodiscard]] bool PageAlreadyShown(const ControlPanel& panel, Page chosen) noexcept
 {
-    return (::IsWindowVisible(panel.restart) != FALSE) == (chosen == Page::Startup);
+    return ::IsWindowVisible(MarkerOf(panel, RowsOf(chosen).front())) != FALSE;
 }
 
 void ShowOnly(const ControlPanel& panel, Page chosen) noexcept
@@ -1159,7 +1167,8 @@ void DressPanel(const ControlPanel& panel) noexcept
         return Fail(LastError(ApiCall::CreateWindowExW));
     DressPanel(panel);
     return CheckBool(::SetWindowDisplayAffinity(panel.window.get(), WDA_EXCLUDEFROMCAPTURE), ApiCall::SetWindowDisplayAffinity).transform([&panel] {
-        ShowChosenPage(panel);
+        ShowOnly(panel, ChosenPage(panel)); // every control is created visible, so the first page is arranged rather than checked
+
         ::ShowWindow(panel.window.get(), SW_SHOWNOACTIVATE);
         return std::move(panel);
     });
