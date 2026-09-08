@@ -9,6 +9,7 @@
 #include "infrastructure/array_util.h"
 #include "infrastructure/fold.h"
 #include "infrastructure/text.h"
+#include "interior/driver.h"
 #include "interior/monitors.h"
 #include "interior/options.h"
 #include "interior/plan.h"
@@ -264,18 +265,64 @@ struct Base
     });
 }
 
-[[nodiscard]] Line AvailabilityText(std::optional<std::uint32_t> available) noexcept
+[[nodiscard]] Line NvidiaDriverText(const interior::DriverVersion& v) noexcept
 {
-    if (!available.has_value())
-        return infra::Formatted<kLineCapacity>("the NGX loader does not report DLSSNR.Available; a driver with DLSS 5 support (616.xx or newer) is expected");
-    return infra::Formatted<kLineCapacity>("DLSSNR.Available = {}", *available);
+    const std::uint32_t number = interior::NvidiaDriverNumber(v);
+    return infra::Formatted<kLineCapacity>("NVIDIA driver {}.{:02} ({}.{}.{}.{})", interior::NvidiaDriverMajor(number), interior::NvidiaDriverMinor(number), v.product, v.version, v.subVersion,
+                                           v.build);
 }
 
-[[nodiscard]] Status<Error> LogAvailability(const Console& console, const real::NgxRuntime& runtime, bool neuralRendering) noexcept
+[[nodiscard]] Line VersionText(bool nvidia, const interior::DriverVersion& v) noexcept
+{
+    if (!nvidia)
+        return infra::Formatted<kLineCapacity>("driver {}.{}.{}.{}", v.product, v.version, v.subVersion, v.build);
+    return NvidiaDriverText(v);
+}
+
+[[nodiscard]] Line DriverText(const real::GpuDevice& device) noexcept
+{
+    if (!device.driverVersion.has_value())
+        return infra::Formatted<kLineCapacity>("driver version unknown");
+    return VersionText(device.nvidia, *device.driverVersion);
+}
+
+[[nodiscard]] Status<Error> LogAdapter(const Console& console, const real::GpuDevice& device) noexcept
+{
+    const std::array<char, interior::AdapterName::Capacity + 1> name = infra::NarrowedChars<interior::AdapterName::Capacity + 1>(device.name.Get());
+    return Log(console, LogLevel::Info, infra::Formatted<kLineCapacity>("Direct3D 12 device on '{}', {}", name.data(), DriverText(device).Get()).Get());
+}
+
+[[nodiscard]] Line RequiredDriverText() noexcept
+{
+    return infra::Formatted<kLineCapacity>("{}.{:02}", interior::NvidiaDriverMajor(interior::kFirstNeuralRenderingDriver), interior::NvidiaDriverMinor(interior::kFirstNeuralRenderingDriver));
+}
+
+[[nodiscard]] Line MissingAvailabilityText(const real::GpuDevice& device) noexcept
+{
+    return infra::Formatted<kLineCapacity>("DLSS 5 Neural Rendering is not offered by this driver's NGX loader (it has no DLSSNR.Available); NVIDIA driver {} or newer is required and this is {}",
+                                           RequiredDriverText().Get(), DriverText(device).Get());
+}
+
+[[nodiscard]] Status<Error> LogAvailabilityValue(const Console& console, std::uint32_t available) noexcept
+{
+    if (available == 0)
+        return Log(console, LogLevel::Warn, "the NGX loader reports DLSSNR.Available = 0; creating the feature may fail on this GPU or driver");
+    return Log(console, LogLevel::Info, infra::Formatted<kLineCapacity>("DLSSNR.Available = {}", available).Get());
+}
+
+// The loader's capability block names DLSSNR.Available only when it can build feature 18 itself.
+[[nodiscard]] Status<Error> CheckNeuralRendering(const Console& console, const real::GpuDevice& device, std::optional<std::uint32_t> available) noexcept
+{
+    if (!available.has_value())
+        return Fail(Logged(console, Explanation{ MissingAvailabilityText(device).Get(), Error{ real::ApiCall::NgxNeuralRenderingUnavailable, 1 } }));
+    return LogAvailabilityValue(console, *available);
+}
+
+[[nodiscard]] Status<Error> RequireNeuralRendering(const Console& console, const real::GpuDevice& device, const real::NgxRuntime& runtime, bool neuralRendering) noexcept
 {
     if (!neuralRendering)
         return {};
-    return Log(console, LogLevel::Info, AvailabilityText(real::NeuralRenderingAvailability(runtime)).Get());
+    return CheckNeuralRendering(console, device, real::NeuralRenderingAvailability(runtime));
 }
 
 [[nodiscard]] Result<std::optional<real::NgxRuntime>, Error> OptionalRuntime(const Console& console, const real::GpuDevice& device, const Options& o, const real::NgxSettings& settings,
@@ -284,7 +331,7 @@ struct Base
     if (!wanted)
         return std::optional<real::NgxRuntime>{};
     return LogRequirements(console, device, settings).and_then([&] { return real::CreateNgxRuntime(device, settings); }).and_then([&](real::NgxRuntime runtime) {
-        return LogAvailability(console, runtime, o.neuralRendering).transform([&runtime] { return std::optional<real::NgxRuntime>{ std::move(runtime) }; });
+        return RequireNeuralRendering(console, device, runtime, o.neuralRendering).transform([&runtime] { return std::optional<real::NgxRuntime>{ std::move(runtime) }; });
     });
 }
 
@@ -298,7 +345,8 @@ struct Devices
 {
     const bool wantsNgx = WantsNgx(b.options, b.geometry);
     return real::CreateGpuDevice(real::DeviceSettings{ b.options.debugLayer, b.options.adapter }).and_then([&](real::GpuDevice device) {
-        return RequireNvidia(device, wantsNgx)
+        return LogAdapter(console, device)
+            .and_then([&] { return RequireNvidia(device, wantsNgx); })
             .and_then([&] { return OptionalRuntime(console, device, b.options, NgxSettingsOf(b.options, b.executableDirectory), wantsNgx); })
             .transform([&](std::optional<real::NgxRuntime> runtime) { return Devices{ std::move(device), std::move(runtime) }; });
     });

@@ -283,6 +283,7 @@ struct NgxAppIdTag
 using ProjectIdText = infra::BoundedString<char, 36>;
 using DirectoryPath = infra::BoundedString<wchar_t, 260>;
 using DeviceName = infra::BoundedString<wchar_t, 32>;
+using AdapterName = infra::BoundedString<wchar_t, 128>;
 
 [[nodiscard]] Result<ProjectIdText, UnitError> ParseProjectId(std::string_view raw) noexcept;
 

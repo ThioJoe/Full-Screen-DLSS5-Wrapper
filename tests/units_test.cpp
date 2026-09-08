@@ -1,6 +1,7 @@
 // WAIVER(R2): test suites accumulate failure counts and drive generated sequences with loops.
 #include "infrastructure/bounded_vector.h"
 #include "infrastructure/checked.h"
+#include "interior/driver.h"
 #include "interior/units.h"
 #include "tests/test_registry.h"
 
@@ -98,6 +99,31 @@ using namespace interior;
     return ParseProjectId(text).has_value() == !flip;
 }
 
+[[nodiscard]] bool DriverVersionUnpacksHighToLow(infra::RngState& rng) noexcept
+{
+    const std::uint64_t packed = proptest::Draw(rng);
+    const DriverVersion v = DriverVersionOf(packed);
+    const std::uint64_t repacked = (static_cast<std::uint64_t>(v.product) << 48) | (static_cast<std::uint64_t>(v.version) << 32) | (static_cast<std::uint64_t>(v.subVersion) << 16) | v.build;
+    return repacked == packed;
+}
+
+[[nodiscard]] bool NvidiaNumberFollowsConvention(infra::RngState& rng) noexcept
+{
+    const std::uint16_t subVersion = static_cast<std::uint16_t>(proptest::DrawBelow(rng, 100));
+    const std::uint16_t build = static_cast<std::uint16_t>(proptest::DrawBelow(rng, 10000));
+    const std::uint32_t number = NvidiaDriverNumber(DriverVersion{ 32, 0, subVersion, build });
+    const std::uint32_t expected = static_cast<std::uint32_t>(subVersion % 10) * 10000u + build;
+    return number == expected && NvidiaDriverMajor(number) * 100u + NvidiaDriverMinor(number) == number;
+}
+
+[[nodiscard]] bool KnownDriversMapToKnownNumbers(infra::RngState&) noexcept
+{
+    const bool first = NvidiaDriverNumber(DriverVersion{ 32, 0, 16, 1656 }) == 61656 && !OffersNeuralRendering(DriverVersion{ 32, 0, 16, 1656 });
+    const bool second = NvidiaDriverNumber(DriverVersion{ 32, 0, 15, 6094 }) == 56094;
+    const bool third = OffersNeuralRendering(DriverVersion{ 32, 0, 16, 1664 }) && OffersNeuralRendering(DriverVersion{ 32, 0, 16, 1686 });
+    return first && second && third;
+}
+
 } // namespace
 
 std::uint32_t UnitsSuite(std::uint64_t seed) noexcept
@@ -113,6 +139,9 @@ std::uint32_t UnitsSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("CheckedDiv rejects zero", seed, 500, CheckedDivRejectsZero));
     failures += Failures(proptest::ForAll("BoundedVector stops at capacity", seed, 200, BoundedVectorStopsAtCapacity));
     failures += Failures(proptest::ForAll("ProjectId requires GUID shape", seed, 20, ProjectIdRequiresGuidShape));
+    failures += Failures(proptest::ForAll("DriverVersion unpacks the DXGI value high to low", seed, 500, DriverVersionUnpacksHighToLow));
+    failures += Failures(proptest::ForAll("NVIDIA driver number follows the public convention", seed, 500, NvidiaNumberFollowsConvention));
+    failures += Failures(proptest::ForAll("Known drivers map to their public numbers", seed, 1, KnownDriversMapToKnownNumbers));
     return failures;
 }
 

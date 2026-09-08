@@ -5,6 +5,7 @@
 #include <d3d12sdklayers.h>
 
 #include <ranges>
+#include <string_view>
 
 namespace real {
 namespace {
@@ -51,6 +52,20 @@ struct Candidate
 [[nodiscard]] bool IsNvidia(const Candidate& c) noexcept
 {
     return c.description.VendorId == kNvidiaVendorId;
+}
+
+[[nodiscard]] interior::AdapterName NameOf(const Candidate& c) noexcept
+{
+    return interior::AdapterName::Parse(std::wstring_view(c.description.Description)).value_or(interior::AdapterName{});
+}
+
+// The user-mode driver version, which DXGI reports through the IDXGIDevice interface query.
+[[nodiscard]] std::optional<interior::DriverVersion> ReadDriverVersion(IDXGIAdapter1* adapter) noexcept
+{
+    LARGE_INTEGER version{};
+    if (IsFailure(adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &version)))
+        return std::nullopt;
+    return interior::DriverVersionOf(static_cast<std::uint64_t>(version.QuadPart));
 }
 
 [[nodiscard]] bool SupportsD3D12(const Candidate& c) noexcept
@@ -188,7 +203,9 @@ struct Queues
                       srv,
                       device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV),
                       device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV),
-                      IsNvidia(core.candidate) };
+                      IsNvidia(core.candidate),
+                      NameOf(core.candidate),
+                      ReadDriverVersion(core.candidate.adapter.Get()) };
 }
 
 [[nodiscard]] Result<GpuDevice, Error> AssembleDevice(Core core, Queues queues) noexcept

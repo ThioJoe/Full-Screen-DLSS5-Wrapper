@@ -1,5 +1,6 @@
 #pragma once
 #include "effects/real/com.h"
+#include "interior/driver.h"
 #include "interior/units.h"
 
 #include <d3d12.h>
@@ -28,6 +29,8 @@ struct GpuDevice
     std::uint32_t rtvIncrement;
     std::uint32_t srvIncrement;
     bool nvidia;
+    interior::AdapterName name;
+    std::optional<interior::DriverVersion> driverVersion;
 };
 
 constexpr std::uint32_t kRtvSlots = 8;
