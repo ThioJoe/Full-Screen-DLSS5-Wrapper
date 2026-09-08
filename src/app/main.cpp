@@ -6,6 +6,7 @@
 #include "effects/real/environment.h"
 #include "effects/real/ngx.h"
 #include "effects/real/panel.h"
+#include "effects/real/trust.h"
 #include "effects/real/window.h"
 #include "infrastructure/array_util.h"
 #include "infrastructure/fold.h"
@@ -355,20 +356,51 @@ struct Base
     });
 }
 
+[[nodiscard]] Result<std::optional<real::TrustedFile>, Error> Checked(const Console& console, const interior::FilePath& file) noexcept
+{
+    return real::OpenTrusted(file).and_then([&console](real::TrustedFile model) {
+        return Log(console, LogLevel::Info, "nvngx_dlssnr.dll is signed by NVIDIA").transform([&model] { return std::optional<real::TrustedFile>{ std::move(model) }; });
+    });
+}
+
+[[nodiscard]] std::optional<interior::FilePath> ModelToCheck(const real::NgxSettings& settings, bool wanted) noexcept
+{
+    return wanted ? real::NeuralRenderingModelFile(settings) : std::nullopt;
+}
+
+// The model is a DLL the loader picks up by name from a folder anyone may write to, so it is checked and
+// then held open for the life of the session. A missing file is left to the loader, which says so better.
+[[nodiscard]] Result<std::optional<real::TrustedFile>, Error> TrustedModel(const Console& console, const real::NgxSettings& settings, bool wanted) noexcept
+{
+    const std::optional<interior::FilePath> file = ModelToCheck(settings, wanted);
+    if (!file.has_value())
+        return std::optional<real::TrustedFile>{};
+    return Checked(console, *file);
+}
+
 struct Devices
 {
     real::GpuDevice device;
     std::optional<real::NgxRuntime> runtime;
+    std::optional<real::TrustedFile> model; // held open so the file that was checked is the file that loads
 };
+
+[[nodiscard]] Result<Devices, Error> WithRuntime(const Console& console, const Base& b, real::GpuDevice device, const real::NgxSettings& settings, bool wantsNgx) noexcept
+{
+    return TrustedModel(console, settings, wantsNgx && b.options.neuralRendering).and_then([&](std::optional<real::TrustedFile> model) {
+        return OptionalRuntime(console, device, b.options, settings, wantsNgx).transform([&](std::optional<real::NgxRuntime> runtime) {
+            return Devices{ std::move(device), std::move(runtime), std::move(model) };
+        });
+    });
+}
 
 [[nodiscard]] Result<Devices, Error> CreateDevices(const Console& console, const Base& b) noexcept
 {
     const bool wantsNgx = WantsNgx(b.options, b.geometry);
     return real::CreateGpuDevice(real::DeviceSettings{ b.options.debugLayer, b.options.adapter }).and_then([&](real::GpuDevice device) {
-        return LogAdapter(console, device)
-            .and_then([&] { return RequireNvidia(device, wantsNgx); })
-            .and_then([&] { return OptionalRuntime(console, device, b.options, NgxSettingsOf(b.options, b.executableDirectory), wantsNgx); })
-            .transform([&](std::optional<real::NgxRuntime> runtime) { return Devices{ std::move(device), std::move(runtime) }; });
+        return LogAdapter(console, device).and_then([&] { return RequireNvidia(device, wantsNgx); }).and_then([&] {
+            return WithRuntime(console, b, std::move(device), NgxSettingsOf(b.options, b.executableDirectory), wantsNgx);
+        });
     });
 }
 

@@ -35,6 +35,18 @@ something it was never given.
 
 The control panel says the same thing at the foot of its window.
 
+## The model file
+
+`nvngx_dlssnr.dll` is NVIDIA's, is not in this repository, and is not in the build artifact. Put it next to
+`DlssScreen.exe` or point `--ngx-path` at the folder that holds it.
+
+Because the NGX loader picks that file up by name from a folder anyone can write to, DlssScreen checks it
+before the loader gets there: Windows must accept its Authenticode signature, and the signing certificate
+must name NVIDIA. A file that fails stops the session. The file is then held open, shared for reading only,
+for as long as the session runs, so it cannot be written to, deleted or renamed afterwards — the file that
+was checked is the file that loads. This does not defend against a machine that was already compromised
+before the check, and it says nothing about a model loaded from anywhere else.
+
 ## Requirements
 
 - Windows 10 2004 or newer (Windows Graphics Capture, DirectComposition), Windows 11 recommended.

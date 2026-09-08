@@ -304,6 +304,7 @@ using ProjectIdText = infra::BoundedString<char, 36>;
 // GROWTH-SITE: the arguments of a session asked for from the panel, capped at 1024 characters.
 using CommandLine = infra::BoundedString<wchar_t, 2048>;
 using DirectoryPath = infra::BoundedString<wchar_t, 260>;
+using FilePath = infra::BoundedString<wchar_t, 320>; // a directory with a name on the end of it
 using DeviceName = infra::BoundedString<wchar_t, 32>;
 using AdapterName = infra::BoundedString<wchar_t, 128>;
 

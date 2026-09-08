@@ -83,6 +83,9 @@ std::string_view Describe(ApiCall call) noexcept
     case ApiCall::NgxEvaluateFeature: return "NVSDK_NGX_D3D12_EvaluateFeature";
     case ApiCall::NgxOptimalSettings: return "NGX_DLSS_GET_OPTIMAL_SETTINGS";
     case ApiCall::NgxParameterRoundTrip: return "an NGX parameter did not read back the value written";
+    case ApiCall::OpenModelFile: return "opening nvngx_dlssnr.dll to check its signature";
+    case ApiCall::ModelNotSigned: return "nvngx_dlssnr.dll carries no signature Windows will trust";
+    case ApiCall::ModelNotFromNvidia: return "nvngx_dlssnr.dll is signed, but not by NVIDIA";
     case ApiCall::NgxNeuralRenderingUnavailable: return "DLSS 5 Neural Rendering is unavailable (DLSSNR.Available)";
     case ApiCall::TextureDescriptionMismatch: return "a created texture does not match its description";
     case ApiCall::PlanFrame: return "frame planning";

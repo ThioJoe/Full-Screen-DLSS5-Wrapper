@@ -387,6 +387,15 @@ std::optional<interior::DirectoryPath> NeuralRenderingModelLocation(const NgxSet
     return ModelIn(settings.executableDirectory).or_else([&settings] { return ModelIn(settings.featurePath); });
 }
 
+std::optional<interior::FilePath> NeuralRenderingModelFile(const NgxSettings& settings) noexcept
+{
+    return NeuralRenderingModelLocation(settings).and_then([](const interior::DirectoryPath& directory) {
+        return interior::FilePath::Parse(ModelPathIn(directory.Get()).data())
+            .transform([](const interior::FilePath& path) { return std::optional<interior::FilePath>{ path }; })
+            .value_or(std::nullopt);
+    });
+}
+
 Requirement RequirementOf(const GpuDevice& gpu, const NgxSettings& settings, NVSDK_NGX_Feature feature) noexcept
 {
     const NgxPaths paths{ settings };
