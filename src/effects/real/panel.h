@@ -68,6 +68,13 @@ struct PanelList
 
 using PanelLists = std::array<PanelList, kListCount>;
 
+// What the session found out that the panel needs and cannot ask for itself.
+struct PanelFindings
+{
+    PanelLists lists;
+    bool superResolution; // whether the driver offers it at all; without it the choice is shown but greyed
+};
+
 // The panel keeps no state of its own: the controls hold the operator's choices and are read each frame.
 // Child windows die with their parent, so only the panel itself and its font own a handle.
 struct ControlPanel
@@ -96,6 +103,7 @@ struct ControlPanel
     // it, so they are the command line's to set and the panel's to pass on unaltered.
     bool displayAffinity;
     bool clickThrough;
+    bool superResolution;
 };
 
 // What the panel says this frame: the settings that take effect at once, and the view they belong to.
@@ -109,7 +117,7 @@ struct PanelReading
 };
 
 [[nodiscard]] infra::Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options, const interior::LiveSettings& live, interior::DisplayMode display,
-                                                                    const PanelLists& lists) noexcept;
+                                                                    const PanelFindings& findings) noexcept;
 
 // Reads every control and settles any disagreement between a slider, its box and its arrows, writing the
 // answer back to all three. A value a unit refuses keeps what `current` holds.

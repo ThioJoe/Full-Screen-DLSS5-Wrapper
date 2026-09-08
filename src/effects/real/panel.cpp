@@ -1105,6 +1105,8 @@ void EnableAll(std::span<const HWND> controls, bool enabled) noexcept
 void ApplyEnables(const ControlPanel& panel) noexcept
 {
     EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::Skin)), !IsOn(panel, Toggle::SkinFollowsStructure));
+    EnableAll(ChoicesOf(panel, Group::Sr), panel.superResolution);
+    EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::SrPreset)), panel.superResolution);
 }
 
 // A held reset puts its own control back where the defaults start it; the same answer every frame.
@@ -1322,7 +1324,8 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
     return infra::Generated<std::size_t, kListCount>([&lists](std::size_t l) { return lists[l].choices.Size(); });
 }
 
-[[nodiscard]] ControlPanel Assembled(UniqueWindow window, UniqueFont font, const Metrics& m, const interior::Options& o, const interior::LiveSettings& live, interior::DisplayMode display) noexcept
+[[nodiscard]] ControlPanel Assembled(UniqueWindow window, UniqueFont font, const Metrics& m, const interior::Options& o, const interior::LiveSettings& live, interior::DisplayMode display,
+                                     const PanelFindings& findings) noexcept
 {
     HWND parent = window.get();
     const HWND tabs = CreateTabs(parent, m);
@@ -1349,7 +1352,8 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
                          built.listChoices,
                          CountsOf(*m.lists),
                          o.displayAffinity,
-                         o.clickThrough };
+                         o.clickThrough,
+                         findings.superResolution };
 }
 
 [[nodiscard]] bool IsPresent(HWND control) noexcept
@@ -1401,11 +1405,22 @@ void HintResets(const ControlPanel& panel, HWND parent) noexcept
     std::ranges::for_each(panel.toggleResets, [&panel, parent](HWND button) { AddHint(panel.tooltip, parent, button, kResetHint); });
 }
 
+constexpr wchar_t kNoSuperResolution[] = L"Not offered: the driver reports no DLSS Super Resolution, whose model NVIDIA ships separately. The rest of the session runs without it.";
+
 void HintChoices(const ControlPanel& panel, HWND parent) noexcept
 {
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kToggleCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.toggles[t], kToggles[t].hint); });
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kGroupCount), [&panel, parent](std::size_t g) { AddHint(panel.tooltip, parent, panel.groupLabels[g], kGroups[g].hint); });
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kTextCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.texts[t], kTexts[t].hint); });
+}
+
+// A greyed control that says nothing is just a control that does not work, so the reason replaces the hint.
+void HintMissingSuperResolution(const ControlPanel& panel, HWND parent) noexcept
+{
+    if (panel.superResolution)
+        return;
+    AddHint(panel.tooltip, parent, panel.groupLabels[static_cast<std::size_t>(Group::Sr)], kNoSuperResolution);
+    AddHint(panel.tooltip, parent, panel.labels[static_cast<std::size_t>(Field::SrPreset)], kNoSuperResolution);
 }
 
 void HintRows(const ControlPanel& panel) noexcept
@@ -1414,6 +1429,7 @@ void HintRows(const ControlPanel& panel) noexcept
     HintNumbers(panel, parent);
     HintChoices(panel, parent);
     HintResets(panel, parent);
+    HintMissingSuperResolution(panel, parent);
 }
 
 // The message font goes on every child, so the reset buttons take their glyph font afterwards; a hint says
@@ -1461,21 +1477,21 @@ void DressPanel(const ControlPanel& panel) noexcept
 }
 
 [[nodiscard]] Result<ControlPanel, Error> Populated(UniqueWindow window, const interior::Options& o, const interior::LiveSettings& live, interior::DisplayMode display,
-                                                    const PanelLists& lists) noexcept
+                                                    const PanelFindings& findings) noexcept
 {
     UniqueFont font = MessageFont(static_cast<int>(::GetDpiForWindow(window.get())));
-    const Metrics m = MetricsOf(window.get(), font.get(), lists);
+    const Metrics m = MetricsOf(window.get(), font.get(), findings.lists);
     ResizeToFit(window.get(), m);
-    return Shown(Assembled(std::move(window), std::move(font), m, o, live, display));
+    return Shown(Assembled(std::move(window), std::move(font), m, o, live, display, findings));
 }
 
 } // namespace
 
-Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options, const interior::LiveSettings& live, interior::DisplayMode display, const PanelLists& lists) noexcept
+Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options, const interior::LiveSettings& live, interior::DisplayMode display, const PanelFindings& findings) noexcept
 {
     InitialiseCommonControls();
     return RegisterWindowClass(ClassDescription()).and_then([&] {
-        return CreatePanelWindow().and_then([&](UniqueWindow window) { return Populated(std::move(window), options, live, display, lists); });
+        return CreatePanelWindow().and_then([&](UniqueWindow window) { return Populated(std::move(window), options, live, display, findings); });
     });
 }
 

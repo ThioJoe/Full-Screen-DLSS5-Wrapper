@@ -84,7 +84,6 @@ std::string_view Describe(ApiCall call) noexcept
     case ApiCall::NgxOptimalSettings: return "NGX_DLSS_GET_OPTIMAL_SETTINGS";
     case ApiCall::NgxParameterRoundTrip: return "an NGX parameter did not read back the value written";
     case ApiCall::NgxNeuralRenderingUnavailable: return "DLSS 5 Neural Rendering is unavailable (DLSSNR.Available)";
-    case ApiCall::NgxSuperResolutionUnavailable: return "DLSS Super Resolution is unavailable (SuperSampling.Available)";
     case ApiCall::TextureDescriptionMismatch: return "a created texture does not match its description";
     case ApiCall::PlanFrame: return "frame planning";
     case ApiCall::LoadOpticalFlow: return "loading nvofapi64.dll";

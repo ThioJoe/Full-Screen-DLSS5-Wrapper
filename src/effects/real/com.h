@@ -92,7 +92,6 @@ enum class ApiCall : std::uint8_t {
     NgxOptimalSettings,
     NgxParameterRoundTrip,
     NgxNeuralRenderingUnavailable,
-    NgxSuperResolutionUnavailable,
     TextureDescriptionMismatch,
     PlanFrame,
     LoadOpticalFlow,

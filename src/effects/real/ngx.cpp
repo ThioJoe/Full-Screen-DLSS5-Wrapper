@@ -161,18 +161,9 @@ constexpr std::size_t kModelPathCapacity = interior::DirectoryPath::Capacity + k
     return IntOf(p, NVSDK_NGX_Parameter_SuperSampling_Available).value_or(0) != 0;
 }
 
-[[nodiscard]] Status<Error> RequireCurrentDriver(const NVSDK_NGX_Parameter* p) noexcept
+[[nodiscard]] bool IsCurrentDriver(const NVSDK_NGX_Parameter* p) noexcept
 {
-    if (NeedsDriverUpdate(p))
-        return Fail(Error{ ApiCall::NgxSuperResolutionUnavailable, 1 });
-    return {};
-}
-
-[[nodiscard]] Status<Error> RequireAvailable(const NVSDK_NGX_Parameter* p) noexcept
-{
-    if (!IsSuperResolutionAvailable(p))
-        return Fail(Error{ ApiCall::NgxSuperResolutionUnavailable, 2 });
-    return {};
+    return !NeedsDriverUpdate(p);
 }
 
 [[nodiscard]] NVSDK_NGX_PerfQuality_Value PerfQualityOf(interior::SrQuality quality) noexcept
@@ -429,9 +420,9 @@ Result<NgxRuntime, Error> CreateNgxRuntime(const GpuDevice& gpu, const NgxSettin
         .and_then([&] { return Initialized(gpu, paths); });
 }
 
-Status<Error> RequireSuperResolution(const NgxRuntime& runtime) noexcept
+bool OffersSuperResolution(const NgxRuntime& runtime) noexcept
 {
-    return RequireCurrentDriver(runtime.parameters.get()).and_then([&runtime] { return RequireAvailable(runtime.parameters.get()); });
+    return IsCurrentDriver(runtime.parameters.get()) && IsSuperResolutionAvailable(runtime.parameters.get());
 }
 
 std::optional<std::uint32_t> NeuralRenderingAvailability(const NgxRuntime& runtime) noexcept

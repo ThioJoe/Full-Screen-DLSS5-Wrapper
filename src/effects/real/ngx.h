@@ -105,7 +105,9 @@ using BoundNrParameters = infra::BoundedVector<BoundNrParameter, interior::NrPar
 
 [[nodiscard]] Requirement RequirementOf(const GpuDevice& gpu, const NgxSettings& settings, NVSDK_NGX_Feature feature) noexcept;
 [[nodiscard]] infra::Result<NgxRuntime, Error> CreateNgxRuntime(const GpuDevice& gpu, const NgxSettings& settings) noexcept;
-[[nodiscard]] infra::Status<Error> RequireSuperResolution(const NgxRuntime& runtime) noexcept;
+// Whether the driver offers super resolution at all. Its model is NVIDIA's to ship, and a session that
+// cannot have it runs without it rather than stopping.
+[[nodiscard]] bool OffersSuperResolution(const NgxRuntime& runtime) noexcept;
 [[nodiscard]] std::optional<std::uint32_t> NeuralRenderingAvailability(const NgxRuntime& runtime) noexcept;
 [[nodiscard]] interior::QualityTable QualityTableFor(const NgxRuntime& runtime, const interior::Extent& target) noexcept;
 [[nodiscard]] infra::Result<Feature, Error> CreateSuperResolution(const NgxRuntime& runtime, ID3D12GraphicsCommandList* list, const interior::SrChoice& choice) noexcept;

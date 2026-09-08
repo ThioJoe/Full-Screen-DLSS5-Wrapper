@@ -372,12 +372,25 @@ struct Devices
     });
 }
 
-[[nodiscard]] Status<Error> RequireSuperResolutionIf(const std::optional<real::NgxRuntime>& runtime, bool wanted) noexcept
+[[nodiscard]] bool OffersSuperResolution(const Devices& d) noexcept
 {
-    if (!wanted)
-        return {};
-    REQUIRE(runtime.has_value());
-    return real::RequireSuperResolution(*runtime);
+    return d.runtime.has_value() && real::OffersSuperResolution(*d.runtime);
+}
+
+// A session that asked for super resolution and cannot have it runs without it rather than stopping.
+// Nothing else in the picture depends on it, and the panel greys the choice and says why.
+[[nodiscard]] Options WithoutSuperResolution(const Options& o) noexcept
+{
+    Options without = o; // WAIVER(R2): a copy with one answer replaced, made once and read from there on.
+    without.sr = interior::SrMode::Off;
+    return without;
+}
+
+[[nodiscard]] Base Offered(const Base& b, const Devices& d) noexcept
+{
+    if (OffersSuperResolution(d))
+        return b;
+    return Base{ WithoutSuperResolution(b.options), b.executableDirectory, b.geometry, b.monitors };
 }
 
 [[nodiscard]] interior::QualityTable TableFor(const std::optional<real::NgxRuntime>& runtime, const interior::Extent& target) noexcept
@@ -401,8 +414,7 @@ struct Devices
 
 [[nodiscard]] Result<SessionPlan, Error> Planned(const Console& console, const Base& b, const Devices& d) noexcept
 {
-    const bool wantsSr = interior::WantsSuperResolution(b.options, b.geometry.sourceExtent, b.geometry.targetExtent);
-    return RequireOpticalFlowBuild(b.options).and_then([&] { return RequireSuperResolutionIf(d.runtime, wantsSr); }).and_then([&] {
+    return RequireOpticalFlowBuild(b.options).and_then([&] {
         return interior::PlanSession(b.options, b.geometry, TableFor(d.runtime, b.geometry.targetExtent)).transform_error([&console](interior::PlanError e) {
             return Logged(console, ExplainPlan(e));
         });
@@ -561,12 +573,17 @@ using Caption = real::ChoiceText;
     return real::PanelLists{ PresetList(b.options, presets), SourceList(b.options, b.monitors), TargetList(b.options, b.monitors), AdapterList(b.options, adapters) };
 }
 
+[[nodiscard]] real::PanelFindings FindingsFor(const Base& b, const Devices& d) noexcept
+{
+    return real::PanelFindings{ ListsFor(b, real::UsableAdapters(d.device.factory.Get()), kOfferedPresets), OffersSuperResolution(d) };
+}
+
 // The panel is the ordinary way in: it opens unless --gui off asks for the overlay alone.
-[[nodiscard]] Result<std::optional<real::ControlPanel>, Error> CreatedPanel(const Base& b, const SessionPlan& plan, const real::PanelLists& lists) noexcept
+[[nodiscard]] Result<std::optional<real::ControlPanel>, Error> CreatedPanel(const Base& b, const SessionPlan& plan, const real::PanelFindings& findings) noexcept
 {
     if (!b.options.gui)
         return std::optional<real::ControlPanel>{};
-    return real::CreateControlPanel(b.options, interior::StartingLive(plan), plan.initialDisplay, lists).transform([](real::ControlPanel panel) {
+    return real::CreateControlPanel(b.options, interior::StartingLive(plan), plan.initialDisplay, findings).transform([](real::ControlPanel panel) {
         return std::optional<real::ControlPanel>{ std::move(panel) };
     });
 }
@@ -578,9 +595,9 @@ using Caption = real::ChoiceText;
 
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan) noexcept
 {
-    const real::PanelLists lists = ListsFor(b, real::UsableAdapters(d.device.factory.Get()), kOfferedPresets);
+    const real::PanelFindings findings = FindingsFor(b, d);
     return CreatedWindow(console, b).and_then([&](real::OutputWindow window) {
-        return CreatedPanel(b, plan, lists).and_then([&](std::optional<real::ControlPanel> panel) {
+        return CreatedPanel(b, plan, findings).and_then([&](std::optional<real::ControlPanel> panel) {
             return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), std::move(panel), SettingsOf(b.options, plan), console);
         });
     });
@@ -624,11 +641,12 @@ using Caption = real::ChoiceText;
 
 [[nodiscard]] Result<interior::FrameNumber, Error> Run(const Console& console, const Options& options) noexcept
 {
-    return ResolveBase(console, options).and_then([&](const Base& b) {
-        return CreateDevices(console, b).and_then([&](Devices d) {
+    return ResolveBase(console, options).and_then([&](const Base& found) {
+        return CreateDevices(console, found).and_then([&](Devices d) {
+            const Base b = Offered(found, d);
             return Planned(console, b, d).and_then([&](const SessionPlan& plan) {
                 return LogPlan(console, plan).and_then([&] { return Environment(console, b, std::move(d), plan); }).and_then([&](real::RealEnvironment env) {
-                    return Drive(console, options, plan, env);
+                    return Drive(console, b.options, plan, env);
                 });
             });
         });
