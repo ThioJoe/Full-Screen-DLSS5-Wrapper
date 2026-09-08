@@ -55,6 +55,44 @@ using namespace interior;
     return Geometry{ MonitorList{}, *sr, *tr, source, target };
 }
 
+[[nodiscard]] std::uint32_t UsableLevels(std::uint32_t pixels) noexcept
+{
+    return static_cast<std::uint32_t>(std::ranges::count_if(std::views::iota(std::uint32_t{ 0 }, kCoarsestLevel + 1), [pixels](std::uint32_t level) { return (pixels >> level) >= kMinLevelSize; }));
+}
+
+[[nodiscard]] bool LevelCountFollowsTheMinimumLevelSize(infra::RngState& rng) noexcept
+{
+    const Extent e = RandomExtent(rng);
+    const std::uint32_t expected = std::max(1u, std::min(UsableLevels(e.width.Get()), UsableLevels(e.height.Get())));
+    return LevelCountFor(e).Get() == expected;
+}
+
+[[nodiscard]] Extent Square(std::uint32_t side) noexcept
+{
+    const auto v = PixelCountTag::Parse(side);
+    REQUIRE(v.has_value());
+    return Extent{ *v, *v };
+}
+
+[[nodiscard]] QualityTable FullTableFor(const Extent& input) noexcept
+{
+    QualityTable table;
+    for (const SrQuality q : { SrQuality::Dlaa, SrQuality::UltraQuality, SrQuality::Quality, SrQuality::Balanced, SrQuality::Performance, SrQuality::UltraPerformance })
+        table = table.Push(QualityRange{ q, input, input, input }).value_or(table);
+    return table;
+}
+
+[[nodiscard]] bool QualityOrderFollowsTheRatioBoundaries(infra::RngState&) noexcept
+{
+    const Extent input = Square(100);
+    const QualityTable table = FullTableFor(input);
+    const bool native = ChooseQuality(table, input, Square(105)) == SrQuality::Dlaa && ChooseQuality(table, input, Square(106)) == SrQuality::Quality;
+    const bool quality = ChooseQuality(table, input, Square(160)) == SrQuality::Quality && ChooseQuality(table, input, Square(161)) == SrQuality::Balanced;
+    const bool balanced = ChooseQuality(table, input, Square(185)) == SrQuality::Balanced && ChooseQuality(table, input, Square(186)) == SrQuality::Performance;
+    const bool performance = ChooseQuality(table, input, Square(240)) == SrQuality::Performance && ChooseQuality(table, input, Square(241)) == SrQuality::UltraPerformance;
+    return native && quality && balanced && performance;
+}
+
 [[nodiscard]] bool ChosenQualityContainsInput(infra::RngState& rng) noexcept
 {
     const Extent input = RandomExtent(rng);
@@ -127,6 +165,8 @@ using namespace interior;
 std::uint32_t PlanSuite(std::uint64_t seed) noexcept
 {
     std::uint32_t failures = 0;
+    failures += Failures(proptest::ForAll("the level count follows the minimum level size", seed, 300, LevelCountFollowsTheMinimumLevelSize));
+    failures += Failures(proptest::ForAll("the quality order follows the ratio boundaries", seed, 1, QualityOrderFollowsTheRatioBoundaries));
     failures += Failures(proptest::ForAll("chosen quality contains the input", seed, 1000, ChosenQualityContainsInput));
     failures += Failures(proptest::ForAll("same size prefers DLAA", seed, 200, SameSizePrefersDlaa));
     failures += Failures(proptest::ForAll("work extent is the target only with SR", seed, 500, WorkExtentIsTargetOnlyWithSr));

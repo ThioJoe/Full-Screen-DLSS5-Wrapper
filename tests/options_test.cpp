@@ -123,11 +123,54 @@ constexpr std::array<std::pair<std::wstring_view, bool>, 8> kSpellings{
     return parsed.has_value() && parsed->ngxAppId.has_value() && parsed->ngxAppId->Get() == id;
 }
 
+[[nodiscard]] bool DefaultModelsMatchTheDocumentation(const Options& d) noexcept
+{
+    const NrTuning& t = d.tuning;
+    const bool tuning = t.preset.Get() == 0 && t.intensity.Get() == 1.0f && t.style == NrStyle::Standard && t.localStructure.Get() == 1.0f && t.localTone.Get() == 1.0f &&
+                        t.skinStructure.Get() == -1.0f && t.autoMask && t.uiCorrection;
+    return d.neuralRendering && d.sr == SrMode::Auto && d.srPreset.Get() == 0 && tuning;
+}
+
+[[nodiscard]] bool DefaultMotionMatchesTheDocumentation(const Options& d) noexcept
+{
+    return d.motion == MotionBackend::BuiltIn && d.motionFinestLevel.Get() == 1 && d.nvofGrid == GridSize::One && d.nvofPerf == PerfLevel::Medium && d.depthValue.Get() == 0.5f &&
+           d.resetThreshold.Get() == 0.5f;
+}
+
+[[nodiscard]] bool DefaultCaptureMatchesTheDocumentation(const Options& d) noexcept
+{
+    return d.source.kind == MonitorSelectionKind::Primary && !d.target.has_value() && d.cursor == CursorMode::Auto && d.vsync && d.compare == CompareMode::Off && d.format == ColorFormat::Rgba8 &&
+           !d.captureBorder && d.ngxLogLevel == NgxLogLevel::On && !d.ngxAppId.has_value() && d.ngxPath.IsEmpty() && d.appDataPath.IsEmpty();
+}
+
+[[nodiscard]] bool DefaultWindowMatchesTheDocumentation(const Options& d) noexcept
+{
+    return d.displayAffinity && d.topmost && d.clickThrough && !d.redirectionBitmap && !d.debugLayer && !d.adapter.has_value() && d.logLevel == LogLevel::Info && d.logFile.IsEmpty() && !d.showHelp &&
+           !d.listMonitors;
+}
+
+[[nodiscard]] bool DefaultsMatchTheDocumentation(infra::RngState&) noexcept
+{
+    const Options d = DefaultOptions();
+    return DefaultModelsMatchTheDocumentation(d) && DefaultMotionMatchesTheDocumentation(d) && DefaultCaptureMatchesTheDocumentation(d) && DefaultWindowMatchesTheDocumentation(d);
+}
+
+[[nodiscard]] bool ArgumentCountIsBoundedExactly(infra::RngState&) noexcept
+{
+    const std::vector<std::wstring_view> full(kMaxArguments, L"--vsync=on");
+    const std::vector<std::wstring_view> over(kMaxArguments + 1, L"--vsync=on");
+    const auto accepted = ParseOptions(full);
+    const auto rejected = ParseOptions(over);
+    return accepted.has_value() && !rejected.has_value() && rejected.error().kind == OptionsErrorKind::TooManyArguments;
+}
+
 } // namespace
 
 std::uint32_t OptionsSuite(std::uint64_t seed) noexcept
 {
     std::uint32_t failures = 0;
+    failures += Failures(proptest::ForAll("the defaults match the documentation", seed, 1, DefaultsMatchTheDocumentation));
+    failures += Failures(proptest::ForAll("the argument count is bounded exactly", seed, 1, ArgumentCountIsBoundedExactly));
     failures += Failures(proptest::ForAll("boolean spellings parse", seed, 40, BooleanSpellingsParse));
     failures += Failures(proptest::ForAll("--ngx-app-id round-trips", seed, 200, HexAppIdRoundTrips));
     failures += Failures(proptest::ForAll("option parser never panics on random input", seed, 3000, ParserNeverPanicsAndErrorsAreEnumerated));

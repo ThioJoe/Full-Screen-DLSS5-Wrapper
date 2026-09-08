@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <ranges>
+#include <variant>
+#include <vector>
 
 namespace tests {
 namespace {
@@ -290,11 +292,95 @@ struct Replay
     return threshold.has_value() && above.has_value() && exclusive && !ExceedsThreshold(std::nullopt, *threshold);
 }
 
+[[nodiscard]] std::vector<std::size_t> AllSlots() noexcept
+{
+    std::vector<std::size_t> slots;
+    for (const ResourceKind kind : { ResourceKind::Canvas, ResourceKind::ModelColor, ResourceKind::Depth, ResourceKind::MotionVectors, ResourceKind::Stats, ResourceKind::ZeroBuffer,
+                                     ResourceKind::SrOutput, ResourceKind::NrOutput, ResourceKind::OpticalFlowOutput })
+        slots.push_back(SlotOf(SimpleId(kind)));
+    for (std::uint32_t i = 0; i < kBackBufferCount; ++i)
+        slots.push_back(SlotOf(BackBufferId(*BackBufferIndexTag::Parse(i))));
+    for (std::uint32_t i = 0; i < kFrameSlotCount; ++i)
+        slots.push_back(SlotOf(ReadbackId(*FrameSlotTag::Parse(i))));
+    for (std::uint32_t set = 0; set < 2; ++set)
+        for (std::uint32_t level = 0; level < kMaxLevels; ++level)
+            slots.push_back(SlotOf(LumaId(*SetIndexTag::Parse(set), *LevelIndexTag::Parse(level))));
+    for (std::uint32_t level = 0; level < kMaxLevels; ++level)
+        slots.push_back(SlotOf(FlowId(*LevelIndexTag::Parse(level))));
+    return slots;
+}
+
+[[nodiscard]] bool SlotsCoverTheTableExactlyOnce(infra::RngState&) noexcept
+{
+    std::vector<std::size_t> slots = AllSlots();
+    std::ranges::sort(slots);
+    return slots.size() == kSlotCount && std::ranges::equal(slots, std::views::iota(std::size_t{ 0 }, kSlotCount));
+}
+
+[[nodiscard]] bool PredictsFromTheCoarserFlow(const Dispatch& d, const SessionPlan& plan) noexcept
+{
+    if (d.pass != PassId::Match || !d.binding.uav[0].has_value())
+        return d.pass != PassId::Match;
+    const std::uint32_t level = d.binding.uav[0]->level.Get();
+    if (level + 1 == plan.levels.Get())
+        return !d.binding.srv[2].has_value();
+    return d.binding.srv[2].has_value() && d.binding.srv[2]->kind == ResourceKind::Flow && d.binding.srv[2]->level.Get() == level + 1;
+}
+
+[[nodiscard]] FrameInput FreshInput() noexcept
+{
+    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, false };
+}
+
+[[nodiscard]] FrameInput RepeatInput() noexcept
+{
+    return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, false };
+}
+
+[[nodiscard]] bool MatchDispatchesPredictFromTheCoarserFlow(infra::RngState& rng) noexcept
+{
+    SessionPlan plan = RandomPlan(rng);
+    plan.motion = MotionBackend::BuiltIn;
+    const auto planned = PlanFrame(plan, InitialFrameState(plan), FreshInput());
+    if (!planned.has_value())
+        return false;
+    const auto matches = std::ranges::count_if(planned->steps.Items(), [](const Step& s) { return std::holds_alternative<Dispatch>(s) && std::get<Dispatch>(s).pass == PassId::Match; });
+    const bool predicted = std::ranges::all_of(planned->steps.Items(), [&](const Step& s) { return !std::holds_alternative<Dispatch>(s) || PredictsFromTheCoarserFlow(std::get<Dispatch>(s), plan); });
+    return predicted && static_cast<std::uint32_t>(matches) == plan.levels.Get() - plan.finestLevel.Get();
+}
+
+[[nodiscard]] std::uint32_t Draws(const StepList& steps) noexcept
+{
+    return static_cast<std::uint32_t>(std::ranges::count_if(steps.Items(), [](const Step& s) { return std::holds_alternative<Draw>(s); }));
+}
+
+[[nodiscard]] std::uint32_t Clears(const StepList& steps) noexcept
+{
+    return static_cast<std::uint32_t>(std::ranges::count_if(steps.Items(), [](const Step& s) { return std::holds_alternative<ClearTarget>(s); }));
+}
+
+[[nodiscard]] bool FreshFramesDrawAndBlankRepeatsClear(infra::RngState& rng) noexcept
+{
+    const SessionPlan plan = RandomPlan(rng);
+    const FrameState initial = InitialFrameState(plan);
+    const auto blank = PlanFrame(plan, initial, RepeatInput());
+    const auto fresh = PlanFrame(plan, initial, FreshInput());
+    if (!blank.has_value() || !fresh.has_value())
+        return false;
+    const auto repeat = PlanFrame(plan, fresh->next, RepeatInput());
+    const bool blankClears = Clears(blank->steps) == 1 && Draws(blank->steps) == 0;
+    const bool freshDraws = Draws(fresh->steps) == 1 && Clears(fresh->steps) == 0 && fresh->next.hasOutput;
+    return blankClears && freshDraws && repeat.has_value() && Draws(repeat->steps) == 1 && Clears(repeat->steps) == 0;
+}
+
 } // namespace
 
 std::uint32_t FrameSuite(std::uint64_t seed) noexcept
 {
     std::uint32_t failures = 0;
+    failures += Failures(proptest::ForAll("slots cover the resource table exactly once", seed, 1, SlotsCoverTheTableExactlyOnce));
+    failures += Failures(proptest::ForAll("match dispatches predict from the coarser flow", seed, 300, MatchDispatchesPredictFromTheCoarserFlow));
+    failures += Failures(proptest::ForAll("fresh frames draw and blank repeats clear", seed, 300, FreshFramesDrawAndBlankRepeatsClear));
     failures += Failures(proptest::ForAll("the initial state is blank", seed, 100, InitialStateIsBlank));
     failures += Failures(proptest::ForAll("a long pause needs a capture and more than the limit", seed, 200, LongPauseNeedsACaptureAndMoreThanTheLimit));
     failures += Failures(proptest::ForAll("the reset threshold is exclusive and needs a value", seed, 200, ThresholdIsExclusiveAndNeedsAValue));
