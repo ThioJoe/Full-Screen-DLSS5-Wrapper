@@ -38,8 +38,8 @@ constexpr int kPanelWidth = kColumns * kColumnWidth + (kColumns + 1) * kMargin;
 constexpr int kSliderWidth = 196;
 constexpr int kBoxOffset = 214;
 constexpr int kBoxWidth = 78;
-constexpr int kResetOffset = 306;
-constexpr int kResetWidth = 62;
+constexpr int kResetOffset = 302;
+constexpr int kResetWidth = 28;
 constexpr int kChoiceWidth = 122;
 constexpr int kTabHeight = 30;
 
@@ -252,6 +252,19 @@ void InitialiseCommonControls() noexcept
 {
     INITCOMMONCONTROLSEX controls{ sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES | ICC_STANDARD_CLASSES | ICC_UPDOWN_CLASS | ICC_TAB_CLASSES };
     (void)::InitCommonControlsEx(&controls);
+}
+
+// Segoe MDL2 Assets has shipped with Windows since 10, and its refresh glyph fits a button too short for a word.
+constexpr wchar_t kRefreshGlyph[] = L"\uE72C";
+constexpr wchar_t kResetHint[] = L"Put this setting back to the value it starts at.";
+
+[[nodiscard]] UniqueFont IconFont(int dpi) noexcept
+{
+    LOGFONTW description{}; // WAIVER(R2): a request record filled once, before it is asked.
+    description.lfHeight = -::MulDiv(11, dpi, kReferenceDpi);
+    description.lfCharSet = DEFAULT_CHARSET;
+    ENSURE(::wcscpy_s(description.lfFaceName, L"Segoe MDL2 Assets") == 0);
+    return UniqueFont(::CreateFontIndirectW(&description));
 }
 
 // The font the rest of Windows writes its dialogs in, asked for at this display's scale. The plain query
@@ -592,7 +605,7 @@ struct Built
     built.spins = infra::Generated<HWND, kFieldCount>([&](std::size_t f) { return CreateSpin(parent, built.boxes[f], kFields[f], steps(f)); });
     built.resets = infra::Generated<HWND, kFieldCount>([&](std::size_t f) {
         const Placement at = PlaceOfField(f, m);
-        return CreateButton(parent, m, L"Reset", 0, at.left + kResetOffset, at.control, kResetWidth);
+        return CreateButton(parent, m, kRefreshGlyph, 0, at.left + kResetOffset, at.control, kResetWidth);
     });
     return built;
 }
@@ -612,7 +625,7 @@ struct Built
     if (!kToggles[toggle].resettable)
         return nullptr;
     const Placement at = PlaceOfToggle(toggle, m);
-    return CreateButton(parent, m, L"Reset", 0, at.left + kResetOffset, at.control, kResetWidth);
+    return CreateButton(parent, m, kRefreshGlyph, 0, at.left + kResetOffset, at.control, kResetWidth);
 }
 
 [[nodiscard]] Built BuildToggles(HWND parent, const Metrics& m, const std::array<bool, kToggleCount>& on, Built built) noexcept
@@ -1075,6 +1088,7 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
     const HWND restart = CreateButton(parent, m, L"Start a new session with these", 0, kMargin, m.ButtonTop(), kColumnWidth);
     return ControlPanel{ std::move(window),
                          std::move(font),
+                         IconFont(m.dpi),
                          tabs,
                          tabs == nullptr ? nullptr : CreateTooltip(parent),
                          restart,
@@ -1136,13 +1150,39 @@ void HintNumbers(const ControlPanel& panel, HWND parent) noexcept
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kFieldCount), [&panel, parent](std::size_t f) { AddHint(panel.tooltip, parent, panel.boxes[f], kFields[f].hint); });
 }
 
+void HintResets(const ControlPanel& panel, HWND parent) noexcept
+{
+    std::ranges::for_each(panel.resets, [&panel, parent](HWND button) { AddHint(panel.tooltip, parent, button, kResetHint); });
+    std::ranges::for_each(panel.toggleResets, [&panel, parent](HWND button) { AddHint(panel.tooltip, parent, button, kResetHint); });
+}
+
+void HintChoices(const ControlPanel& panel, HWND parent) noexcept
+{
+    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kToggleCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.toggles[t], kToggles[t].hint); });
+    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kGroupCount), [&panel, parent](std::size_t g) { AddHint(panel.tooltip, parent, panel.groupLabels[g], kGroups[g].hint); });
+    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kTextCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.texts[t], kTexts[t].hint); });
+}
+
 void HintRows(const ControlPanel& panel) noexcept
 {
     HWND parent = panel.window.get();
     HintNumbers(panel, parent);
-    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kToggleCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.toggles[t], kToggles[t].hint); });
-    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kGroupCount), [&panel, parent](std::size_t g) { AddHint(panel.tooltip, parent, panel.groupLabels[g], kGroups[g].hint); });
-    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kTextCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.texts[t], kTexts[t].hint); });
+    HintChoices(panel, parent);
+    HintResets(panel, parent);
+}
+
+// The message font goes on every child, so the reset buttons take their glyph font afterwards; a hint says
+// what the glyph means, since a picture of a circling arrow does not say which value it puts back.
+void WearIcon(const ControlPanel& panel, HWND button) noexcept
+{
+    if (button != nullptr)
+        (void)::SendMessageW(button, WM_SETFONT, reinterpret_cast<WPARAM>(panel.iconFont.get()), TRUE);
+}
+
+void IconiseResets(const ControlPanel& panel) noexcept
+{
+    std::ranges::for_each(panel.resets, [&panel](HWND button) { WearIcon(panel, button); });
+    std::ranges::for_each(panel.toggleResets, [&panel](HWND button) { WearIcon(panel, button); });
 }
 
 void DressPanel(const ControlPanel& panel) noexcept
@@ -1157,6 +1197,7 @@ void DressPanel(const ControlPanel& panel) noexcept
         },
         reinterpret_cast<LPARAM>(font));
     AddTabs(panel.tabs);
+    IconiseResets(panel);
     HintRows(panel);
 }
 

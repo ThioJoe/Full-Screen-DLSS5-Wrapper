@@ -40,6 +40,7 @@ struct ControlPanel
 {
     UniqueWindow window;
     UniqueFont font;
+    UniqueFont iconFont; // the reset buttons wear a glyph rather than a word, so they get their own face
     HWND tabs;
     HWND tooltip;
     HWND restart;
