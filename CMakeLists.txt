@@ -77,6 +77,20 @@ add_library(dscreen_core STATIC
   src/effects/sim/sim.cpp)
 target_link_libraries(dscreen_core PUBLIC dscreen_flags dscreen_trace PRIVATE dscreen_trace_flags)
 
+# --- stack reserve for the executables -----------------------------------------------------------
+# The interior passes its step lists (about 44 KB each) by value through result chains, so planning
+# one frame keeps a few hundred kilobytes of live stack per call level. Windows reserves only 1 MB
+# for a thread by default (Linux reserves 8 MB); the executables reserve 16 MB, which every thread
+# created without an explicit size inherits. Reserved address space is committed only when touched.
+add_library(dscreen_stack INTERFACE)
+if(WIN32)
+  if(MSVC)
+    target_link_options(dscreen_stack INTERFACE /STACK:16777216)
+  else()
+    target_link_options(dscreen_stack INTERFACE -Wl,--stack,16777216)
+  endif()
+endif()
+
 # --- tests (portable) ----------------------------------------------------------------------------
 enable_testing()
 add_executable(dscreen_tests
@@ -87,7 +101,7 @@ add_executable(dscreen_tests
   tests/plan_test.cpp
   tests/frame_test.cpp
   tests/simulation_test.cpp)
-target_link_libraries(dscreen_tests PRIVATE dscreen_core dscreen_trace_flags)
+target_link_libraries(dscreen_tests PRIVATE dscreen_core dscreen_trace_flags dscreen_stack)
 add_test(NAME properties_seed_1000 COMMAND dscreen_tests 1000)
 add_test(NAME properties_seed_2000 COMMAND dscreen_tests 2000)
 add_test(NAME properties_seed_3000 COMMAND dscreen_tests 3000)

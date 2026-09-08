@@ -82,7 +82,7 @@ if(DSCREEN_ENABLE_NVOF)
 else()
   target_compile_definitions(DlssScreen PRIVATE DSCREEN_HAVE_NVOF=0)
 endif()
-target_link_libraries(DlssScreen PRIVATE dscreen_core dscreen_trace_flags
+target_link_libraries(DlssScreen PRIVATE dscreen_core dscreen_trace_flags dscreen_stack
   "$<IF:$<CONFIG:Debug>,${NGX_LIBRARY_DEBUG},${NGX_LIBRARY_RELEASE}>"
   d3d12 dxgi d3d11 dcomp dxguid user32 gdi32 shcore shell32 ole32 runtimeobject)
 target_link_options(DlssScreen PRIVATE /SUBSYSTEM:CONSOLE /MAP)

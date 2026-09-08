@@ -6,6 +6,8 @@ name: Build DlssScreen
 # PDB, nvngx_dlss.dll from the SDK, README and LICENSE) as an artifact.
 # The push trigger only sees this file on the pushed branch, so keep the copies on main and on the
 # development branches identical. Object files are cached between runs with sccache in the Actions cache.
+# Every action used here runs on Node 24; the MSVC environment comes from Visual Studio's own
+# Developer PowerShell module rather than from a third-party action.
 on:
   push:
     branches:
@@ -45,12 +47,12 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Check out DlssScreen
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
 
       - name: Check out the NVIDIA DLSS SDK
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: NVIDIA/DLSS
           ref: ${{ inputs.dlss_sdk_ref || 'main' }}
@@ -65,15 +67,23 @@ jobs:
         shell: pwsh
         run: |
           "sha=$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
-          Get-ChildItem -Recurse -Path dlss-sdk -Include nvsdk_ngx_d3d12.lib, nvngx_dlss.dll | ForEach-Object { $_.FullName }
+          Get-ChildItem -Recurse -Path dlss-sdk -Include nvsdk_ngx_s.lib, nvngx_dlss.dll | ForEach-Object { $_.FullName }
 
       - name: Set up the MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw "No Visual Studio installation with the x64 C++ tools was found" }
+          "Using $vs"
+          $before = @{}
+          Get-ChildItem env: | ForEach-Object { $before[$_.Name] = $_.Value }
+          Import-Module (Join-Path $vs "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
+          Get-ChildItem env: | Where-Object { $before[$_.Name] -ne $_.Value } | ForEach-Object { "$($_.Name)=$($_.Value)" >> $env:GITHUB_ENV }
 
       - name: Set up the compiler cache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Configure
         shell: pwsh
@@ -107,7 +117,7 @@ jobs:
           Get-ChildItem dist
 
       - name: Upload the artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: DlssScreen-${{ env.CONFIGURATION }}-${{ steps.describe.outputs.sha }}
           path: dist
