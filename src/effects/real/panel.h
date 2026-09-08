@@ -20,22 +20,7 @@ enum class Page : std::size_t { Model, View, Startup, Count };
 enum class Field : std::size_t { Intensity, Preset, LocalStructure, LocalTone, Skin, MvScaleX, MvScaleY, Split, DepthValue, ResetThreshold, MvLevel, SrPreset, Monitor, Target, Adapter, Count };
 
 // A switch the operator flips.
-enum class Toggle : std::size_t {
-    NeuralRendering,
-    AutoMask,
-    UiCorrection,
-    DepthInverted,
-    Vsync,
-    CaptureBorder,
-    Affinity,
-    Topmost,
-    ClickThrough,
-    RedirectionBitmap,
-    DebugLayer,
-    Indicator,
-    CubinCache,
-    Count
-};
+enum class Toggle : std::size_t { NeuralRendering, AutoMask, UiCorrection, DepthInverted, Vsync, CaptureBorder, Topmost, RedirectionBitmap, DebugLayer, Indicator, CubinCache, Count };
 
 // A choice among a few named alternatives.
 enum class Group : std::size_t { Compare, Style, Cursor, Motion, NvofGrid, NvofPerf, Sr, Format, LogLevel, Console, Source, Count };
@@ -69,6 +54,10 @@ struct ControlPanel
     std::array<std::array<HWND, kMaxChoices>, kGroupCount> choices;
     std::array<HWND, kTextCount> textLabels;
     std::array<HWND, kTextCount> texts;
+    // Two settings the panel carries but does not show: off, each spoils the picture rather than changing
+    // it, so they are the command line's to set and the panel's to pass on unaltered.
+    bool displayAffinity;
+    bool clickThrough;
 };
 
 // What the panel says this frame: the settings that take effect at once, and the view they belong to.

@@ -85,9 +85,7 @@ constexpr std::array<ToggleSpec, kToggleCount> kToggles{ {
     { L"Depth is inverted", L"Tell the model the depth plane counts the other way. With one flat plane it changes little." },
     { L"Wait for the display", L"Present in step with the monitor. Off presents as fast as the pipeline allows." },
     { L"Capture border", L"Let Windows draw its yellow border around what is being captured." },
-    { L"Hide from capture", L"Keep the output window out of the capture. Off lets it photograph itself, which feeds back." },
     { L"Always on top", L"Keep the output window above every other window." },
-    { L"Click through", L"Pass the mouse through the output window to the desktop underneath." },
     { L"Redirection surface", L"Give the output window a GDI surface. Diagnostic; fixed when the window is made." },
     { L"Direct3D debug layer", L"Turn on the Direct3D 12 validation layer. Slow, and only useful when chasing a fault." },
     { L"Model indicator", L"Let the model draw its own overlay naming its version, the preset it resolved and its working size." },
@@ -167,10 +165,7 @@ constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
       14,
       { Of(Toggle::NeuralRendering), Of(Group::Style), Of(Field::Preset), Of(Field::Intensity), Of(Field::LocalStructure), Of(Field::LocalTone), Of(Field::Skin), Of(Toggle::AutoMask),
         Of(Toggle::UiCorrection), Of(Toggle::DepthInverted), Of(Field::DepthValue), Of(Field::ResetThreshold), Of(Field::MvScaleX), Of(Field::MvScaleY) } },
-    { L"View",
-      9,
-      { Of(Group::Compare), Of(Field::Split), Of(Toggle::Vsync), Of(Group::Cursor), Of(Toggle::CaptureBorder), Of(Toggle::Affinity), Of(Toggle::Topmost), Of(Toggle::ClickThrough),
-        Of(Group::LogLevel) } },
+    { L"View", 7, { Of(Group::Compare), Of(Field::Split), Of(Toggle::Vsync), Of(Group::Cursor), Of(Toggle::CaptureBorder), Of(Toggle::Topmost), Of(Group::LogLevel) } },
     { L"Start-up",
       17,
       { Of(Group::Source), Of(Field::Monitor), Of(Field::Target), Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(Group::NvofGrid),
@@ -482,19 +477,8 @@ void ChooseOnly(std::span<const HWND> group, std::size_t index) noexcept
 
 [[nodiscard]] std::array<bool, kToggleCount> StartingToggles(const interior::Options& o, const interior::LiveSettings& live) noexcept
 {
-    return { live.neuralRendering,
-             live.tuning.autoMask,
-             live.tuning.uiCorrection,
-             live.depthInverted,
-             live.vsync,
-             o.captureBorder,
-             o.displayAffinity,
-             o.topmost,
-             o.clickThrough,
-             o.redirectionBitmap,
-             o.debugLayer,
-             o.indicator,
-             o.cubinCache };
+    return { live.neuralRendering, live.tuning.autoMask, live.tuning.uiCorrection, live.depthInverted, live.vsync, o.captureBorder, o.topmost, o.redirectionBitmap, o.debugLayer,
+             o.indicator,          o.cubinCache };
 }
 
 [[nodiscard]] std::size_t CodeOfGrid(interior::GridSize grid) noexcept
@@ -849,10 +833,8 @@ void ShowChosenPage(const ControlPanel& panel) noexcept
 
 [[nodiscard]] interior::SurfaceSettings SurfaceOf(const ControlPanel& panel) noexcept
 {
-    return interior::SurfaceSettings{
-        CursorFrom(ChosenIn(panel, Group::Cursor, 0)),    IsOn(panel, Toggle::CaptureBorder), IsOn(panel, Toggle::Affinity), IsOn(panel, Toggle::Topmost), IsOn(panel, Toggle::ClickThrough),
-        LogLevelFrom(ChosenIn(panel, Group::LogLevel, 1))
-    };
+    return interior::SurfaceSettings{ CursorFrom(ChosenIn(panel, Group::Cursor, 0)),    IsOn(panel, Toggle::CaptureBorder), panel.displayAffinity, IsOn(panel, Toggle::Topmost), panel.clickThrough,
+                                      LogLevelFrom(ChosenIn(panel, Group::LogLevel, 1)) };
 }
 
 // --- the resets --------------------------------------------------------------------------------------
@@ -1021,7 +1003,8 @@ using Piece = infra::BoundedString<char, kPieceCapacity>;
 
 [[nodiscard]] Arguments WindowArguments(const ControlPanel& panel, const Arguments& so) noexcept
 {
-    const std::array<Piece, 3> pieces{ Switch(panel, Toggle::Affinity, "affinity"), Switch(panel, Toggle::Topmost, "topmost"), Switch(panel, Toggle::ClickThrough, "click-through") };
+    const std::array<Piece, 3> pieces{ Trimmed(infra::Formatted<kPieceCapacity>("--affinity={}", Word(panel.displayAffinity)).Get()), Switch(panel, Toggle::Topmost, "topmost"),
+                                       Trimmed(infra::Formatted<kPieceCapacity>("--click-through={}", Word(panel.clickThrough)).Get()) };
     return JoinedAll(so, pieces);
 }
 
@@ -1096,7 +1079,9 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
                          built.groupLabels,
                          built.choices,
                          built.textLabels,
-                         built.texts };
+                         built.texts,
+                         o.displayAffinity,
+                         o.clickThrough };
 }
 
 [[nodiscard]] bool IsPresent(HWND control) noexcept
