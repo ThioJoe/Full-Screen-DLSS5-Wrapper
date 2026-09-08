@@ -7,6 +7,9 @@
 #include <ranges>
 
 namespace real {
+
+constexpr std::size_t kCommandCapacity = 2400;
+
 namespace {
 
 using infra::Fail;
@@ -103,11 +106,11 @@ constexpr std::uint32_t kMaxMessagesPerPump = 64;
     return CheckBool(::SetLayeredWindowAttributes(handle, 0, 255, LWA_ALPHA), ApiCall::CreateWindowExW);
 }
 
+// Set either way, so the operator can put the window back into the capture and watch it feed back.
 [[nodiscard]] Status<Error> ApplyAffinity(HWND handle, const WindowSettings& s) noexcept
 {
-    if (!s.excludeFromCapture)
-        return {};
-    return CheckBool(::SetWindowDisplayAffinity(handle, WDA_EXCLUDEFROMCAPTURE), ApiCall::SetWindowDisplayAffinity);
+    const DWORD affinity = s.excludeFromCapture ? WDA_EXCLUDEFROMCAPTURE : WDA_NONE;
+    return CheckBool(::SetWindowDisplayAffinity(handle, affinity), ApiCall::SetWindowDisplayAffinity);
 }
 
 [[nodiscard]] HWND InsertAfter(const WindowSettings& s) noexcept
@@ -310,6 +313,62 @@ std::optional<interior::Fraction> SplitRequest(const OutputWindow& window) noexc
     if (!AreModifiersHeld())
         return std::nullopt;
     return CursorPosition().and_then([&window](POINT cursor) { return FractionAcross(window.rect, cursor.x); });
+}
+
+// The three flags that can change while the window is up. The style is rewritten whole and the window
+// asked to keep or drop its place above everything; the redirection surface is fixed at creation.
+[[nodiscard]] DWORD LiveStyle(const WindowSettings& s) noexcept
+{
+    return WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | TopmostStyle(s) | ClickThroughStyle(s);
+}
+
+Status<Error> ApplyWindowSettings(const OutputWindow& window, const WindowSettings& settings) noexcept
+{
+    HWND handle = window.handle.get();
+    const DWORD kept = static_cast<DWORD>(::GetWindowLongPtrW(handle, GWL_EXSTYLE)) & WS_EX_NOREDIRECTIONBITMAP;
+    (void)::SetWindowLongPtrW(handle, GWL_EXSTYLE, static_cast<LONG_PTR>(LiveStyle(settings) | kept));
+    return ApplyLayering(handle, settings).and_then([&] { return ApplyAffinity(handle, settings); }).and_then([&] {
+        return CheckBool(::SetWindowPos(handle, InsertAfter(settings), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED), ApiCall::CreateWindowExW);
+    });
+}
+
+// The command line is one buffer the call is allowed to write to, so it is built here and handed over.
+[[nodiscard]] std::array<wchar_t, kCommandCapacity> CommandLineFor(std::wstring_view executable, std::wstring_view arguments) noexcept
+{
+    std::array<wchar_t, kCommandCapacity> line{}; // WAIVER(R2): a local buffer filled once, before use.
+    const int written =
+        ::_snwprintf_s(line.data(), line.size(), _TRUNCATE, L"\"%.*s\" %.*s", static_cast<int>(executable.size()), executable.data(), static_cast<int>(arguments.size()), arguments.data());
+    ENSURE(written > 0);
+    return line;
+}
+
+void CloseStarted(const PROCESS_INFORMATION& process) noexcept
+{
+    ENSURE(::CloseHandle(process.hThread) != FALSE);
+    ENSURE(::CloseHandle(process.hProcess) != FALSE);
+}
+
+[[nodiscard]] STARTUPINFOW StartupRecord() noexcept
+{
+    STARTUPINFOW startup{}; // WAIVER(R2): a request record filled once, before the call.
+    startup.cb = sizeof(STARTUPINFOW);
+    return startup;
+}
+
+[[nodiscard]] Status<Error> Started(std::array<wchar_t, kCommandCapacity>& line) noexcept
+{
+    STARTUPINFOW startup = StartupRecord();
+    PROCESS_INFORMATION process{}; // WAIVER(R2): an answer record filled once by the call.
+    if (::CreateProcessW(nullptr, line.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &startup, &process) == FALSE)
+        return Fail(LastError(ApiCall::CreateProcess));
+    CloseStarted(process);
+    return {};
+}
+
+Status<Error> StartProcess(std::wstring_view executable, std::wstring_view arguments) noexcept
+{
+    std::array<wchar_t, kCommandCapacity> line = CommandLineFor(executable, arguments);
+    return Started(line);
 }
 
 Status<Error> RegisterWindowClass(const WNDCLASSEXW& description) noexcept

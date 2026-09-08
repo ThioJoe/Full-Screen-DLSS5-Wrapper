@@ -164,6 +164,17 @@ struct ScaleTag
     [[nodiscard]] static constexpr Result<Scale, UnitError> Parse(float raw) noexcept;
 };
 
+// What the model multiplies the motion vectors by. It applies no range of its own, and a negative value
+// is the way to flip an axis, so only a finite number is asked for.
+struct MotionScaleTag;
+using MotionScale = infra::Strong<float, MotionScaleTag>;
+struct MotionScaleTag
+{
+    [[nodiscard]] static constexpr Result<MotionScale, UnitError> Parse(float raw) noexcept;
+    // An upscale ratio is a finite positive number, so it is already a motion scale.
+    [[nodiscard]] static constexpr MotionScale Of(Scale scale) noexcept { return MotionScale(scale.Get()); }
+};
+
 struct LevelIndexTag;
 using LevelIndex = infra::Strong<std::uint32_t, LevelIndexTag>;
 struct LevelIndexTag
@@ -280,6 +291,8 @@ struct NgxAppIdTag
 };
 
 using ProjectIdText = infra::BoundedString<char, 36>;
+// GROWTH-SITE: the arguments of a session asked for from the panel, capped at 1024 characters.
+using CommandLine = infra::BoundedString<wchar_t, 2048>;
 using DirectoryPath = infra::BoundedString<wchar_t, 260>;
 using DeviceName = infra::BoundedString<wchar_t, 32>;
 using AdapterName = infra::BoundedString<wchar_t, 128>;
@@ -432,6 +445,13 @@ constexpr Result<Scale, UnitError> ScaleTag::Parse(float raw) noexcept
     if (IsOutsideOrNaN(raw, 0.0f, kMaxScale))
         return infra::Fail(UnitError::ScaleOutOfRange);
     return Scale(raw);
+}
+
+constexpr Result<MotionScale, UnitError> MotionScaleTag::Parse(float raw) noexcept
+{
+    if (IsNotFinite(raw))
+        return infra::Fail(UnitError::NotFinite);
+    return MotionScale(raw);
 }
 
 constexpr Result<LevelIndex, UnitError> LevelIndexTag::Parse(std::uint32_t raw) noexcept

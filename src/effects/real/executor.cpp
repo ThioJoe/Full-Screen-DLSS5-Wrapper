@@ -296,13 +296,13 @@ void SetBlitPipeline(const Gpu& gpu, const interior::Draw& d, std::uint32_t base
     return c;
 }
 
-[[nodiscard]] StepResult RecordPresent(const Gpu& gpu, const interior::SessionPlan& plan, const Cursor& c) noexcept
+[[nodiscard]] StepResult RecordPresent(const Gpu& gpu, const interior::Present& present, const Cursor& c) noexcept
 {
-    return PresentFrame(gpu.presenter, plan.vsync).and_then([&] { return SignalFence(gpu.device, c.fence); }).transform([&c](interior::FenceValue v) { return WithFence(c, v); });
+    return PresentFrame(gpu.presenter, present.vsync).and_then([&] { return SignalFence(gpu.device, c.fence); }).transform([&c](interior::FenceValue v) { return WithFence(c, v); });
 }
 
 // WAIVER(R7): the real and the simulated interpreter dispatch the same step variant; every arm differs.
-[[nodiscard]] StepResult ExecuteStep(const Gpu& gpu, const interior::SessionPlan& plan, const FrameContext& f, const interior::Step& step, const Cursor& c) noexcept
+[[nodiscard]] StepResult ExecuteStep(const Gpu& gpu, const FrameContext& f, const interior::Step& step, const Cursor& c) noexcept
 {
     return std::visit(infra::Overloaded{
                           [&](const interior::Transition& t) { return RecordTransition(gpu, t, c); },
@@ -313,7 +313,7 @@ void SetBlitPipeline(const Gpu& gpu, const interior::Draw& d, std::uint32_t base
                           [&](const interior::EvaluateNr& e) { return RecordNeuralRendering(gpu, e, c); },
                           [&](const interior::Draw& d) { return RecordDraw(gpu, f.slot, d, c); },
                           [&](const interior::Submit& s) { return RecordSubmit(gpu, f, s, c); },
-                          [&](const interior::Present&) { return RecordPresent(gpu, plan, c); },
+                          [&](const interior::Present& p) { return RecordPresent(gpu, p, c); },
                       },
                       step);
 }
@@ -330,10 +330,10 @@ Result<interior::FenceValue, Error> FlushList(const Gpu& gpu, interior::FenceVal
     return FlushCommandList(gpu.device, gpu.list.Get(), previous);
 }
 
-Result<interior::FenceValue, Error> ExecuteSteps(const Gpu& gpu, const interior::SessionPlan& plan, const FrameContext& f, const interior::StepList& steps) noexcept
+Result<interior::FenceValue, Error> ExecuteSteps(const Gpu& gpu, const FrameContext& f, const interior::StepList& steps) noexcept
 {
     return OpenList(gpu, f.slot)
-        .and_then([&] { return infra::FoldResult(steps.Items(), StepResult(Cursor{ 0, f.fence }), [&](const Cursor& c, const interior::Step& s) { return ExecuteStep(gpu, plan, f, s, c); }); })
+        .and_then([&] { return infra::FoldResult(steps.Items(), StepResult(Cursor{ 0, f.fence }), [&](const Cursor& c, const interior::Step& s) { return ExecuteStep(gpu, f, s, c); }); })
         .transform([](const Cursor& c) { return c.fence; });
 }
 

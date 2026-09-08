@@ -12,13 +12,42 @@ struct FontDeleter
 };
 using UniqueFont = std::unique_ptr<std::remove_pointer_t<HFONT>, FontDeleter>;
 
-// One row per number the model reads: a slider to sweep it, a box to type it, arrows to step it.
-enum class Field : std::size_t { Split, Preset, Intensity, LocalStructure, LocalTone, Skin, Count };
+// The panel's pages. Everything that takes effect at once is on the first three; the fourth holds what
+// only a fresh session can change, and the operator asks for that session with a button.
+enum class Page : std::size_t { Model, View, Startup, Count };
+
+// A number the operator sets: a slider to sweep it, a box to type it, arrows to step it.
+enum class Field : std::size_t { Intensity, Preset, LocalStructure, LocalTone, Skin, MvScaleX, MvScaleY, Split, DepthValue, ResetThreshold, MvLevel, SrPreset, Monitor, Target, Adapter, Count };
+
+// A switch the operator flips.
+enum class Toggle : std::size_t {
+    NeuralRendering,
+    AutoMask,
+    UiCorrection,
+    DepthInverted,
+    Vsync,
+    CaptureBorder,
+    Affinity,
+    Topmost,
+    ClickThrough,
+    RedirectionBitmap,
+    DebugLayer,
+    Indicator,
+    CubinCache,
+    Count
+};
+
+// A choice among a few named alternatives.
+enum class Group : std::size_t { Compare, Style, Cursor, Motion, NvofGrid, NvofPerf, Sr, Format, LogLevel, Console, Source, Count };
+
+// A path the operator types. Too long and too free for a slider, so it gets a plain box of its own.
+enum class Text : std::size_t { LogFile, Count };
 
 constexpr std::size_t kFieldCount = static_cast<std::size_t>(Field::Count);
-constexpr std::size_t kCheckCount = 3;   // the model on or off, auto mask, UI correction
-constexpr std::size_t kDisplayCount = 3; // processed, original, split
-constexpr std::size_t kStyleCount = 3;   // standard, natural, cinematic
+constexpr std::size_t kToggleCount = static_cast<std::size_t>(Toggle::Count);
+constexpr std::size_t kGroupCount = static_cast<std::size_t>(Group::Count);
+constexpr std::size_t kTextCount = static_cast<std::size_t>(Text::Count);
+constexpr std::size_t kMaxChoices = 4;
 
 // The panel keeps no state of its own: the controls hold the operator's choices and are read each frame.
 // Child windows die with their parent, so only the panel itself and its font own a handle.
@@ -26,31 +55,40 @@ struct ControlPanel
 {
     UniqueWindow window;
     UniqueFont font;
+    HWND tabs;
     HWND tooltip;
+    HWND restart;
+    std::array<HWND, kFieldCount> labels;
     std::array<HWND, kFieldCount> sliders;
     std::array<HWND, kFieldCount> boxes;
     std::array<HWND, kFieldCount> spins;
     std::array<HWND, kFieldCount> resets;
-    std::array<HWND, kCheckCount> checks;
-    std::array<HWND, kCheckCount> checkResets;
-    std::array<HWND, kDisplayCount> displays;
-    std::array<HWND, kStyleCount> styles;
-    HWND resetAll;
+    std::array<HWND, kToggleCount> toggles;
+    std::array<HWND, kToggleCount> toggleResets;
+    std::array<HWND, kGroupCount> groupLabels;
+    std::array<std::array<HWND, kMaxChoices>, kGroupCount> choices;
+    std::array<HWND, kTextCount> textLabels;
+    std::array<HWND, kTextCount> texts;
 };
 
-// What the panel says this frame: the model's settings and the view the operator wants.
+// What the panel says this frame: the settings that take effect at once, and the view they belong to.
 struct PanelReading
 {
-    interior::ModelControls controls;
+    interior::LiveSettings live;
+    interior::SurfaceSettings surface;
     interior::DisplayMode display;
     interior::Fraction split;
+    bool restartWanted;
 };
 
-[[nodiscard]] infra::Result<ControlPanel, Error> CreateControlPanel(const interior::ModelControls& initial, interior::DisplayMode display) noexcept;
+[[nodiscard]] infra::Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options, const interior::LiveSettings& live, interior::DisplayMode display) noexcept;
 
 // Reads every control and settles any disagreement between a slider, its box and its arrows, writing the
 // answer back to all three. A value a unit refuses keeps what `current` holds.
-[[nodiscard]] PanelReading ReadControlPanel(const ControlPanel& panel, const interior::ModelControls& current) noexcept;
+[[nodiscard]] PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSettings& current) noexcept;
+
+// The command line the start-up page describes, for the session the operator has asked for.
+[[nodiscard]] interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept;
 
 // Moves the panel's own controls, so the hotkeys and the divider drag stay in step with what it shows.
 void ApplyDisplay(const ControlPanel& panel, interior::DisplayMode display) noexcept;

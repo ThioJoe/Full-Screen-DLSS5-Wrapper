@@ -290,7 +290,7 @@ struct Recording
 
 [[nodiscard]] CaptureSettings CaptureSettingsOf(const SessionPlan& plan, const EnvironmentSettings& settings) noexcept
 {
-    return CaptureSettings{ plan.captureCursor, settings.captureBorder };
+    return CaptureSettings{ plan.captureCursor, settings.surface.captureBorder };
 }
 
 [[nodiscard]] Result<Gpu, Error> WithResourcesAndCapture(GpuDevice device, Presenter presenter, const Pipelines& pipelines, const Recording& recording, const SessionPlan& plan,
@@ -321,6 +321,13 @@ void RecordDepthClear(const Gpu& gpu, ID3D12Resource* depth, interior::DepthValu
     CreateRtv(gpu.device, depth, DXGI_FORMAT_R32_FLOAT, rtv);
     gpu.list->ClearRenderTargetView(rtv, clear.data(), 0, nullptr);
     RecordBarrier(gpu.list.Get(), depth, interior::ResourceState::RenderTarget, interior::ResourceState::ShaderRead);
+}
+
+[[nodiscard]] SessionPlan WithDepthValue(const SessionPlan& plan, interior::DepthValue depth) noexcept
+{
+    SessionPlan next = plan; // WAIVER(R2): a copy adjusted once, to clear the plane to a new value.
+    next.depth = depth;
+    return next;
 }
 
 [[nodiscard]] Result<interior::FenceValue, Error> ClearedDepth(const Gpu& gpu, const SessionPlan& plan, interior::FenceValue previous) noexcept
@@ -425,10 +432,10 @@ struct Ready
 }
 
 [[nodiscard]] Result<RealEnvironment, Error> Assembled(Ready r, const SessionPlan& plan, OutputWindow window, std::optional<ControlPanel> panel, const Console& console,
-                                                       const interior::LevelExtents& extents) noexcept
+                                                       const EnvironmentSettings& settings, const interior::LevelExtents& extents) noexcept
 {
     return FinestPixels(plan, extents).and_then([&](std::uint32_t finest) {
-        return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), std::move(panel), console, finest, r.fence, start); });
+        return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), std::move(panel), console, settings, finest, r.fence, start); });
     });
 }
 
@@ -545,11 +552,11 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
     return p.reading->split;
 }
 
-[[nodiscard]] std::optional<interior::ModelControls> ControlsFrom(const std::optional<PanelReading>& reading) noexcept
+[[nodiscard]] std::optional<interior::LiveSettings> ControlsFrom(const std::optional<PanelReading>& reading) noexcept
 {
     if (!reading.has_value())
         return std::nullopt;
-    return reading->controls;
+    return reading->live;
 }
 
 [[nodiscard]] interior::FrameInput InputOf(const WindowEvents& events, const Prepared& p) noexcept
@@ -573,7 +580,7 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
 {
     const interior::FrameSlot slot = interior::SlotOfFrame(state.number);
     return PumpEvents(s.window).and_then([&](const WindowEvents& events) {
-        return Prepare(gpu, s, events, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; });
+        return Prepare(gpu, s, events, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p), p.reading }; });
     });
 }
 
@@ -617,19 +624,21 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
 
 } // namespace
 
-RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, std::optional<ControlPanel> panel, const Console& console, std::uint32_t finestPixels,
-                                 interior::FenceValue fence, interior::Instant start) noexcept
+RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, std::optional<ControlPanel> panel, const Console& console, const EnvironmentSettings& settings,
+                                 std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
     : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(std::move(panel)), console_(console), finestPixels_(finestPixels),
-      frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }
+      frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false)
 {
+}
+
+Result<FrameStart, Error> RealEnvironment::Began(const Begun& begun) noexcept
+{
+    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(begun); });
 }
 
 Result<FrameStart, Error> RealEnvironment::BeginFrame(const interior::FrameState& state) noexcept
 {
-    const Result<Begun, Error> begun = Begin(gpu_, Surroundings{ window_, panel_ }, finestPixels_, frame_.fence, state);
-    if (!begun.has_value())
-        return Fail(begun.error());
-    return Accept(*begun);
+    return Begin(gpu_, Surroundings{ window_, panel_ }, finestPixels_, frame_.fence, state).and_then([this](const Begun& begun) { return Began(begun); });
 }
 
 Result<FrameStart, Error> RealEnvironment::Accept(const Begun& begun) noexcept
@@ -642,17 +651,84 @@ Result<FrameStart, Error> RealEnvironment::Accept(const Begun& begun) noexcept
     return FrameStart{ begun.input };
 }
 
+// Auto keeps whatever the session resolved for the cursor when it started.
+[[nodiscard]] bool CursorWanted(const interior::SurfaceSettings& s, bool resolved) noexcept
+{
+    if (s.cursor == interior::CursorMode::Auto)
+        return resolved;
+    return s.cursor == interior::CursorMode::On;
+}
+
+[[nodiscard]] WindowSettings WindowSettingsOf(const interior::SurfaceSettings& s) noexcept
+{
+    return WindowSettings{ s.topmost, s.clickThrough, s.displayAffinity, false };
+}
+
+[[nodiscard]] infra::Status<Error> ApplySurface(const Gpu& gpu, const OutputWindow& window, const EnvironmentSettings& settings) noexcept
+{
+    return ApplyCaptureSettings(gpu.capture, CaptureSettings{ CursorWanted(settings.surface, settings.captureCursor), settings.surface.captureBorder }).and_then([&] {
+        return ApplyWindowSettings(window, WindowSettingsOf(settings.surface));
+    });
+}
+
 [[nodiscard]] bool HasBuiltModel(const Models& models) noexcept
 {
     return models.neuralRendering.has_value();
 }
 
-[[nodiscard]] bool NeedsRebuild(const Models& models, const interior::ModelControls& controls) noexcept
+[[nodiscard]] bool NeedsRebuild(const Models& models, const interior::LiveSettings& controls) noexcept
 {
     return HasBuiltModel(models) && models.builtWith != controls.tuning;
 }
 
-Result<ExecutionReport, Error> RealEnvironment::Retuned(const interior::ModelControls& controls) noexcept
+// The depth plane is a texture cleared once, so a new value means clearing it again.
+[[nodiscard]] Status<Error> RealEnvironment::Recleared(interior::DepthValue depth) noexcept
+{
+    if (depth == clearedDepth_)
+        return {};
+    return WaitIdle(gpu_.device, frame_.fence)
+        .and_then([&](interior::FenceValue idle) { return ClearedDepth(gpu_, WithDepthValue(plan_, depth), idle); })
+        .transform([this, depth](interior::FenceValue cleared) {
+            frame_ = WithFence(frame_, cleared); // WAIVER(R2): the last signalled fence, replaced whole.
+            clearedDepth_ = depth;               // WAIVER(R2): what the plane now holds, replaced whole.
+        });
+}
+
+// Everything the operator changed since the last frame, put into effect before this one is drawn.
+Status<Error> RealEnvironment::SettledIfRead(const std::optional<PanelReading>& reading) noexcept
+{
+    if (!reading.has_value())
+        return {};
+    return Settled(*reading);
+}
+
+Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surface) noexcept
+{
+    if (surface == applied_.surface)
+        return {};
+    applied_ = EnvironmentSettings{ surface, applied_.captureCursor }; // WAIVER(R2): what has been applied, replaced whole.
+    return ApplySurface(gpu_, window_, applied_);
+}
+
+Status<Error> RealEnvironment::Settled(const PanelReading& reading) noexcept
+{
+    restartWanted_ = restartWanted_ || reading.restartWanted; // WAIVER(R2): set once, and never unset.
+    return Resurfaced(reading.surface).and_then([this, &reading] { return Recleared(reading.live.depth); });
+}
+
+[[nodiscard]] bool AsksForANewSession(bool wanted, const std::optional<ControlPanel>& panel) noexcept
+{
+    return wanted && panel.has_value();
+}
+
+std::optional<interior::CommandLine> RealEnvironment::Restart(const interior::Options& options) const noexcept
+{
+    if (!AsksForANewSession(restartWanted_, panel_))
+        return std::nullopt;
+    return RestartCommandLine(*panel_, options);
+}
+
+Result<ExecutionReport, Error> RealEnvironment::Retuned(const interior::LiveSettings& controls) noexcept
 {
     if (!NeedsRebuild(gpu_.models, controls))
         return ExecutionReport{ frame_.fence, 0 };
@@ -667,7 +743,7 @@ Result<ExecutionReport, Error> RealEnvironment::Retuned(const interior::ModelCon
 
 Result<ExecutionReport, Error> RealEnvironment::Ran(const interior::FramePlan& plan) noexcept
 {
-    const Result<interior::FenceValue, Error> fence = ExecuteSteps(gpu_, plan_, frame_, plan.steps);
+    const Result<interior::FenceValue, Error> fence = ExecuteSteps(gpu_, frame_, plan.steps);
     if (!fence.has_value())
         return Fail(fence.error());
     frame_ = WithFence(frame_, *fence); // WAIVER(R2): the last signalled fence is effect-layer state, replaced whole per frame.
@@ -691,7 +767,7 @@ Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional
     return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
         return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents)
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
-            .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), std::move(panel), console, extents); });
+            .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), std::move(panel), console, settings, extents); });
     });
 }
 

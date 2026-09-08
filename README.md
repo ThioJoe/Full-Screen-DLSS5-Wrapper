@@ -46,13 +46,21 @@ cmake -S . -B build-linux -G Ninja && cmake --build build-linux && ctest --test-
 ## Run
 
 Double-clicking the executable opens the control panel and the overlay, with no console window. Every
-value the model reads is a control on the panel: a slider to sweep it, a box to type an exact number, and
-arrows to step it, with a reset beside each and one for the lot. The view, the divider and the style are
-switches rather than numbers, and every row is measured from the height of the display's own text, so
-nothing crowds or clips whatever the scaling. Moving anything rebuilds the model's feature so the change takes effect,
-because the model reads its tuning while the feature is built rather than on each frame, and the frame is
-drawn again even when the desktop has sent nothing new. Closing the panel ends the session. Started from a console instead, the program attaches to it and logs there; `--console on`
-forces one, `--gui off` leaves the overlay to run alone.
+command line option except `--help`, `--list-monitors`, `--gui` and the NGX runtime settings has a control
+on the panel, on one of three pages: **Model** for what the model reads, **View** for the window and the
+capture, and **Start-up** for what only a fresh session can change. A number is a slider to sweep it, a box
+to type an exact value and arrows to step it, with a reset beside each; a choice is a row of buttons; a
+path is a box to type in. Every row is measured from the height of the display's own text, so nothing
+crowds or clips whatever the scaling.
+
+Moving anything on the first two pages takes effect at once. Changing the tuning rebuilds the model's
+feature, because the model reads it while the feature is built rather than on each frame, and the frame is
+drawn again even when the desktop has sent nothing new, so a change shows even while the panel sits on
+another monitor. The Start-up page describes a session rather than changing this one: **Start a new session
+with these** writes those settings out as a command line and launches it, carrying the NGX settings the
+panel has no control for through unchanged. Closing the panel ends the session. Started from a console
+instead, the program attaches to it and logs there; `--console on` forces one, `--gui off` leaves the
+overlay to run alone.
 
 ```
 DlssScreen.exe                       # neural rendering on the primary monitor
@@ -77,6 +85,12 @@ imposes none either, though the values it was authored around sit between 0 and 
 local structure only do anything while auto mask is on, and UI correction reads a UI layer that
 DlssScreen does not supply, so it is inert as wired. The model runs one-to-one and does no scaling; any
 resizing comes from the separate super resolution pass.
+
+The motion scales (`--mv-scale-x`, `--mv-scale-y`) are what the model multiplies the motion vectors by.
+Left out, each is the ratio between the model's working size and the captured one, which is what the
+synthesised vectors are measured in; given, the operator's number is used instead, and a negative one
+flips that axis. `--depth-inverted` tells the model the depth plane counts the other way, which with one
+flat plane changes little. None of these carries a range, so DlssScreen imposes none.
 
 ## How it works
 

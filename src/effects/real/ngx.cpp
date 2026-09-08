@@ -411,12 +411,22 @@ Requirement RequirementOf(const GpuDevice& gpu, const NgxSettings& settings, NVS
     return CheckBool(::SetEnvironmentVariableW(L"__NGX_SHOW_INDICATOR", L"1024"), ApiCall::SetEnvironmentVariable);
 }
 
+// The model keeps its compiled kernels between runs unless told not to, which is worth a look when a
+// kernel is suspected of being stale.
+[[nodiscard]] Status<Error> RequestKernelCache(bool wanted) noexcept
+{
+    if (wanted)
+        return {};
+    return CheckBool(::SetEnvironmentVariableW(L"__NGX_CUBIN_DISABLE_RESOURCE_CACHE", L"1"), ApiCall::SetEnvironmentVariable);
+}
+
 Result<NgxRuntime, Error> CreateNgxRuntime(const GpuDevice& gpu, const NgxSettings& settings) noexcept
 {
     const std::shared_ptr<const NgxPaths> paths = std::make_shared<const NgxPaths>(settings);
-    return RequestIndicator(settings.indicator).and_then([&] { return CheckNgx(Init(settings, gpu.device.Get(), paths->Common()), ApiCall::NgxInit); }).and_then([&] {
-        return Initialized(gpu, paths);
-    });
+    return RequestIndicator(settings.indicator)
+        .and_then([&] { return RequestKernelCache(settings.cubinCache); })
+        .and_then([&] { return CheckNgx(Init(settings, gpu.device.Get(), paths->Common()), ApiCall::NgxInit); })
+        .and_then([&] { return Initialized(gpu, paths); });
 }
 
 Status<Error> RequireSuperResolution(const NgxRuntime& runtime) noexcept

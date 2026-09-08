@@ -136,8 +136,9 @@ struct Replay
                         GridSize::One,
                         PerfLevel::Medium,
                         *flow,
-                        *scaleX,
-                        *scaleY,
+                        MotionScaleTag::Of(*scaleX),
+                        MotionScaleTag::Of(*scaleY),
+                        proptest::DrawBool(rng),
                         d.depthValue,
                         d.resetThreshold,
                         ColorFormat::Rgba8,
@@ -412,12 +413,17 @@ struct Replay
     return nullptr;
 }
 
+[[nodiscard]] LiveSettings LiveOf(const SessionPlan& plan, bool neuralRendering, const NrTuning& tuning) noexcept
+{
+    return LiveSettings{ neuralRendering, tuning, plan.depthInverted, plan.mvScaleX, plan.mvScaleY, plan.vsync, plan.resetThreshold, plan.depth };
+}
+
 [[nodiscard]] NrTuning WithIntensity(const NrTuning& t, Strength intensity) noexcept
 {
     return NrTuning{ t.preset, intensity, t.style, t.localStructure, t.localTone, t.skinStructure, t.autoMask, t.uiCorrection };
 }
 
-[[nodiscard]] FrameInput RequestingControls(const ModelControls& controls) noexcept
+[[nodiscard]] FrameInput RequestingControls(const LiveSettings& controls) noexcept
 {
     return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, std::nullopt, controls, false };
 }
@@ -426,13 +432,13 @@ struct Replay
 // is silent while nothing moves, and the operator would otherwise keep seeing the old model's work.
 [[nodiscard]] std::optional<FrameState> AfterFirstCapture(const SessionPlan& plan) noexcept
 {
-    const auto first = PlanFrame(plan, InitialFrameState(plan), RequestingControls(ModelControls{ true, plan.tuning }));
+    const auto first = PlanFrame(plan, InitialFrameState(plan), RequestingControls(LiveOf(plan, true, plan.tuning)));
     if (!first.has_value())
         return std::nullopt;
     return first->next;
 }
 
-[[nodiscard]] FrameInput StillScreen(const ModelControls& controls) noexcept
+[[nodiscard]] FrameInput StillScreen(const LiveSettings& controls) noexcept
 {
     return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, std::nullopt, std::nullopt, controls, false };
 }
@@ -444,7 +450,7 @@ struct Replay
     const Strength louder = *StrengthTag::Parse(plan.tuning.intensity.Get() + 1.0f);
     if (!captured.has_value() || !captured->hasOutput)
         return false;
-    const auto framePlan = PlanFrame(plan, *captured, StillScreen(ModelControls{ true, WithIntensity(plan.tuning, louder) }));
+    const auto framePlan = PlanFrame(plan, *captured, StillScreen(LiveOf(plan, true, WithIntensity(plan.tuning, louder))));
     const EvaluateNr* step = framePlan.has_value() ? NeuralStepIn(framePlan->steps) : nullptr;
     return step != nullptr && step->tuning.intensity == louder;
 }
@@ -456,7 +462,7 @@ struct Replay
     const std::optional<FrameState> captured = AfterFirstCapture(plan);
     if (!captured.has_value())
         return false;
-    const auto framePlan = PlanFrame(plan, *captured, StillScreen(ModelControls{ true, plan.tuning }));
+    const auto framePlan = PlanFrame(plan, *captured, StillScreen(LiveOf(plan, true, plan.tuning)));
     return framePlan.has_value() && NeuralStepIn(framePlan->steps) == nullptr;
 }
 
@@ -465,7 +471,7 @@ struct Replay
 {
     const SessionPlan plan = WithNeuralRendering(RandomPlan(rng));
     const Strength intensity = *StrengthTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1000)) / 100.0f);
-    const ModelControls controls = ModelControls{ true, WithIntensity(plan.tuning, intensity) };
+    const LiveSettings controls = LiveOf(plan, true, WithIntensity(plan.tuning, intensity));
     const auto framePlan = PlanFrame(plan, InitialFrameState(plan), RequestingControls(controls));
     if (!framePlan.has_value())
         return false;
@@ -477,7 +483,7 @@ struct Replay
 [[nodiscard]] bool SwitchingTheModelOffDropsItsStep(infra::RngState& rng) noexcept
 {
     const SessionPlan plan = WithNeuralRendering(RandomPlan(rng));
-    const ModelControls off = ModelControls{ false, plan.tuning };
+    const LiveSettings off = LiveOf(plan, false, plan.tuning);
     const auto framePlan = PlanFrame(plan, InitialFrameState(plan), RequestingControls(off));
     if (!framePlan.has_value())
         return false;

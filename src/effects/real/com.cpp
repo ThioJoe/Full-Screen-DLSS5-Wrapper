@@ -46,6 +46,7 @@ std::string_view Describe(ApiCall call) noexcept
     case ApiCall::CreateWindowExW: return "CreateWindowExW";
     case ApiCall::SetWindowDisplayAffinity: return "SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)";
     case ApiCall::RegisterHotKey: return "RegisterHotKey";
+    case ApiCall::CreateProcess: return "CreateProcessW";
     case ApiCall::RoInitialize: return "RoInitialize";
     case ApiCall::SetEnvironmentVariable: return "SetEnvironmentVariableW";
     case ApiCall::RoGetActivationFactory: return "RoGetActivationFactory";

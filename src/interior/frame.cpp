@@ -376,17 +376,17 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
     return neuralRendering ? ResourceKind::NrOutput : ColorSourceOf(plan);
 }
 
-[[nodiscard]] EvaluateNr NrStep(const SessionPlan& plan, const NrTuning& tuning, bool reset) noexcept
+[[nodiscard]] EvaluateNr NrStep(const SessionPlan& plan, const LiveSettings& live, bool reset) noexcept
 {
-    return EvaluateNr{ ModelIoOf(ColorSourceOf(plan), ResourceKind::NrOutput), plan.work, plan.source, plan.mvScaleX, plan.mvScaleY, reset, tuning };
+    return EvaluateNr{ ModelIoOf(ColorSourceOf(plan), ResourceKind::NrOutput), plan.work, plan.source, live.mvScaleX, live.mvScaleY, reset, live.depthInverted, live.tuning };
 }
 
-[[nodiscard]] BuildResult NeuralRenderingSteps(const Builder& b, const SessionPlan& plan, const ModelControls& controls, bool reset) noexcept
+[[nodiscard]] BuildResult NeuralRenderingSteps(const Builder& b, const SessionPlan& plan, const LiveSettings& controls, bool reset) noexcept
 {
     if (!controls.neuralRendering)
         return b;
     return MoveTo(b, SimpleId(ResourceKind::NrOutput), ResourceState::UnorderedAccess)
-        .and_then([&](const Builder& n) { return Emit(n, Step{ NrStep(plan, controls.tuning, reset) }); })
+        .and_then([&](const Builder& n) { return Emit(n, Step{ NrStep(plan, controls, reset) }); })
         .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::NrOutput), ResourceState::ShaderRead); });
 }
 
@@ -416,13 +416,13 @@ struct Display
     return hasOutput ? DrawSteps(b, source, display, index) : ClearSteps(b, index);
 }
 
-[[nodiscard]] BuildResult BlitSteps(const Builder& b, bool hasOutput, ResourceKind source, const Display& display, BackBufferIndex index) noexcept
+[[nodiscard]] BuildResult BlitSteps(const Builder& b, bool hasOutput, ResourceKind source, const Display& display, BackBufferIndex index, bool vsync) noexcept
 {
     return MoveTo(b, BackBufferId(index), ResourceState::RenderTarget)
         .and_then([&](const Builder& n) { return TargetContent(n, hasOutput, source, display, index); })
         .and_then([index](const Builder& n) { return MoveTo(n, BackBufferId(index), ResourceState::Present); })
         .and_then([](const Builder& n) { return Emit(n, Step{ Submit{ Phase::Two } }); })
-        .and_then([](const Builder& n) { return Emit(n, Step{ Present{} }); });
+        .and_then([vsync](const Builder& n) { return Emit(n, Step{ Present{ vsync } }); });
 }
 
 // --- state bookkeeping ---------------------------------------------------------------------------
@@ -486,7 +486,7 @@ struct Display
                        states,
                        OrProcessed(state.hasOutput, state, input),
                        OrProcessed(state.hasPrevious, state, input),
-                       ExceedsThreshold(input.unmatched, plan.resetThreshold),
+                       ExceedsThreshold(input.unmatched, NextControls(state.controls, input.controlRequest).resetThreshold),
                        OrProcessed(state.zeroMotionWritten, state, input),
                        NextCapture(state, input),
                        NextMode(state, input),
@@ -505,18 +505,18 @@ struct Display
 [[nodiscard]] BuildResult FreshSteps(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const LevelExtents& extents, FrameSlot slot) noexcept
 {
     const bool reset = NeedsReset(state, input.now);
-    const ModelControls controls = NextControls(state.controls, input.controlRequest);
+    const LiveSettings controls = NextControls(state.controls, input.controlRequest);
     return PhaseOne(Builder{ StepList{}, state.states }, plan, extents, state.currentSet)
         .and_then([&](const Builder& n) { return MotionPhaseTwo(n, plan, extents, state, slot); })
         .and_then([&](const Builder& n) { return SuperResolutionSteps(n, plan, reset); })
         .and_then([&](const Builder& n) { return NeuralRenderingSteps(n, plan, controls, reset); })
-        .and_then([&](const Builder& n) { return BlitSteps(n, true, DisplaySourceOf(plan, controls.neuralRendering), DisplayOf(state, input), input.backBuffer); });
+        .and_then([&](const Builder& n) { return BlitSteps(n, true, DisplaySourceOf(plan, controls.neuralRendering), DisplayOf(state, input), input.backBuffer, controls.vsync); });
 }
 
 [[nodiscard]] BuildResult RepeatSteps(const SessionPlan& plan, const FrameState& state, const FrameInput& input) noexcept
 {
-    return BlitSteps(Builder{ StepList{}, state.states }, state.hasOutput, DisplaySourceOf(plan, NextControls(state.controls, input.controlRequest).neuralRendering), DisplayOf(state, input),
-                     input.backBuffer);
+    const LiveSettings live = NextControls(state.controls, input.controlRequest);
+    return BlitSteps(Builder{ StepList{}, state.states }, state.hasOutput, DisplaySourceOf(plan, live.neuralRendering), DisplayOf(state, input), input.backBuffer, live.vsync);
 }
 
 [[nodiscard]] BuildResult StepsFor(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const LevelExtents& extents, FrameSlot slot) noexcept
@@ -619,7 +619,7 @@ FrameState InitialFrameState(const SessionPlan& plan) noexcept
                        { false, false },
                        DisplaySourceOf(plan, plan.neuralRendering),
                        kCentreSplit,
-                       ModelControls{ plan.neuralRendering, plan.tuning } };
+                       LiveSettings{ plan.neuralRendering, plan.tuning, plan.depthInverted, plan.mvScaleX, plan.mvScaleY, plan.vsync, plan.resetThreshold, plan.depth } };
 }
 
 FrameSlot SlotOfFrame(FrameNumber number) noexcept
@@ -644,7 +644,7 @@ Fraction NextSplit(Fraction current, const std::optional<Fraction>& request) noe
     return request.value_or(current);
 }
 
-ModelControls NextControls(const ModelControls& current, const std::optional<ModelControls>& request) noexcept
+LiveSettings NextControls(const LiveSettings& current, const std::optional<LiveSettings>& request) noexcept
 {
     return request.value_or(current);
 }

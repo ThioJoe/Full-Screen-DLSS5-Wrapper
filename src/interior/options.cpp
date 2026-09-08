@@ -39,6 +39,9 @@ enum class OptionId : std::uint8_t {
     NvofGrid,
     NvofPerf,
     DepthValue,
+    DepthInverted,
+    MvScaleX,
+    MvScaleY,
     ResetThreshold,
     Cursor,
     Vsync,
@@ -61,6 +64,7 @@ enum class OptionId : std::uint8_t {
     Gui,
     Console,
     Indicator,
+    CubinCache,
 };
 
 enum class ValueKind : std::uint8_t {
@@ -92,7 +96,7 @@ struct OptionSpec
     ValueKind kind;
 };
 
-constexpr std::array<OptionSpec, 42> kSpecs{ {
+constexpr std::array<OptionSpec, 46> kSpecs{ {
     { L"help", OptionId::Help, ValueKind::Flag },
     { L"list-monitors", OptionId::ListMonitors, ValueKind::Flag },
     { L"monitor", OptionId::Monitor, ValueKind::MonitorSel },
@@ -113,6 +117,9 @@ constexpr std::array<OptionSpec, 42> kSpecs{ {
     { L"nvof-grid", OptionId::NvofGrid, ValueKind::Grid },
     { L"nvof-perf", OptionId::NvofPerf, ValueKind::Perf },
     { L"depth-value", OptionId::DepthValue, ValueKind::Float },
+    { L"depth-inverted", OptionId::DepthInverted, ValueKind::Bool },
+    { L"mv-scale-x", OptionId::MvScaleX, ValueKind::Float },
+    { L"mv-scale-y", OptionId::MvScaleY, ValueKind::Float },
     { L"reset-threshold", OptionId::ResetThreshold, ValueKind::Float },
     { L"cursor", OptionId::Cursor, ValueKind::Cursor },
     { L"vsync", OptionId::Vsync, ValueKind::Bool },
@@ -135,6 +142,7 @@ constexpr std::array<OptionSpec, 42> kSpecs{ {
     { L"gui", OptionId::Gui, ValueKind::Bool },
     { L"console", OptionId::Console, ValueKind::Console },
     { L"indicator", OptionId::Indicator, ValueKind::Bool },
+    { L"cubin-cache", OptionId::CubinCache, ValueKind::Bool },
 } };
 
 struct FlagValue
@@ -577,15 +585,41 @@ struct ValidatedNumbers
     LevelIndex level;
     DepthValue depth;
     Fraction threshold;
+    std::optional<MotionScale> mvScaleX;
+    std::optional<MotionScale> mvScaleY;
 };
+
+struct ValidatedScales
+{
+    std::optional<MotionScale> x;
+    std::optional<MotionScale> y;
+};
+
+// A motion scale the operator did not give is left absent, so the planner can put the ratio there instead.
+[[nodiscard]] Result<std::optional<MotionScale>, OptionsError> ScaleOf(const ParsedList& list, OptionId id) noexcept
+{
+    const std::optional<ParsedOption> option = LastOf<float>(list, id);
+    if (!option.has_value())
+        return std::optional<MotionScale>{};
+    return MotionScaleTag::Parse(Held<float>(option->value, 0.0f)).transform([](MotionScale scale) { return std::optional<MotionScale>{ scale }; }).transform_error([&option](UnitError) {
+        return At(OptionsErrorKind::ValueOutOfRange, option->argument);
+    });
+}
+
+[[nodiscard]] Result<ValidatedScales, OptionsError> ScalesOf(const ParsedList& list) noexcept
+{
+    return ScaleOf(list, OptionId::MvScaleX).and_then([&](const std::optional<MotionScale>& x) {
+        return ScaleOf(list, OptionId::MvScaleY).transform([&](const std::optional<MotionScale>& y) { return ValidatedScales{ x, y }; });
+    });
+}
 
 [[nodiscard]] Result<ValidatedNumbers, OptionsError> NumbersOf(const ParsedList& list, const Options& d) noexcept
 {
     return Validated(list, OptionId::SrPreset, d.srPreset, SrPresetTag::Parse).and_then([&](SrPreset srPreset) {
         return Validated(list, OptionId::MvLevel, d.motionFinestLevel, LevelIndexTag::Parse).and_then([&](LevelIndex level) {
             return Validated(list, OptionId::DepthValue, d.depthValue, DepthValueTag::Parse).and_then([&](DepthValue depth) {
-                return Validated(list, OptionId::ResetThreshold, d.resetThreshold, FractionTag::Parse).transform([&](Fraction threshold) {
-                    return ValidatedNumbers{ srPreset, level, depth, threshold };
+                return Validated(list, OptionId::ResetThreshold, d.resetThreshold, FractionTag::Parse).and_then([&](Fraction threshold) {
+                    return ScalesOf(list).transform([&](const ValidatedScales& scales) { return ValidatedNumbers{ srPreset, level, depth, threshold, scales.x, scales.y }; });
                 });
             });
         });
@@ -608,6 +642,9 @@ struct ValidatedNumbers
         ValueOr(list, OptionId::NvofGrid, d.nvofGrid),
         ValueOr(list, OptionId::NvofPerf, d.nvofPerf),
         n.depth,
+        ValueOr(list, OptionId::DepthInverted, d.depthInverted),
+        n.mvScaleX,
+        n.mvScaleY,
         n.threshold,
         ValueOr(list, OptionId::Cursor, d.cursor),
         ValueOr(list, OptionId::Vsync, d.vsync),
@@ -630,6 +667,7 @@ struct ValidatedNumbers
         ValueOr(list, OptionId::Gui, d.gui),
         ValueOr(list, OptionId::Console, d.console),
         ValueOr(list, OptionId::Indicator, d.indicator),
+        ValueOr(list, OptionId::CubinCache, d.cubinCache),
     };
 }
 
@@ -673,6 +711,13 @@ static_assert(kDefaultLevel.has_value() && kDefaultProjectId.has_value());
 
 } // namespace
 
+LiveSettings DefaultLive(const Options& o) noexcept
+{
+    const Result<MotionScale, UnitError> one = MotionScaleTag::Parse(1.0f);
+    ENSURE(one.has_value());
+    return LiveSettings{ o.neuralRendering, o.tuning, o.depthInverted, o.mvScaleX.value_or(*one), o.mvScaleY.value_or(*one), o.vsync, o.resetThreshold, o.depthValue };
+}
+
 Options DefaultOptions() noexcept
 {
     return Options{
@@ -689,6 +734,9 @@ Options DefaultOptions() noexcept
         GridSize::One,
         PerfLevel::Medium,
         *kDefaultDepth,
+        false,
+        std::nullopt,
+        std::nullopt,
         *kDefaultThreshold,
         CursorMode::Auto,
         true,
@@ -711,6 +759,7 @@ Options DefaultOptions() noexcept
         true,
         ConsoleMode::Auto,
         false,
+        true,
     };
 }
 

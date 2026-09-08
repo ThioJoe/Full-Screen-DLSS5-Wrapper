@@ -54,9 +54,15 @@ using Pair = NrParameterValue;
 
 [[nodiscard]] std::array<Pair, 9> ResourcePairs(const EvaluateNr& e) noexcept
 {
-    return { Resource(NrParameter::Color, e.io.color),       Resource(NrParameter::Depth, e.io.depth), Resource(NrParameter::MVec, e.io.motionVectors),
-             Resource(NrParameter::Output, e.io.output),     UInt(NrParameter::Enabled, 1u),           UInt(NrParameter::Width, e.work.width.Get()),
-             UInt(NrParameter::Height, e.work.height.Get()), UInt(NrParameter::DepthInverted, 0u),     UInt(NrParameter::Reset, BoolCode(e.reset)) };
+    return { Resource(NrParameter::Color, e.io.color),
+             Resource(NrParameter::Depth, e.io.depth),
+             Resource(NrParameter::MVec, e.io.motionVectors),
+             Resource(NrParameter::Output, e.io.output),
+             UInt(NrParameter::Enabled, 1u),
+             UInt(NrParameter::Width, e.work.width.Get()),
+             UInt(NrParameter::Height, e.work.height.Get()),
+             UInt(NrParameter::DepthInverted, BoolCode(e.depthInverted)),
+             UInt(NrParameter::Reset, BoolCode(e.reset)) };
 }
 
 [[nodiscard]] std::array<Pair, 8> ColorSubrectPairs(const EvaluateNr& e) noexcept

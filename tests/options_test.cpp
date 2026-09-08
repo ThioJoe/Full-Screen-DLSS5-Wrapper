@@ -3,6 +3,7 @@
 #include "tests/test_registry.h"
 
 #include <array>
+#include <cmath>
 #include <format>
 #include <string>
 #include <utility>
@@ -73,6 +74,34 @@ constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all",  
     const std::array<std::wstring_view, 1> nan{ L"--nr-intensity=nan" };
     const std::array<std::wstring_view, 1> text{ L"--nr-intensity=strong" };
     return !ParseOptions(nan).has_value() && !ParseOptions(text).has_value();
+}
+
+// A motion scale is the operator's to choose the same way, and the sign is how an axis is flipped.
+[[nodiscard]] bool MotionScaleAcceptsEveryFiniteValue(infra::RngState& rng) noexcept
+{
+    const float value = (proptest::DrawUnit(rng) - 0.5f) * 200.0f;
+    const std::wstring joined = L"--mv-scale-x=" + std::to_wstring(value);
+    const std::array<std::wstring_view, 1> real{ joined };
+    const auto parsed = ParseOptions(real);
+    // The text carries six decimal places, so the number that comes back is the same one to well within
+    // anything the model could act on.
+    return parsed.has_value() && parsed->mvScaleX.has_value() && std::fabs(parsed->mvScaleX->Get() - value) < 0.01f;
+}
+
+// Left out, a motion scale is absent rather than one, so the planner can put the ratio there instead.
+[[nodiscard]] bool MotionScaleIsAbsentUnlessAsked(infra::RngState&) noexcept
+{
+    const std::array<std::wstring_view, 1> args{ L"--mv-scale-y=-1" };
+    const auto parsed = ParseOptions(args);
+    return parsed.has_value() && !parsed->mvScaleX.has_value() && parsed->mvScaleY.has_value() && parsed->mvScaleY->Get() == -1.0f;
+}
+
+[[nodiscard]] bool DepthInversionRoundTrips(infra::RngState& rng) noexcept
+{
+    const bool wanted = proptest::DrawBool(rng);
+    const std::array<std::wstring_view, 1> args{ wanted ? L"--depth-inverted=on" : L"--depth-inverted=off" };
+    const auto parsed = ParseOptions(args);
+    return parsed.has_value() && parsed->depthInverted == wanted;
 }
 
 [[nodiscard]] bool TargetWithAllIsRejected(infra::RngState&) noexcept
@@ -182,6 +211,9 @@ std::uint32_t OptionsSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("--monitor N round-trips", seed, 200, MonitorIndexRoundTrips));
     failures += Failures(proptest::ForAll("--nr-intensity accepts every finite value", seed, 300, IntensityAcceptsEveryFiniteValue));
     failures += Failures(proptest::ForAll("--nr-intensity refuses what is not a number", seed, 1, IntensityRefusesWhatIsNotANumber));
+    failures += Failures(proptest::ForAll("--mv-scale-x accepts every finite value", seed, 300, MotionScaleAcceptsEveryFiniteValue));
+    failures += Failures(proptest::ForAll("a motion scale not asked for stays absent", seed, 1, MotionScaleIsAbsentUnlessAsked));
+    failures += Failures(proptest::ForAll("--depth-inverted round-trips", seed, 20, DepthInversionRoundTrips));
     failures += Failures(proptest::ForAll("--target with --monitor all is rejected", seed, 1, TargetWithAllIsRejected));
     failures += Failures(proptest::ForAll("last occurrence wins", seed, 20, LastOccurrenceWins));
     failures += Failures(proptest::ForAll("missing value is reported", seed, 1, MissingValueIsReported));

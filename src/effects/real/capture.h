@@ -49,4 +49,7 @@ struct Capture
 // has finished reading it and before this frame's work runs. True when a frame arrived.
 [[nodiscard]] infra::Result<bool, Error> AcquireFrames(const Capture& capture, interior::FrameNumber number) noexcept;
 
+// Changes what the running capture sessions include; both are settings of the session, not of the frame.
+[[nodiscard]] infra::Status<Error> ApplyCaptureSettings(const Capture& capture, const CaptureSettings& settings) noexcept;
+
 } // namespace real

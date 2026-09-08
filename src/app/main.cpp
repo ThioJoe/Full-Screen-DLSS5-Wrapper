@@ -44,6 +44,7 @@ constexpr int kExitOk = 0;
 constexpr int kExitUsage = 2;
 constexpr int kExitFailure = 3;
 constexpr std::size_t kLineCapacity = 240;
+constexpr std::size_t kCommandCapacity = 300;
 constexpr bool kHasOpticalFlow = DSCREEN_HAVE_NVOF != 0;
 
 using Line = infra::BoundedString<char, kLineCapacity>;
@@ -237,7 +238,7 @@ struct Base
 
 [[nodiscard]] real::NgxSettings NgxSettingsOf(const Options& o, const interior::DirectoryPath& executableDirectory) noexcept
 {
-    return real::NgxSettings{ o.ngxAppId, o.ngxProjectId, DataPathOf(o, executableDirectory), executableDirectory, o.ngxPath, o.ngxLogLevel, o.indicator };
+    return real::NgxSettings{ o.ngxAppId, o.ngxProjectId, DataPathOf(o, executableDirectory), executableDirectory, o.ngxPath, o.ngxLogLevel, o.indicator, o.cubinCache };
 }
 
 [[nodiscard]] Line SupportText(std::uint32_t mask) noexcept
@@ -482,17 +483,19 @@ struct Devices
 {
     if (!o.gui)
         return std::optional<real::ControlPanel>{};
-    return real::CreateControlPanel(interior::ModelControls{ plan.neuralRendering, plan.tuning }, plan.initialDisplay).transform([](real::ControlPanel panel) {
-        return std::optional<real::ControlPanel>{ std::move(panel) };
-    });
+    return real::CreateControlPanel(o, interior::DefaultLive(o), plan.initialDisplay).transform([](real::ControlPanel panel) { return std::optional<real::ControlPanel>{ std::move(panel) }; });
+}
+
+[[nodiscard]] real::EnvironmentSettings SettingsOf(const Options& o, const SessionPlan& plan) noexcept
+{
+    return real::EnvironmentSettings{ interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel }, plan.captureCursor };
 }
 
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan) noexcept
 {
     return CreatedWindow(console, b).and_then([&](real::OutputWindow window) {
         return CreatedPanel(b.options, plan).and_then([&](std::optional<real::ControlPanel> panel) {
-            return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), std::move(panel), real::EnvironmentSettings{ b.options.captureBorder },
-                                           console);
+            return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), std::move(panel), SettingsOf(b.options, plan), console);
         });
     });
 }
@@ -505,12 +508,32 @@ struct Devices
     return idle.transform([&outcome](interior::FenceValue) { return outcome->finalState.number; });
 }
 
-[[nodiscard]] Result<interior::FrameNumber, Error> Drive(const Console& console, const SessionPlan& plan, real::RealEnvironment& env) noexcept
+// The operator asked the start-up page for a session with different settings: this one starts it and
+// leaves. Nothing is inherited but the command line, so the new session is exactly what the page says.
+[[nodiscard]] Status<Error> Relaunch(const interior::CommandLine& arguments) noexcept
+{
+    std::array<wchar_t, MAX_PATH> executable{}; // WAIVER(R2): a local buffer filled once, before use.
+    if (IsPathFailure(::GetModuleFileNameW(nullptr, executable.data(), MAX_PATH)))
+        return Fail(real::LastError(real::ApiCall::GetModuleFileNameW));
+    infra::BoundedString<wchar_t, kCommandCapacity> line =
+        infra::BoundedString<wchar_t, kCommandCapacity>::Parse(std::wstring_view(executable.data())).value_or(infra::BoundedString<wchar_t, kCommandCapacity>{});
+    return real::StartProcess(line.Get(), arguments.Get());
+}
+
+[[nodiscard]] Result<interior::FrameNumber, Error> Restarted(const Options& options, real::RealEnvironment& env, interior::FrameNumber frames) noexcept
+{
+    const std::optional<interior::CommandLine> arguments = env.Restart(options);
+    if (!arguments.has_value())
+        return frames;
+    return Relaunch(*arguments).transform([frames] { return frames; });
+}
+
+[[nodiscard]] Result<interior::FrameNumber, Error> Drive(const Console& console, const Options& options, const SessionPlan& plan, real::RealEnvironment& env) noexcept
 {
     real::ShowOutputWindow(env.Window());
-    return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit").and_then([&] {
-        return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit));
-    });
+    return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit")
+        .and_then([&] { return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit)); })
+        .and_then([&](interior::FrameNumber frames) { return Restarted(options, env, frames); });
 }
 
 [[nodiscard]] Result<interior::FrameNumber, Error> Run(const Console& console, const Options& options) noexcept
@@ -518,7 +541,9 @@ struct Devices
     return ResolveBase(console, options).and_then([&](const Base& b) {
         return CreateDevices(console, b).and_then([&](Devices d) {
             return Planned(console, b, d).and_then([&](const SessionPlan& plan) {
-                return LogPlan(console, plan).and_then([&] { return Environment(console, b, std::move(d), plan); }).and_then([&](real::RealEnvironment env) { return Drive(console, plan, env); });
+                return LogPlan(console, plan).and_then([&] { return Environment(console, b, std::move(d), plan); }).and_then([&](real::RealEnvironment env) {
+                    return Drive(console, options, plan, env);
+                });
             });
         });
     });

@@ -44,8 +44,9 @@ struct SessionPlan
     GridSize nvofGrid;
     PerfLevel nvofPerf;
     Extent flowExtent;
-    Scale mvScaleX;
-    Scale mvScaleY;
+    MotionScale mvScaleX;
+    MotionScale mvScaleY;
+    bool depthInverted;
     DepthValue depth;
     Fraction resetThreshold;
     ColorFormat format;

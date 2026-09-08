@@ -54,6 +54,7 @@ enum class ApiCall : std::uint8_t {
     CreateWindowExW,
     SetWindowDisplayAffinity,
     RegisterHotKey,
+    CreateProcess,
     RoInitialize,
     SetEnvironmentVariable,
     RoGetActivationFactory,

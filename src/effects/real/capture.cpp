@@ -178,10 +178,8 @@ struct Pending;
 
 [[nodiscard]] Status<Error> ApplyBorder(const Com<WGC::IGraphicsCaptureSession>& session, bool border) noexcept
 {
-    if (border)
-        return {};
-    return As<WGC::IGraphicsCaptureSession3>(session, ApiCall::PutIsBorderRequired).and_then([](const Com<WGC::IGraphicsCaptureSession3>& s3) {
-        return Check(s3->put_IsBorderRequired(0), ApiCall::PutIsBorderRequired);
+    return As<WGC::IGraphicsCaptureSession3>(session, ApiCall::PutIsBorderRequired).and_then([border](const Com<WGC::IGraphicsCaptureSession3>& s3) {
+        return Check(s3->put_IsBorderRequired(border ? 1 : 0), ApiCall::PutIsBorderRequired);
     });
 }
 
@@ -495,6 +493,12 @@ Result<Capture, Error> CreateCapture(const GpuDevice& gpu, const interior::Scree
             });
         });
     });
+}
+
+Status<Error> ApplyCaptureSettings(const Capture& capture, const CaptureSettings& settings) noexcept
+{
+    return infra::ForEach(capture.sessions.Items(), Status<Error>{},
+                          [&settings](const MonitorSession& session) { return ApplyCursor(session.session, settings.cursor).and_then([&] { return ApplyBorder(session.session, settings.border); }); });
 }
 
 Result<bool, Error> AcquireFrames(const Capture& capture, interior::FrameNumber number) noexcept

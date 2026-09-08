@@ -3,7 +3,8 @@ name: Build DlssScreen
 # Runs on demand (pick the branch, the configuration and the NVIDIA/DLSS SDK revision) or on a push
 # whose commit message contains "[!Build]". A push builds the pushed commit in Release. The job builds
 # DlssScreen.exe with MSVC, runs the portable tests and uploads the usable files (DlssScreen.exe, its
-# PDB, nvngx_dlss.dll from the SDK, README and LICENSE) as an artifact.
+# PDB, README and LICENSE) as an artifact. NVIDIA's nvngx_dlss.dll is not shipped: it is the super
+# resolution model, which the neural rendering pass does not need, and the operator supplies it if they want it.
 # The push trigger only sees this file on the pushed branch, so keep the copies on main and on the
 # development branches identical. Object files are cached between runs with sccache in the Actions cache.
 # Every action used here runs on Node 24; the MSVC environment comes from Visual Studio's own
@@ -128,10 +129,6 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item "$out/DlssScreen.exe" dist
           if (Test-Path "$out/DlssScreen.pdb") { Copy-Item "$out/DlssScreen.pdb" dist }
-          $dll = Get-ChildItem -Recurse -Path dlss-sdk -Filter nvngx_dlss.dll | Where-Object { $_.FullName -like '*Windows_x86_64*rel*' } | Select-Object -First 1
-          if ($null -eq $dll) { $dll = Get-ChildItem -Recurse -Path dlss-sdk -Filter nvngx_dlss.dll | Select-Object -First 1 }
-          if ($null -eq $dll) { throw "nvngx_dlss.dll was not found in the DLSS SDK checkout" }
-          Copy-Item $dll.FullName dist
           foreach ($doc in "README.md", "LICENSE") { if (Test-Path $doc) { Copy-Item $doc dist } }
           # Zip entries carry wall-clock times and the runner's clock is UTC, so stamp the files with the
           # wall-clock time of the zone below; extracted on a machine in that zone they read as local time.

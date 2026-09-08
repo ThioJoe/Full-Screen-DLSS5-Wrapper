@@ -286,15 +286,26 @@ struct ModelCheck
     return FractionTag::Parse(value).transform([](Fraction f) { return std::optional<Fraction>{ f }; }).value_or(std::nullopt);
 }
 
-// The operator moving the panel's controls: the model toggles and the intensity moves.
-[[nodiscard]] std::optional<ModelControls> ControlsIf(bool present, std::uint64_t value) noexcept
+// The operator moving the panel's controls: the model toggles, the intensity moves, the display waits or not.
+[[nodiscard]] LiveSettings MovedControls(std::uint64_t value) noexcept
+{
+    const Options d = DefaultOptions();
+    const LiveSettings base = DefaultLive(d);
+    const Result<Strength, UnitError> intensity = StrengthTag::Parse(static_cast<float>(value % 400u) / 100.0f);
+    ENSURE(intensity.has_value());
+    return LiveSettings{
+        (value % 2u) == 0u,  NrTuning{ d.tuning.preset, *intensity, d.tuning.style, d.tuning.localStructure, d.tuning.localTone, d.tuning.skinStructure, d.tuning.autoMask, d.tuning.uiCorrection },
+        (value % 3u) == 0u,  base.mvScaleX,
+        base.mvScaleY,       (value % 5u) != 0u,
+        base.resetThreshold, base.depth
+    };
+}
+
+[[nodiscard]] std::optional<LiveSettings> ControlsIf(bool present, std::uint64_t value) noexcept
 {
     if (!present)
         return std::nullopt;
-    const NrTuning base = DefaultOptions().tuning;
-    const Result<Strength, UnitError> intensity = StrengthTag::Parse(static_cast<float>(value % 400u) / 100.0f);
-    ENSURE(intensity.has_value());
-    return ModelControls{ (value % 2u) == 0u, NrTuning{ base.preset, *intensity, base.style, base.localStructure, base.localTone, base.skinStructure, base.autoMask, base.uiCorrection } };
+    return MovedControls(value);
 }
 
 struct FrameDraws
@@ -305,7 +316,7 @@ struct FrameDraws
     std::uint64_t clockJump;
     float unmatched;
     std::optional<Fraction> splitRequest;
-    std::optional<ModelControls> controlRequest;
+    std::optional<LiveSettings> controlRequest;
     SimWorld world;
 };
 

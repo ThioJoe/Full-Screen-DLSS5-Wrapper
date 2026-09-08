@@ -132,6 +132,13 @@ constexpr QualityOrder kUltraOrder{ SrQuality::UltraPerformance, SrQuality::Perf
     return *clamped;
 }
 
+// The model is told how far a motion vector reaches at its own working size, which is the ratio between
+// that size and the captured one. An operator who asks for a scale of their own is given it instead.
+[[nodiscard]] MotionScale ChosenScale(const std::optional<MotionScale>& asked, Scale ratio) noexcept
+{
+    return asked.value_or(MotionScaleTag::Of(ratio));
+}
+
 [[nodiscard]] SessionPlan Assemble(const Options& o, const Geometry& g, const std::optional<SrChoice>& sr, const Extent& work, const Extent& flow, Scale scaleX, Scale scaleY) noexcept
 {
     const LevelCount levels = LevelCountFor(g.sourceExtent);
@@ -147,8 +154,9 @@ constexpr QualityOrder kUltraOrder{ SrQuality::UltraPerformance, SrQuality::Perf
                         o.nvofGrid,
                         o.nvofPerf,
                         flow,
-                        scaleX,
-                        scaleY,
+                        ChosenScale(o.mvScaleX, scaleX),
+                        ChosenScale(o.mvScaleY, scaleY),
+                        o.depthInverted,
                         o.depthValue,
                         o.resetThreshold,
                         o.format,
