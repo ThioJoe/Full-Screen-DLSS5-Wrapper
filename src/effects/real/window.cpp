@@ -221,7 +221,7 @@ struct Pump
 
 [[nodiscard]] WindowEvents EventsOfHotkey(WPARAM id) noexcept
 {
-    return WindowEvents{ id == kHotkeyQuit, id == kHotkeyToggleOriginal, id == kHotkeyToggleSplit };
+    return WindowEvents{ id == static_cast<WPARAM>(kHotkeyQuit), id == static_cast<WPARAM>(kHotkeyToggleOriginal), id == static_cast<WPARAM>(kHotkeyToggleSplit) };
 }
 
 [[nodiscard]] WindowEvents EventsOf(const MSG& msg) noexcept

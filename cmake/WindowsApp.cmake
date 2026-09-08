@@ -34,7 +34,7 @@ function(dscreen_compile_shader hlsl entry profile variable)
   set(_src "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${hlsl}")
   set(_out "${DSCREEN_SHADER_OUT}/${variable}.h")
   add_custom_command(OUTPUT "${_out}"
-    COMMAND "${DXC_EXECUTABLE}" -nologo -T ${profile} -E ${entry} -O3 -WX -Fh "${_out}" -Vn k${variable} "${_src}"
+    COMMAND "${DXC_EXECUTABLE}" -nologo -T ${profile} -E ${entry} -O3 -WX -I "${CMAKE_CURRENT_SOURCE_DIR}/shaders" -Fh "${_out}" -Vn k${variable} "${_src}"
     DEPENDS "${_src}" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Common.hlsli"
     COMMENT "DXC ${hlsl}:${entry}" VERBATIM)
   set(DSCREEN_SHADER_HEADERS ${DSCREEN_SHADER_HEADERS} "${_out}" PARENT_SCOPE)
