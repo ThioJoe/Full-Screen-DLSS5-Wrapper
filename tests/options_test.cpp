@@ -58,17 +58,21 @@ constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all",  
     return parsed.has_value() && parsed->source.kind == MonitorSelectionKind::Index && parsed->source.index.Get() == index;
 }
 
-[[nodiscard]] bool IntensityIsValidatedAgainstRange(infra::RngState& rng) noexcept
+// The model publishes no range for its strengths, so the parser imposes none: every finite value is
+// the operator's to choose, and only a value the model could not act on is refused.
+[[nodiscard]] bool IntensityAcceptsEveryFiniteValue(infra::RngState& rng) noexcept
 {
-    const float value = proptest::DrawUnit(rng) * 3.0f;
-    const std::wstring text = std::to_wstring(value);
-    const std::array<std::wstring_view, 1> args{ std::wstring_view{} };
-    const std::wstring joined = L"--nr-intensity=" + text;
+    const float value = (proptest::DrawUnit(rng) - 0.5f) * 200.0f;
+    const std::wstring joined = L"--nr-intensity=" + std::to_wstring(value);
     const std::array<std::wstring_view, 1> real{ joined };
-    const auto parsed = ParseOptions(real);
-    const bool inRange = value <= 2.0f;
-    (void)args;
-    return parsed.has_value() == inRange;
+    return ParseOptions(real).has_value();
+}
+
+[[nodiscard]] bool IntensityRefusesWhatIsNotANumber(infra::RngState&) noexcept
+{
+    const std::array<std::wstring_view, 1> nan{ L"--nr-intensity=nan" };
+    const std::array<std::wstring_view, 1> text{ L"--nr-intensity=strong" };
+    return !ParseOptions(nan).has_value() && !ParseOptions(text).has_value();
 }
 
 [[nodiscard]] bool TargetWithAllIsRejected(infra::RngState&) noexcept
@@ -176,7 +180,8 @@ std::uint32_t OptionsSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("option parser never panics on random input", seed, 3000, ParserNeverPanicsAndErrorsAreEnumerated));
     failures += Failures(proptest::ForAll("empty arguments give the defaults", seed, 1, EmptyArgumentsGiveDefaults));
     failures += Failures(proptest::ForAll("--monitor N round-trips", seed, 200, MonitorIndexRoundTrips));
-    failures += Failures(proptest::ForAll("--nr-intensity is range-validated", seed, 300, IntensityIsValidatedAgainstRange));
+    failures += Failures(proptest::ForAll("--nr-intensity accepts every finite value", seed, 300, IntensityAcceptsEveryFiniteValue));
+    failures += Failures(proptest::ForAll("--nr-intensity refuses what is not a number", seed, 1, IntensityRefusesWhatIsNotANumber));
     failures += Failures(proptest::ForAll("--target with --monitor all is rejected", seed, 1, TargetWithAllIsRejected));
     failures += Failures(proptest::ForAll("last occurrence wins", seed, 20, LastOccurrenceWins));
     failures += Failures(proptest::ForAll("missing value is reported", seed, 1, MissingValueIsReported));

@@ -129,6 +129,7 @@ struct Draw
     ResourceId original;
     ResourceId target;
     DisplayMode mode;
+    Fraction split;
     [[nodiscard]] friend constexpr bool operator==(const Draw&, const Draw&) noexcept = default;
 };
 
@@ -164,6 +165,7 @@ struct FrameState
     std::array<FenceValue, kFrameSlotCount> slotFences;
     std::array<bool, kFrameSlotCount> statsPending;
     ResourceKind displaySource;
+    Fraction split;
     [[nodiscard]] friend constexpr bool operator==(const FrameState&, const FrameState&) noexcept = default;
 };
 
@@ -175,6 +177,7 @@ struct FrameInput
     Instant now;
     bool toggleOriginal;
     bool toggleSplit;
+    std::optional<Fraction> splitRequest;
     bool quit;
     [[nodiscard]] friend constexpr bool operator==(const FrameInput&, const FrameInput&) noexcept = default;
 };
@@ -197,6 +200,7 @@ constexpr std::uint64_t kPauseResetMicroseconds = 1000000;
 [[nodiscard]] FrameSlot SlotOfFrame(FrameNumber number) noexcept;
 [[nodiscard]] Result<FramePlan, PlanFrameError> PlanFrame(const SessionPlan& plan, const FrameState& state, const FrameInput& input) noexcept;
 [[nodiscard]] DisplayMode NextDisplay(DisplayMode current, bool toggleOriginal, bool toggleSplit) noexcept;
+[[nodiscard]] Fraction NextSplit(Fraction current, const std::optional<Fraction>& request) noexcept;
 [[nodiscard]] bool IsLongPause(const FrameState& state, Instant now) noexcept;
 [[nodiscard]] bool ExceedsThreshold(std::optional<Fraction> unmatched, Fraction threshold) noexcept;
 [[nodiscard]] std::string_view Describe(PlanFrameError error) noexcept;

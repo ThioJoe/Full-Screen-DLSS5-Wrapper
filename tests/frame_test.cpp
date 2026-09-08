@@ -151,10 +151,14 @@ struct Replay
     const auto buffer = BackBufferIndexTag::Parse(backBuffer % kBackBufferCount);
     const auto unmatched = FractionTag::Parse(proptest::DrawUnit(rng));
     REQUIRE(buffer.has_value() && unmatched.has_value());
-    return FrameInput{
-        proptest::DrawBelow(rng, 4) != 0,  *buffer, proptest::DrawBool(rng) ? std::optional<Fraction>{ *unmatched } : std::nullopt, InstantTag::Parse(clock), proptest::DrawBelow(rng, 20) == 0,
-        proptest::DrawBelow(rng, 20) == 0, false
-    };
+    return FrameInput{ proptest::DrawBelow(rng, 4) != 0,
+                       *buffer,
+                       proptest::DrawBool(rng) ? std::optional<Fraction>{ *unmatched } : std::nullopt,
+                       InstantTag::Parse(clock),
+                       proptest::DrawBelow(rng, 20) == 0,
+                       proptest::DrawBelow(rng, 20) == 0,
+                       proptest::DrawBelow(rng, 8) == 0 ? std::optional<Fraction>{ *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f) } : std::nullopt,
+                       false };
 }
 
 [[nodiscard]] bool PlansAreValidOverRandomSequences(infra::RngState& rng) noexcept
@@ -182,7 +186,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -196,7 +200,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -209,7 +213,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(0), false, false, false };
+    const FrameInput input = FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -221,7 +225,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(2), std::nullopt, InstantTag::Parse(0), false, false, true };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(2), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, true };
     const auto framePlan = PlanFrame(plan, state, input);
     return framePlan.has_value() && framePlan->stop;
 }
@@ -249,7 +253,7 @@ struct Replay
 {
     const SessionPlan plan = RandomPlan(rng);
     const FrameState state = InitialFrameState(plan);
-    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, false };
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
     const auto framePlan = PlanFrame(plan, state, input);
     if (!framePlan.has_value())
         return false;
@@ -271,7 +275,7 @@ struct Replay
 
 [[nodiscard]] FrameState WithLastCapture(const FrameState& s, Instant at) noexcept
 {
-    return FrameState{ s.number, s.currentSet, s.states, s.hasOutput, s.hasPrevious, s.resetPending, s.zeroMotionWritten, at, s.display, s.slotFences, s.statsPending, s.displaySource };
+    return FrameState{ s.number, s.currentSet, s.states, s.hasOutput, s.hasPrevious, s.resetPending, s.zeroMotionWritten, at, s.display, s.slotFences, s.statsPending, s.displaySource, s.split };
 }
 
 [[nodiscard]] bool LongPauseNeedsACaptureAndMoreThanTheLimit(infra::RngState& rng) noexcept
@@ -329,12 +333,12 @@ struct Replay
 
 [[nodiscard]] FrameInput FreshInput() noexcept
 {
-    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, false };
+    return FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
 }
 
 [[nodiscard]] FrameInput RepeatInput() noexcept
 {
-    return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, false };
+    return FrameInput{ false, *BackBufferIndexTag::Parse(1), std::nullopt, InstantTag::Parse(1000), false, false, std::nullopt, false };
 }
 
 [[nodiscard]] bool MatchDispatchesPredictFromTheCoarserFlow(infra::RngState& rng) noexcept
@@ -373,6 +377,50 @@ struct Replay
     return blankClears && freshDraws && repeat.has_value() && Draws(repeat->steps) == 1 && Clears(repeat->steps) == 0;
 }
 
+[[nodiscard]] FrameState WithSplitPosition(const FrameState& s, Fraction split) noexcept
+{
+    return FrameState{
+        s.number, s.currentSet, s.states, s.hasOutput, s.hasPrevious, s.resetPending, s.zeroMotionWritten, s.lastCapture, s.display, s.slotFences, s.statsPending, s.displaySource, split
+    };
+}
+
+[[nodiscard]] const Draw* DrawIn(const StepList& steps) noexcept
+{
+    // WAIVER(R2): a search over the emitted steps; the cursor is the loop's own.
+    for (std::size_t i = 0; i < steps.Size(); ++i)
+        if (const Draw* draw = std::get_if<Draw>(&steps.At(i)); draw != nullptr)
+            return draw;
+    return nullptr;
+}
+
+// Dragging the divider must reach the blit, not merely be recorded in the state.
+[[nodiscard]] bool ADragMovesTheDividerInTheDrawnStep(infra::RngState& rng) noexcept
+{
+    const SessionPlan plan = RandomPlan(rng);
+    const FrameState state = InitialFrameState(plan);
+    const Fraction requested = *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f);
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, requested, false };
+    const auto framePlan = PlanFrame(plan, state, input);
+    if (!framePlan.has_value())
+        return false;
+    const Draw* draw = DrawIn(framePlan->steps);
+    return draw != nullptr && draw->split == requested && framePlan->next.split == requested;
+}
+
+// With no drag the divider stays where it was, whatever else the frame does.
+[[nodiscard]] bool WithoutADragTheDividerHolds(infra::RngState& rng) noexcept
+{
+    const SessionPlan plan = RandomPlan(rng);
+    const Fraction held = *FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1001)) / 1000.0f);
+    const FrameState state = WithSplitPosition(InitialFrameState(plan), held);
+    const FrameInput input = FrameInput{ true, *BackBufferIndexTag::Parse(0), std::nullopt, InstantTag::Parse(0), false, false, std::nullopt, false };
+    const auto framePlan = PlanFrame(plan, state, input);
+    if (!framePlan.has_value())
+        return false;
+    const Draw* draw = DrawIn(framePlan->steps);
+    return draw != nullptr && draw->split == held && framePlan->next.split == held;
+}
+
 } // namespace
 
 std::uint32_t FrameSuite(std::uint64_t seed) noexcept
@@ -392,6 +440,8 @@ std::uint32_t FrameSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("planning is deterministic", seed, 200, PlanIsDeterministic));
     failures += Failures(proptest::ForAll("display toggles are involutive", seed, 100, DisplayToggleIsInvolutive));
     failures += Failures(proptest::ForAll("stats readback only with built-in motion", seed, 300, StatsReadbackRequiresBuiltInMotion));
+    failures += Failures(proptest::ForAll("a drag moves the divider in the drawn step", seed, 200, ADragMovesTheDividerInTheDrawnStep));
+    failures += Failures(proptest::ForAll("without a drag the divider holds", seed, 200, WithoutADragTheDividerHolds));
     return failures;
 }
 

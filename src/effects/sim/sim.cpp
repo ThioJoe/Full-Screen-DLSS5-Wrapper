@@ -279,6 +279,13 @@ struct ModelCheck
     return Inject(w, rates.fenceTimeoutPerMillion, SimError::FenceTimeout).and_then([&rates](const SimWorld& n) { return Inject(n, rates.captureLostPerMillion, SimError::CaptureLost); });
 }
 
+[[nodiscard]] std::optional<Fraction> FractionIf(bool present, float value) noexcept
+{
+    if (!present)
+        return std::nullopt;
+    return FractionTag::Parse(value).transform([](Fraction f) { return std::optional<Fraction>{ f }; }).value_or(std::nullopt);
+}
+
 struct FrameDraws
 {
     bool fresh;
@@ -286,30 +293,35 @@ struct FrameDraws
     bool toggleSplit;
     std::uint64_t clockJump;
     float unmatched;
+    std::optional<Fraction> splitRequest;
     SimWorld world;
 };
+
+[[nodiscard]] FrameDraws DrawnFrom(const SimWorld& w, const Draw& a, const Draw& b, const Draw& c) noexcept
+{
+    const Draw d = DrawFrom(c.next);
+    const Draw e = DrawFrom(d.next);
+    return FrameDraws{ (a.value % 4u) != 0u,
+                       (b.value % 97u) == 0u,
+                       (b.value % 89u) == 0u,
+                       1000u + (c.value % 3000000u),
+                       static_cast<float>(d.value % 1001u) / 1000.0f,
+                       FractionIf((e.value % 11u) == 0u, static_cast<float>(e.value % 1001u) / 1000.0f), // the operator dragging the divider
+                       WithRng(w, e.next) };
+}
 
 [[nodiscard]] FrameDraws DrawFrame(const SimWorld& w) noexcept
 {
     const Draw a = DrawFrom(w.rng);
     const Draw b = DrawFrom(a.next);
-    const Draw c = DrawFrom(b.next);
-    const Draw d = DrawFrom(c.next);
-    return FrameDraws{ (a.value % 4u) != 0u, (b.value % 97u) == 0u, (b.value % 89u) == 0u, 1000u + (c.value % 3000000u), static_cast<float>(d.value % 1001u) / 1000.0f, WithRng(w, d.next) };
-}
-
-[[nodiscard]] std::optional<Fraction> UnmatchedIf(bool pending, float value) noexcept
-{
-    if (!pending)
-        return std::nullopt;
-    return FractionTag::Parse(value).transform([](Fraction f) { return std::optional<Fraction>{ f }; }).value_or(std::nullopt);
+    return DrawnFrom(w, a, b, DrawFrom(b.next));
 }
 
 [[nodiscard]] FrameInput InputFrom(const FrameDraws& draws, const SimWorld& w, bool statsPending, bool quit) noexcept
 {
     const Result<BackBufferIndex, UnitError> buffer = BackBufferIndexTag::Parse(w.backBuffer);
     ENSURE(buffer.has_value());
-    return FrameInput{ draws.fresh, *buffer, UnmatchedIf(statsPending, draws.unmatched), InstantTag::Parse(w.clockMicroseconds), draws.toggleOriginal, draws.toggleSplit, quit };
+    return FrameInput{ draws.fresh, *buffer, FractionIf(statsPending, draws.unmatched), InstantTag::Parse(w.clockMicroseconds), draws.toggleOriginal, draws.toggleSplit, draws.splitRequest, quit };
 }
 
 } // namespace

@@ -2,6 +2,8 @@
 
 #include "infrastructure/fold.h"
 
+#include <algorithm>
+#include <array>
 #include <ranges>
 
 namespace real {
@@ -219,6 +221,34 @@ struct Pump
     return WindowEvents{ Either(a.quit, b.quit), Either(a.toggleOriginal, b.toggleOriginal), Either(a.toggleSplit, b.toggleSplit) };
 }
 
+[[nodiscard]] bool IsKeyDown(int key) noexcept
+{
+    return (::GetAsyncKeyState(key) & 0x8000) != 0;
+}
+
+// The same three modifiers the hotkeys use. Read as state, not intercepted: nothing is hooked.
+[[nodiscard]] bool AreModifiersHeld() noexcept
+{
+    return std::ranges::all_of(std::array<int, 3>{ VK_CONTROL, VK_MENU, VK_SHIFT }, IsKeyDown);
+}
+
+[[nodiscard]] std::optional<POINT> CursorPosition() noexcept
+{
+    POINT cursor{};
+    if (::GetCursorPos(&cursor) == 0)
+        return std::nullopt;
+    return cursor;
+}
+
+[[nodiscard]] std::optional<interior::Fraction> FractionAcross(const interior::ScreenRect& rect, long x) noexcept
+{
+    const long width = rect.Right().Get() - rect.Left().Get();
+    if (width <= 0)
+        return std::nullopt;
+    const float across = static_cast<float>(x - rect.Left().Get()) / static_cast<float>(width);
+    return interior::FractionTag::Parse(std::clamp(across, 0.0f, 1.0f)).transform([](interior::Fraction f) { return std::optional<interior::Fraction>{ f }; }).value_or(std::nullopt);
+}
+
 [[nodiscard]] WindowEvents EventsOfHotkey(WPARAM id) noexcept
 {
     return WindowEvents{ id == static_cast<WPARAM>(kHotkeyQuit), id == static_cast<WPARAM>(kHotkeyToggleOriginal), id == static_cast<WPARAM>(kHotkeyToggleSplit) };
@@ -281,6 +311,13 @@ Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect,
     return RegisterClass().and_then([&] { return CreateHandle(rect, settings); }).and_then([&](UniqueWindow handle) {
         return Configure(handle.get(), rect, settings).transform([&] { return OutputWindow{ std::move(handle), rect }; });
     });
+}
+
+std::optional<interior::Fraction> SplitRequest(const OutputWindow& window) noexcept
+{
+    if (!AreModifiersHeld())
+        return std::nullopt;
+    return CursorPosition().and_then([&window](POINT cursor) { return FractionAcross(window.rect, cursor.x); });
 }
 
 Status<Error> RegisterHotkeys(const OutputWindow& window) noexcept

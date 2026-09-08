@@ -21,7 +21,7 @@ struct SessionOutcome
 {
     return interior::FrameState{ state.number,       state.currentSet,        state.states,      state.hasOutput, state.hasPrevious,
                                  state.resetPending, state.zeroMotionWritten, state.lastCapture, state.display,   infra::WithElement(state.slotFences, slot.Get(), value),
-                                 state.statsPending, state.displaySource };
+                                 state.statsPending, state.displaySource,     state.split };
 }
 
 template <class Environment, class Error>

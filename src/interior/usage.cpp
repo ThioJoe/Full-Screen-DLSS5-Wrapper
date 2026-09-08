@@ -22,10 +22,10 @@ std::string_view UsageText() noexcept
            "DLSS 5 Neural Rendering (NGX feature 18, nvngx_dlssnr.dll)\n"
            "  --nr on|off                Run the neural rendering model (default on)\n"
            "  --nr-preset 0..3           Model preset hint (0 = model default)\n"
-           "  --nr-intensity F           Effect strength 0..2 (default 1)\n"
+           "  --nr-intensity F           Effect strength, 1 is the model default; any finite value is accepted\n"
            "  --nr-style 0|1|2           0 standard, 1 natural, 2 cinematic\n"
-           "  --nr-local-structure F     Local structure strength 0..2 (default 1)\n"
-           "  --nr-local-tone F          Local tone strength 0..2 (default 1)\n"
+           "  --nr-local-structure F     Local structure strength (default 1)\n"
+           "  --nr-local-tone F          Local tone strength (default 1)\n"
            "  --nr-skin F                Skin structure strength; -1 follows local structure (default)\n"
            "  --nr-automask on|off       Let the model detect skin itself (default on)\n"
            "  --nr-ui-correction on|off  Model UI correction (default on)\n"
@@ -67,7 +67,8 @@ std::string_view UsageText() noexcept
            "Hotkeys (global, registered with RegisterHotKey)\n"
            "  Ctrl+Alt+Shift+O           Toggle between the processed and the original picture\n"
            "  Ctrl+Alt+Shift+C           Toggle the split comparison view\n"
-           "  Ctrl+Alt+Shift+Q           Quit\n";
+           "  Ctrl+Alt+Shift+Q           Quit\n"
+           "  Ctrl+Alt+Shift + mouse     Drag the split divider; no click, so the desktop keeps its input\n";
 }
 
 } // namespace interior

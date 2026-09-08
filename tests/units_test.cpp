@@ -26,15 +26,19 @@ using namespace interior;
     return FractionTag::Parse(raw).has_value() == inRange;
 }
 
-[[nodiscard]] bool SkinStrengthAcceptsMinusOne(infra::RngState&) noexcept
+// -1 is the model's sentinel for "follow local structure"; the rest of the line is the operator's.
+[[nodiscard]] bool SkinStrengthAcceptsEveryFiniteValue(infra::RngState& rng) noexcept
 {
-    return SkinStrengthTag::Parse(-1.0f).has_value() && !SkinStrengthTag::Parse(-1.5f).has_value();
+    const float value = (proptest::DrawUnit(rng) - 0.5f) * 200.0f;
+    return SkinStrengthTag::Parse(-1.0f).has_value() && SkinStrengthTag::Parse(value).has_value();
 }
 
 [[nodiscard]] bool NanIsRejectedEverywhere(infra::RngState&) noexcept
 {
     const float nan = std::bit_cast<float>(0x7FC00000u);
-    return !FractionTag::Parse(nan).has_value() && !ScaleTag::Parse(nan).has_value();
+    const float infinity = std::bit_cast<float>(0x7F800000u);
+    return !FractionTag::Parse(nan).has_value() && !ScaleTag::Parse(nan).has_value() && !StrengthTag::Parse(nan).has_value() && !StrengthTag::Parse(infinity).has_value() &&
+           !SkinStrengthTag::Parse(nan).has_value();
 }
 
 [[nodiscard]] bool RectRequiresPositiveArea(infra::RngState& rng) noexcept
@@ -131,7 +135,7 @@ std::uint32_t UnitsSuite(std::uint64_t seed) noexcept
     std::uint32_t failures = 0;
     failures += Failures(proptest::ForAll("PixelCount accepts exactly 1..16384", seed, 500, PixelCountAcceptsExactlyRange));
     failures += Failures(proptest::ForAll("Fraction rejects values outside 0..1", seed, 500, FractionRejectsOutside));
-    failures += Failures(proptest::ForAll("SkinStrength accepts -1 and rejects below", seed, 1, SkinStrengthAcceptsMinusOne));
+    failures += Failures(proptest::ForAll("SkinStrength accepts every finite value", seed, 200, SkinStrengthAcceptsEveryFiniteValue));
     failures += Failures(proptest::ForAll("NaN is rejected", seed, 1, NanIsRejectedEverywhere));
     failures += Failures(proptest::ForAll("ScreenRect requires positive area", seed, 500, RectRequiresPositiveArea));
     failures += Failures(proptest::ForAll("CheckedAdd matches 64-bit arithmetic", seed, 2000, CheckedAddMatchesWideArithmetic));

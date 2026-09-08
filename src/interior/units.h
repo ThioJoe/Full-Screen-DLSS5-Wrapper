@@ -20,8 +20,6 @@ enum class UnitError : std::uint8_t {
     HandleZero,
     NotFinite,
     FractionOutOfRange,
-    StrengthOutOfRange,
-    SkinStrengthOutOfRange,
     DepthOutOfRange,
     ScaleOutOfRange,
     LevelOutOfRange,
@@ -44,6 +42,7 @@ constexpr std::uint32_t kDescriptorsPerFrame = 512;
 constexpr std::uint32_t kBackBufferCount = 3;
 constexpr std::uint32_t kFrameSlotCount = 2;
 constexpr float kMaxScale = 64.0f;
+constexpr float kFloatMax = 3.402823466e+38f;
 
 struct PixelCountTag;
 using PixelCount = infra::Strong<std::uint32_t, PixelCountTag>;
@@ -311,6 +310,15 @@ using AdapterName = infra::BoundedString<wchar_t, 128>;
 {
     return IsNaN(value) || IsOutside(value, low, high);
 }
+[[nodiscard]] constexpr bool IsInfinite(float value) noexcept
+{
+    return value > kFloatMax || value < -kFloatMax;
+}
+// The one value the model could not act on; every finite number is the caller's to choose.
+[[nodiscard]] constexpr bool IsNotFinite(float value) noexcept
+{
+    return IsNaN(value) || IsInfinite(value);
+}
 
 // --- parser definitions -------------------------------------------------------
 
@@ -397,17 +405,18 @@ constexpr Result<Fraction, UnitError> FractionTag::Parse(float raw) noexcept
     return Fraction(raw);
 }
 
+// NVIDIA publishes no range for these, so the parser invents none: any finite value reaches the model.
 constexpr Result<Strength, UnitError> StrengthTag::Parse(float raw) noexcept
 {
-    if (IsOutsideOrNaN(raw, 0.0f, 2.0f))
-        return infra::Fail(UnitError::StrengthOutOfRange);
+    if (IsNotFinite(raw))
+        return infra::Fail(UnitError::NotFinite);
     return Strength(raw);
 }
 
 constexpr Result<SkinStrength, UnitError> SkinStrengthTag::Parse(float raw) noexcept
 {
-    if (IsOutsideOrNaN(raw, -1.0f, 2.0f))
-        return infra::Fail(UnitError::SkinStrengthOutOfRange);
+    if (IsNotFinite(raw))
+        return infra::Fail(UnitError::NotFinite);
     return SkinStrength(raw);
 }
 

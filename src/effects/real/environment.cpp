@@ -432,6 +432,7 @@ struct Prepared
     interior::BackBufferIndex backBuffer;
     std::optional<interior::Fraction> unmatched;
     interior::Instant now;
+    std::optional<interior::Fraction> splitRequest;
 };
 
 [[nodiscard]] Status<Error> AwaitSlot(const Gpu& gpu, const interior::FrameState& state, interior::FrameSlot slot) noexcept
@@ -458,25 +459,26 @@ struct Prepared
         .transform([](interior::Fraction f) { return std::optional<interior::Fraction>{ f }; });
 }
 
-[[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, interior::FrameNumber number, std::optional<interior::Fraction> unmatched) noexcept
+[[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, const OutputWindow& window, std::optional<interior::Fraction> unmatched, interior::FrameNumber number) noexcept
 {
     return AcquireFrames(gpu.capture, number).and_then([&](bool fresh) {
-        return Now().and_then(
-            [&](interior::Instant now) { return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) { return Prepared{ fresh, index, unmatched, now }; }); });
+        return Now().and_then([&](interior::Instant now) {
+            return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) { return Prepared{ fresh, index, unmatched, now, SplitRequest(window) }; });
+        });
     });
 }
 
-[[nodiscard]] Result<Prepared, Error> Prepare(const Gpu& gpu, std::uint32_t finestPixels, const interior::FrameState& state, interior::FrameSlot slot) noexcept
+[[nodiscard]] Result<Prepared, Error> Prepare(const Gpu& gpu, const OutputWindow& window, std::uint32_t finestPixels, const interior::FrameState& state, interior::FrameSlot slot) noexcept
 {
     return WaitForNextFrame(gpu.presenter)
         .and_then([&] { return AwaitSlot(gpu, state, slot); })
         .and_then([&] { return ReadUnmatched(gpu, finestPixels, state, slot); })
-        .and_then([&](std::optional<interior::Fraction> unmatched) { return Sampled(gpu, state.number, unmatched); });
+        .and_then([&](std::optional<interior::Fraction> unmatched) { return Sampled(gpu, window, unmatched, state.number); });
 }
 
 [[nodiscard]] interior::FrameInput InputOf(const WindowEvents& events, const Prepared& p) noexcept
 {
-    return interior::FrameInput{ p.fresh, p.backBuffer, p.unmatched, p.now, events.toggleOriginal, events.toggleSplit, events.quit };
+    return interior::FrameInput{ p.fresh, p.backBuffer, p.unmatched, p.now, events.toggleOriginal, events.toggleSplit, p.splitRequest, events.quit };
 }
 
 [[nodiscard]] FrameContext ContextOf(const interior::FrameState& state, interior::FrameSlot slot, interior::FenceValue fence) noexcept
@@ -492,8 +494,9 @@ struct Prepared
 [[nodiscard]] Result<Begun, Error> Begin(const Gpu& gpu, const OutputWindow& window, std::uint32_t finestPixels, interior::FenceValue fence, const interior::FrameState& state) noexcept
 {
     const interior::FrameSlot slot = interior::SlotOfFrame(state.number);
-    return PumpEvents(window).and_then(
-        [&](const WindowEvents& events) { return Prepare(gpu, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; }); });
+    return PumpEvents(window).and_then([&](const WindowEvents& events) {
+        return Prepare(gpu, window, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; });
+    });
 }
 
 [[nodiscard]] bool IsReportDue(const Statistics& s, interior::Instant now) noexcept

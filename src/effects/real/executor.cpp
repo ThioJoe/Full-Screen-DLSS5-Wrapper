@@ -17,7 +17,6 @@ using interior::ResourceId;
 
 constexpr std::uint32_t kDispatchDescriptors = kComputeSrvCount + kComputeUavCount;
 constexpr std::array<float, 4> kBlack{ 0.0f, 0.0f, 0.0f, 1.0f };
-constexpr float kSplitPosition = 0.5f;
 
 struct Cursor
 {
@@ -202,9 +201,9 @@ void SetComputeState(const Gpu& gpu, const interior::Dispatch& d, std::uint32_t 
     return 0;
 }
 
-[[nodiscard]] std::array<std::uint32_t, 4> BlitConstants(interior::DisplayMode mode) noexcept
+[[nodiscard]] std::array<std::uint32_t, 4> BlitConstants(interior::DisplayMode mode, interior::Fraction split) noexcept
 {
-    return { ModeCode(mode), std::bit_cast<std::uint32_t>(kSplitPosition), 0u, 0u };
+    return { ModeCode(mode), std::bit_cast<std::uint32_t>(split.Get()), 0u, 0u };
 }
 
 [[nodiscard]] D3D12_VIEWPORT ViewportOf(const interior::Extent& e) noexcept
@@ -233,9 +232,9 @@ void SetBlitTarget(const Gpu& gpu, const interior::Draw& d) noexcept
     SetViewport(gpu);
 }
 
-void SetBlitPipeline(const Gpu& gpu, interior::DisplayMode mode, std::uint32_t base) noexcept
+void SetBlitPipeline(const Gpu& gpu, const interior::Draw& d, std::uint32_t base) noexcept
 {
-    const std::array<std::uint32_t, 4> constants = BlitConstants(mode);
+    const std::array<std::uint32_t, 4> constants = BlitConstants(d.mode, d.split);
     gpu.list->SetGraphicsRootSignature(gpu.pipelines.blitRoot.Get());
     gpu.list->SetPipelineState(gpu.pipelines.blit.Get());
     gpu.list->SetGraphicsRoot32BitConstants(0, static_cast<UINT>(constants.size()), constants.data(), 0);
@@ -245,7 +244,7 @@ void SetBlitPipeline(const Gpu& gpu, interior::DisplayMode mode, std::uint32_t b
 [[nodiscard]] Cursor Drawn(const Gpu& gpu, const interior::Draw& d, std::uint32_t base, const Cursor& c) noexcept
 {
     SetBlitTarget(gpu, d);
-    SetBlitPipeline(gpu, d.mode, base);
+    SetBlitPipeline(gpu, d, base);
     gpu.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     gpu.list->DrawInstanced(3, 1, 0, 0);
     return Advanced(c, kBlitSrvCount);

@@ -22,6 +22,7 @@ struct Builder
 
 using BuildResult = Result<Builder, PlanFrameError>;
 
+constexpr Fraction kCentreSplit = *FractionTag::Parse(0.5f); // the divider starts in the middle
 constexpr float kLambda = 0.004f;
 constexpr float kZeroBias = 0.006f;
 constexpr float kBadThreshold = 0.12f;
@@ -391,11 +392,18 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
 
 // --- blit and present --------------------------------------------------------------------------
 
-[[nodiscard]] BuildResult DrawSteps(const Builder& b, ResourceKind source, DisplayMode mode, BackBufferIndex index) noexcept
+// What the blit shows this frame: the mode and, for the split view, where the divider sits.
+struct Display
+{
+    DisplayMode mode;
+    Fraction split;
+};
+
+[[nodiscard]] BuildResult DrawSteps(const Builder& b, ResourceKind source, const Display& display, BackBufferIndex index) noexcept
 {
     return MoveTo(b, SimpleId(source), ResourceState::ShaderRead)
         .and_then([](const Builder& n) { return MoveTo(n, SimpleId(ResourceKind::ModelColor), ResourceState::ShaderRead); })
-        .and_then([&](const Builder& n) { return Emit(n, Step{ Draw{ SimpleId(source), SimpleId(ResourceKind::ModelColor), BackBufferId(index), mode } }); });
+        .and_then([&](const Builder& n) { return Emit(n, Step{ Draw{ SimpleId(source), SimpleId(ResourceKind::ModelColor), BackBufferId(index), display.mode, display.split } }); });
 }
 
 [[nodiscard]] BuildResult ClearSteps(const Builder& b, BackBufferIndex index) noexcept
@@ -403,15 +411,15 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
     return Emit(b, Step{ ClearTarget{ BackBufferId(index) } });
 }
 
-[[nodiscard]] BuildResult TargetContent(const Builder& b, bool hasOutput, ResourceKind source, DisplayMode mode, BackBufferIndex index) noexcept
+[[nodiscard]] BuildResult TargetContent(const Builder& b, bool hasOutput, ResourceKind source, const Display& display, BackBufferIndex index) noexcept
 {
-    return hasOutput ? DrawSteps(b, source, mode, index) : ClearSteps(b, index);
+    return hasOutput ? DrawSteps(b, source, display, index) : ClearSteps(b, index);
 }
 
-[[nodiscard]] BuildResult BlitSteps(const Builder& b, bool hasOutput, ResourceKind source, DisplayMode mode, BackBufferIndex index) noexcept
+[[nodiscard]] BuildResult BlitSteps(const Builder& b, bool hasOutput, ResourceKind source, const Display& display, BackBufferIndex index) noexcept
 {
     return MoveTo(b, BackBufferId(index), ResourceState::RenderTarget)
-        .and_then([&](const Builder& n) { return TargetContent(n, hasOutput, source, mode, index); })
+        .and_then([&](const Builder& n) { return TargetContent(n, hasOutput, source, display, index); })
         .and_then([index](const Builder& n) { return MoveTo(n, BackBufferId(index), ResourceState::Present); })
         .and_then([](const Builder& n) { return Emit(n, Step{ Submit{ Phase::Two } }); })
         .and_then([](const Builder& n) { return Emit(n, Step{ Present{} }); });
@@ -462,7 +470,13 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
                        NextDisplay(state.display, input.toggleOriginal, input.toggleSplit),
                        state.slotFences,
                        infra::WithElement(state.statsPending, slot.Get(), EmitsStats(plan, input.freshCapture)),
-                       DisplaySourceOf(plan) };
+                       DisplaySourceOf(plan),
+                       NextSplit(state.split, input.splitRequest) };
+}
+
+[[nodiscard]] Display DisplayOf(const FrameState& state, const FrameInput& input) noexcept
+{
+    return Display{ NextDisplay(state.display, input.toggleOriginal, input.toggleSplit), NextSplit(state.split, input.splitRequest) };
 }
 
 [[nodiscard]] BuildResult FreshSteps(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const LevelExtents& extents, FrameSlot slot) noexcept
@@ -472,12 +486,12 @@ static_assert(kZeroLevel.has_value() && kZeroSet.has_value() && kZeroBuffer.has_
         .and_then([&](const Builder& n) { return MotionPhaseTwo(n, plan, extents, state, slot); })
         .and_then([&](const Builder& n) { return SuperResolutionSteps(n, plan, reset); })
         .and_then([&](const Builder& n) { return NeuralRenderingSteps(n, plan, reset); })
-        .and_then([&](const Builder& n) { return BlitSteps(n, true, DisplaySourceOf(plan), NextDisplay(state.display, input.toggleOriginal, input.toggleSplit), input.backBuffer); });
+        .and_then([&](const Builder& n) { return BlitSteps(n, true, DisplaySourceOf(plan), DisplayOf(state, input), input.backBuffer); });
 }
 
 [[nodiscard]] BuildResult RepeatSteps(const SessionPlan& plan, const FrameState& state, const FrameInput& input) noexcept
 {
-    return BlitSteps(Builder{ StepList{}, state.states }, state.hasOutput, DisplaySourceOf(plan), NextDisplay(state.display, input.toggleOriginal, input.toggleSplit), input.backBuffer);
+    return BlitSteps(Builder{ StepList{}, state.states }, state.hasOutput, DisplaySourceOf(plan), DisplayOf(state, input), input.backBuffer);
 }
 
 [[nodiscard]] BuildResult StepsFor(const SessionPlan& plan, const FrameState& state, const FrameInput& input, const LevelExtents& extents, FrameSlot slot) noexcept
@@ -568,8 +582,8 @@ StateTable InitialStates() noexcept
 FrameState InitialFrameState(const SessionPlan& plan) noexcept
 {
     return FrameState{
-        FrameNumberTag::Parse(0), *kZeroSet, InitialStates(), false, false, false, false, std::nullopt, plan.initialDisplay, { FenceValueTag::Parse(0), FenceValueTag::Parse(0) }, { false, false },
-        DisplaySourceOf(plan)
+        FrameNumberTag::Parse(0), *kZeroSet,   InitialStates(), false, false, false, false, std::nullopt, plan.initialDisplay, { FenceValueTag::Parse(0), FenceValueTag::Parse(0) }, { false, false },
+        DisplaySourceOf(plan),    kCentreSplit
     };
 }
 
@@ -588,6 +602,11 @@ FrameSlot SlotOfFrame(FrameNumber number) noexcept
 [[nodiscard]] DisplayMode ToggledIf(DisplayMode current, DisplayMode mode, bool toggle) noexcept
 {
     return toggle ? Toggled(current, mode) : current;
+}
+
+Fraction NextSplit(Fraction current, const std::optional<Fraction>& request) noexcept
+{
+    return request.value_or(current);
 }
 
 DisplayMode NextDisplay(DisplayMode current, bool toggleOriginal, bool toggleSplit) noexcept

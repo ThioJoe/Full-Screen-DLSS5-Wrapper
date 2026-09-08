@@ -2,6 +2,8 @@
 #include "effects/real/com.h"
 #include "interior/monitors.h"
 
+#include <optional>
+
 namespace real {
 
 struct WindowSettings
@@ -35,5 +37,9 @@ constexpr int kHotkeyQuit = 3;
 [[nodiscard]] infra::Status<Error> RegisterHotkeys(const OutputWindow& window) noexcept;
 void ShowOutputWindow(const OutputWindow& window) noexcept;
 [[nodiscard]] infra::Result<WindowEvents, Error> PumpEvents(const OutputWindow& window) noexcept;
+
+// Where the split divider should sit, or nothing when it is not being dragged. Holding the hotkey
+// modifiers and moving the cursor drags it; no button is involved, so the desktop keeps its clicks.
+[[nodiscard]] std::optional<interior::Fraction> SplitRequest(const OutputWindow& window) noexcept;
 
 } // namespace real
