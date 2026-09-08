@@ -25,6 +25,10 @@ struct NgxSettings
     interior::NgxLogLevel logLevel;
 };
 
+// Where nvngx_dlssnr.dll sits among the folders the loader searches (the executable folder, then
+// --ngx-path), or nothing. The loader builds feature 18 from that file; the driver does not install it.
+[[nodiscard]] std::optional<interior::DirectoryPath> NeuralRenderingModelLocation(const NgxSettings& settings) noexcept;
+
 // The driver keeps the path pointers, so an NgxPaths lives on the heap and never moves.
 class NgxPaths final
 {

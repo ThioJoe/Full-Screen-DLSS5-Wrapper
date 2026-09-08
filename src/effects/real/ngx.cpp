@@ -4,6 +4,7 @@
 #include "infrastructure/overloaded.h"
 
 #include <algorithm>
+#include <string_view>
 
 namespace real {
 namespace {
@@ -19,6 +20,29 @@ constexpr std::array<const char*, 6> kPresetNames{
 constexpr std::array<interior::SrQuality, 6> kQualities{ interior::SrQuality::Dlaa,     interior::SrQuality::UltraQuality, interior::SrQuality::Quality,
                                                          interior::SrQuality::Balanced, interior::SrQuality::Performance,  interior::SrQuality::UltraPerformance };
 constexpr char kNeuralRenderingAvailable[] = "DLSSNR.Available";
+constexpr std::wstring_view kNeuralRenderingModel = L"\\nvngx_dlssnr.dll";
+constexpr std::size_t kModelPathCapacity = interior::DirectoryPath::Capacity + kNeuralRenderingModel.size() + 1;
+
+[[nodiscard]] std::array<wchar_t, kModelPathCapacity> ModelPathIn(std::wstring_view directory) noexcept
+{
+    std::array<wchar_t, kModelPathCapacity> chars{};
+    // WAIVER(R2): a local buffer filled once, before use, from two bounded pieces.
+    std::ranges::copy(directory, chars.begin());
+    std::ranges::copy(kNeuralRenderingModel, chars.begin() + static_cast<std::ptrdiff_t>(directory.size()));
+    return chars;
+}
+
+[[nodiscard]] bool HasModel(const interior::DirectoryPath& directory) noexcept
+{
+    return !directory.IsEmpty() && ::GetFileAttributesW(ModelPathIn(directory.Get()).data()) != INVALID_FILE_ATTRIBUTES;
+}
+
+[[nodiscard]] std::optional<interior::DirectoryPath> ModelIn(const interior::DirectoryPath& directory) noexcept
+{
+    if (!HasModel(directory))
+        return std::nullopt;
+    return directory;
+}
 
 [[nodiscard]] Status<Error> CheckNgx(NVSDK_NGX_Result result, ApiCall call) noexcept
 {
@@ -362,6 +386,11 @@ void ParameterDestroyer::operator()(NVSDK_NGX_Parameter* parameters) const noexc
 void FeatureReleaser::operator()(NVSDK_NGX_Handle* handle) const noexcept
 {
     ENSURE(!NVSDK_NGX_FAILED(NVSDK_NGX_D3D12_ReleaseFeature(handle)));
+}
+
+std::optional<interior::DirectoryPath> NeuralRenderingModelLocation(const NgxSettings& settings) noexcept
+{
+    return ModelIn(settings.executableDirectory).or_else([&settings] { return ModelIn(settings.featurePath); });
 }
 
 Requirement RequirementOf(const GpuDevice& gpu, const NgxSettings& settings, NVSDK_NGX_Feature feature) noexcept

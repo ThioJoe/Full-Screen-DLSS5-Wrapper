@@ -21,8 +21,10 @@ build-applied call tracing, contracts that run in production, and a lint that en
   `NotImplemented` to the requirements query and cannot build the feature, and DlssScreen stops at
   start-up with a message naming the installed and the required driver.
 - The [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS) (`lib/Windows_x86_64/x64/nvsdk_ngx_s.lib`, `include/`, `lib/Windows_x86_64/rel/nvngx_dlss.dll`).
-- The neural rendering model (`nvngx_dlssnr.dll`) comes with the driver; DlssScreen does not ship or
-  side-load it. A copy next to `DlssScreen.exe` or in `--ngx-path` is picked up by the loader as well.
+- NVIDIA's DLSS 5 model, `nvngx_dlssnr.dll`, next to `DlssScreen.exe` or in the folder given by
+  `--ngx-path`. NGX looks for feature DLLs in the application folder and the listed paths, the way
+  games ship `nvngx_dlss.dll`; the driver does not install this one and DlssScreen does not ship it.
+  Without it the loader reports `DLSSNR.Available = 0` and DlssScreen stops with a message saying so.
 - Visual Studio 2022 17.8+ (MSVC 19.38), CMake 3.21+, Ninja or MSBuild, the Windows 10 SDK (dxc.exe).
 - Optional: the NVIDIA Optical Flow SDK for the hardware motion-vector backend (`-DDSCREEN_ENABLE_NVOF=ON`).
 

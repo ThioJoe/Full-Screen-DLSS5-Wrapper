@@ -303,26 +303,37 @@ struct Base
                                            RequiredDriverText().Get(), DriverText(device).Get());
 }
 
-[[nodiscard]] Status<Error> LogAvailabilityValue(const Console& console, std::uint32_t available) noexcept
+// The loader builds feature 18 from nvngx_dlssnr.dll in the executable folder or --ngx-path; a zero
+// with no such file means there is nothing to build from, a zero with the file means it was rejected.
+[[nodiscard]] Line ZeroAvailabilityText(const std::optional<interior::DirectoryPath>& model) noexcept
+{
+    if (!model.has_value())
+        return infra::Formatted<kLineCapacity>("the NGX loader reports DLSSNR.Available = 0 and there is no nvngx_dlssnr.dll next to DlssScreen.exe or in --ngx-path; put NVIDIA's DLSS 5 model there");
+    const std::array<char, interior::DirectoryPath::Capacity + 1> directory = infra::NarrowedChars<interior::DirectoryPath::Capacity + 1>(model->Get());
+    return infra::Formatted<kLineCapacity>("the NGX loader reports DLSSNR.Available = 0 although nvngx_dlssnr.dll is in {}; the loader rejected that build, see nvngx.log", directory.data());
+}
+
+[[nodiscard]] Status<Error> CheckAvailabilityValue(const Console& console, const real::NgxSettings& settings, std::uint32_t available) noexcept
 {
     if (available == 0)
-        return Log(console, LogLevel::Warn, "the NGX loader reports DLSSNR.Available = 0; creating the feature may fail on this GPU or driver");
+        return Fail(Logged(console, Explanation{ ZeroAvailabilityText(real::NeuralRenderingModelLocation(settings)).Get(), Error{ real::ApiCall::NgxNeuralRenderingUnavailable, 2 } }));
     return Log(console, LogLevel::Info, infra::Formatted<kLineCapacity>("DLSSNR.Available = {}", available).Get());
 }
 
 // The loader's capability block names DLSSNR.Available only when it can build feature 18 itself.
-[[nodiscard]] Status<Error> CheckNeuralRendering(const Console& console, const real::GpuDevice& device, std::optional<std::uint32_t> available) noexcept
+[[nodiscard]] Status<Error> CheckNeuralRendering(const Console& console, const real::GpuDevice& device, const real::NgxSettings& settings, std::optional<std::uint32_t> available) noexcept
 {
     if (!available.has_value())
         return Fail(Logged(console, Explanation{ MissingAvailabilityText(device).Get(), Error{ real::ApiCall::NgxNeuralRenderingUnavailable, 1 } }));
-    return LogAvailabilityValue(console, *available);
+    return CheckAvailabilityValue(console, settings, *available);
 }
 
-[[nodiscard]] Status<Error> RequireNeuralRendering(const Console& console, const real::GpuDevice& device, const real::NgxRuntime& runtime, bool neuralRendering) noexcept
+[[nodiscard]] Status<Error> RequireNeuralRendering(const Console& console, const real::GpuDevice& device, const real::NgxSettings& settings, const real::NgxRuntime& runtime,
+                                                   bool neuralRendering) noexcept
 {
     if (!neuralRendering)
         return {};
-    return CheckNeuralRendering(console, device, real::NeuralRenderingAvailability(runtime));
+    return CheckNeuralRendering(console, device, settings, real::NeuralRenderingAvailability(runtime));
 }
 
 [[nodiscard]] Result<std::optional<real::NgxRuntime>, Error> OptionalRuntime(const Console& console, const real::GpuDevice& device, const Options& o, const real::NgxSettings& settings,
@@ -331,7 +342,7 @@ struct Base
     if (!wanted)
         return std::optional<real::NgxRuntime>{};
     return LogRequirements(console, device, settings).and_then([&] { return real::CreateNgxRuntime(device, settings); }).and_then([&](real::NgxRuntime runtime) {
-        return RequireNeuralRendering(console, device, runtime, o.neuralRendering).transform([&runtime] { return std::optional<real::NgxRuntime>{ std::move(runtime) }; });
+        return RequireNeuralRendering(console, device, settings, runtime, o.neuralRendering).transform([&runtime] { return std::optional<real::NgxRuntime>{ std::move(runtime) }; });
     });
 }
 
