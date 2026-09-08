@@ -4,3 +4,4 @@ out/
 .cache/
 dlssscreen-trace.txt
 *.log
+__pycache__/

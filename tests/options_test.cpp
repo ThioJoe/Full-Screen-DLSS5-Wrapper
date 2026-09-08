@@ -3,7 +3,9 @@
 #include "tests/test_registry.h"
 
 #include <array>
+#include <format>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tests {
@@ -99,11 +101,35 @@ constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all",  
     return parsed.has_value() && parsed->showHelp;
 }
 
+constexpr std::array<std::pair<std::wstring_view, bool>, 8> kSpellings{
+    { { L"on", true }, { L"1", true }, { L"true", true }, { L"yes", true }, { L"off", false }, { L"0", false }, { L"false", false }, { L"no", false } }
+};
+
+[[nodiscard]] bool BooleanSpellingsParse(infra::RngState& rng) noexcept
+{
+    const auto& [text, expected] = kSpellings[proptest::DrawBelow(rng, static_cast<std::uint32_t>(kSpellings.size()))];
+    const std::array<std::wstring_view, 2> args{ L"--vsync", text };
+    const auto parsed = ParseOptions(args);
+    return parsed.has_value() && parsed->vsync == expected;
+}
+
+[[nodiscard]] bool HexAppIdRoundTrips(infra::RngState& rng) noexcept
+{
+    const std::uint64_t id = 1 + proptest::Draw(rng) % 0xFFFFFFFFull;
+    const bool prefixed = proptest::DrawBool(rng);
+    const std::wstring text = prefixed ? std::format(L"0x{:X}", id) : std::format(L"{:x}", id);
+    const std::array<std::wstring_view, 2> args{ L"--ngx-app-id", text };
+    const auto parsed = ParseOptions(args);
+    return parsed.has_value() && parsed->ngxAppId.has_value() && parsed->ngxAppId->Get() == id;
+}
+
 } // namespace
 
 std::uint32_t OptionsSuite(std::uint64_t seed) noexcept
 {
     std::uint32_t failures = 0;
+    failures += Failures(proptest::ForAll("boolean spellings parse", seed, 40, BooleanSpellingsParse));
+    failures += Failures(proptest::ForAll("--ngx-app-id round-trips", seed, 200, HexAppIdRoundTrips));
     failures += Failures(proptest::ForAll("option parser never panics on random input", seed, 3000, ParserNeverPanicsAndErrorsAreEnumerated));
     failures += Failures(proptest::ForAll("empty arguments give the defaults", seed, 1, EmptyArgumentsGiveDefaults));
     failures += Failures(proptest::ForAll("--monitor N round-trips", seed, 200, MonitorIndexRoundTrips));

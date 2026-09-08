@@ -255,11 +255,49 @@ struct Replay
     return pending == (plan.motion == MotionBackend::BuiltIn);
 }
 
+[[nodiscard]] bool IsBlank(const FrameState& s) noexcept
+{
+    return !s.hasOutput && !s.hasPrevious && !s.resetPending && !s.zeroMotionWritten && !s.lastCapture.has_value() && !s.statsPending[0] && !s.statsPending[1];
+}
+
+[[nodiscard]] bool InitialStateIsBlank(infra::RngState& rng) noexcept
+{
+    const SessionPlan plan = RandomPlan(rng);
+    const FrameState s = InitialFrameState(plan);
+    return IsBlank(s) && s.number.Get() == 0 && s.currentSet.Get() == 0 && s.display == plan.initialDisplay && s.states == InitialStates();
+}
+
+[[nodiscard]] FrameState WithLastCapture(const FrameState& s, Instant at) noexcept
+{
+    return FrameState{ s.number, s.currentSet, s.states, s.hasOutput, s.hasPrevious, s.resetPending, s.zeroMotionWritten, at, s.display, s.slotFences, s.statsPending, s.displaySource };
+}
+
+[[nodiscard]] bool LongPauseNeedsACaptureAndMoreThanTheLimit(infra::RngState& rng) noexcept
+{
+    const FrameState blank = InitialFrameState(RandomPlan(rng));
+    const std::uint64_t at = proptest::Draw(rng) % 1000000000000ull;
+    const FrameState captured = WithLastCapture(blank, InstantTag::Parse(at));
+    const bool none = !IsLongPause(blank, InstantTag::Parse(at + kPauseResetMicroseconds + 1));
+    const bool atLimit = !IsLongPause(captured, InstantTag::Parse(at + kPauseResetMicroseconds)) && !IsLongPause(captured, InstantTag::Parse(at));
+    return none && atLimit && IsLongPause(captured, InstantTag::Parse(at + kPauseResetMicroseconds + 1));
+}
+
+[[nodiscard]] bool ThresholdIsExclusiveAndNeedsAValue(infra::RngState& rng) noexcept
+{
+    const auto threshold = FractionTag::Parse(static_cast<float>(proptest::DrawBelow(rng, 1000)) / 1000.0f);
+    const auto above = FractionTag::Parse(std::min(1.0f, threshold->Get() + 0.001f));
+    const bool exclusive = !ExceedsThreshold(*threshold, *threshold) && ExceedsThreshold(*above, *threshold) == (above->Get() > threshold->Get());
+    return threshold.has_value() && above.has_value() && exclusive && !ExceedsThreshold(std::nullopt, *threshold);
+}
+
 } // namespace
 
 std::uint32_t FrameSuite(std::uint64_t seed) noexcept
 {
     std::uint32_t failures = 0;
+    failures += Failures(proptest::ForAll("the initial state is blank", seed, 100, InitialStateIsBlank));
+    failures += Failures(proptest::ForAll("a long pause needs a capture and more than the limit", seed, 200, LongPauseNeedsACaptureAndMoreThanTheLimit));
+    failures += Failures(proptest::ForAll("the reset threshold is exclusive and needs a value", seed, 200, ThresholdIsExclusiveAndNeedsAValue));
     failures += Failures(proptest::ForAll("frame plans are valid over random sequences", seed, 800, PlansAreValidOverRandomSequences));
     failures += Failures(proptest::ForAll("fresh frames evaluate exactly the configured models", seed, 400, FreshFrameEvaluatesConfiguredModels));
     failures += Failures(proptest::ForAll("the first fresh frame resets history", seed, 300, FirstFreshFrameResetsHistory));

@@ -600,12 +600,46 @@ void CheckMustUse(const SourceFile& f)
     }
 }
 
+bool IsIdentifierChar(char c)
+{
+    return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
+}
+
+// Identifiers followed by one of ( ; , ) < count as references (calls, pointers passed on); member accesses
+// (a.f, p->f) do not name our functions. callsOnly keeps the names followed by ( for the call graph.
+std::vector<std::string> ReferencedNames(const std::string& line, bool callsOnly)
+{
+    std::vector<std::string> names;
+    size_t i = 0;
+    while (i < line.size())
+    {
+        if (!IsIdentifierChar(line[i]) || std::isdigit(static_cast<unsigned char>(line[i])) != 0)
+        {
+            ++i;
+            continue;
+        }
+        const size_t start = i;
+        while (i < line.size() && IsIdentifierChar(line[i]))
+            ++i;
+        size_t next = i;
+        while (next < line.size() && (line[next] == ' ' || line[next] == '\t'))
+            ++next;
+        const bool member = start >= 1 && (line[start - 1] == '.' || (start >= 2 && line[start - 2] == '-' && line[start - 1] == '>'));
+        const bool call = next < line.size() && line[next] == '(';
+        const bool reference = call || (next < line.size() && (line[next] == ';' || line[next] == ',' || line[next] == ')' || line[next] == '<'));
+        if (!member && (callsOnly ? call : reference))
+            names.push_back(line.substr(start, i - start));
+    }
+    return names;
+}
+
 void CheckReachabilityAndClones(const std::vector<SourceFile>& files, const std::vector<Function>& all)
 {
-    std::string corpus;
+    std::map<std::string, int> references;
     for (const SourceFile& f : files)
         for (const std::string& l : f.lines)
-            corpus += StripComment(l) + "\n";
+            for (const std::string& name : ReferencedNames(StripComment(l), false))
+                ++references[name];
     const std::set<std::string> entryPoints{ "main",
                                              "wmain",
                                              "WindowProc",
@@ -646,10 +680,8 @@ void CheckReachabilityAndClones(const std::vector<SourceFile>& files, const std:
         static const std::regex identifier(R"(^[A-Za-z_]\w*$)");
         if (!std::regex_match(bare, identifier))
             continue;
-        const std::regex use("\\b" + bare + "\\b\\s*[\\(;,)<]");
-        int uses = 0;
-        for (auto it = std::sregex_iterator(corpus.begin(), corpus.end(), use); it != std::sregex_iterator(); ++it)
-            ++uses;
+        const auto counted = references.find(bare);
+        const int uses = counted == references.end() ? 0 : counted->second;
         if (uses <= 1)
             g_findings.push_back(Finding{ "R6", fn.file, fn.line, bare + ": no reference outside its definition" });
         const BodyStats s = Analyse(fn);
@@ -664,6 +696,72 @@ void CheckReachabilityAndClones(const std::vector<SourceFile>& files, const std:
                 ReportUnlessWaived("R7", *source, fn.line, bare + ": body duplicates " + existing->second->name + " at " + existing->second->file + ":" + std::to_string(existing->second->line));
             else
                 bodies.emplace(key, &fn);
+        }
+    }
+}
+
+// --- recursion (R3): the static call graph over uniquely named functions must be acyclic -----------
+
+std::string BareName(const std::string& name)
+{
+    const auto pos = name.rfind("::");
+    return pos == std::string::npos ? name : name.substr(pos + 2);
+}
+
+bool WalksIntoCycle(const std::string& node, const std::map<std::string, std::set<std::string>>& edges, std::vector<std::string>& path, std::set<std::string>& done, std::string& cycle)
+{
+    if (done.count(node))
+        return false;
+    const auto seen = std::find(path.begin(), path.end(), node);
+    if (seen != path.end())
+    {
+        cycle = node;
+        for (auto it = seen; it != path.end(); ++it)
+            cycle += " -> " + *it;
+        return true;
+    }
+    path.push_back(node);
+    const auto found = edges.find(node);
+    if (found != edges.end())
+        for (const std::string& next : found->second)
+            if (WalksIntoCycle(next, edges, path, done, cycle))
+                return true;
+    path.pop_back();
+    done.insert(node);
+    return false;
+}
+
+void CheckRecursion(const std::vector<SourceFile>& files, const std::vector<Function>& all)
+{
+    std::map<std::string, int> definitions;
+    for (const Function& fn : all)
+        if (!fn.lambda && !StartsWith(fn.file, "tests/") && !Contains(fn.file, "rules_lint"))
+            ++definitions[BareName(fn.name)];
+    std::map<std::string, std::set<std::string>> edges;
+    std::map<std::string, const Function*> owners;
+    for (const Function& fn : all)
+    {
+        const std::string bare = BareName(fn.name);
+        if (fn.lambda || definitions[bare] != 1)
+            continue;
+        owners[bare] = &fn;
+        for (const std::string& line : fn.body)
+            for (const std::string& callee : ReferencedNames(line, true))
+                if (definitions[callee] == 1)
+                    edges[bare].insert(callee);
+    }
+    std::set<std::string> done;
+    std::set<std::string> reported;
+    for (const auto& [name, fn] : owners)
+    {
+        std::vector<std::string> path;
+        std::string cycle;
+        if (WalksIntoCycle(name, edges, path, done, cycle) && reported.insert(cycle.substr(0, cycle.find(' '))).second)
+        {
+            const Function* culprit = owners[cycle.substr(0, cycle.find(' '))];
+            const auto source = std::find_if(files.begin(), files.end(), [culprit](const SourceFile& f) { return f.relative == culprit->file; });
+            if (source != files.end())
+                ReportUnlessWaived("R3", *source, culprit->line, "recursion through the static call graph: " + cycle);
         }
     }
 }
@@ -702,6 +800,7 @@ int main(int argc, char** argv)
         all.insert(all.end(), fns.begin(), fns.end());
     }
     CheckReachabilityAndClones(files, all);
+    CheckRecursion(files, all);
     std::sort(g_index.begin(), g_index.end());
     WriteList(out / "function_index.txt", g_index);
     WriteList(out / "waivers.txt", g_waivers);

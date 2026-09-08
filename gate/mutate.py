@@ -13,13 +13,15 @@ import subprocess
 import sys
 import time
 
+# Comparison operators are written with spaces around them; template brackets are not, so the
+# patterns require the spaces and never touch a template argument list.
 OPERATORS = [
-    (re.compile(r"(?<![<>=!])<(?![<=])"), "<=", "< to <="),
-    (re.compile(r"(?<![<>=!])<=(?!=)"), "<", "<= to <"),
-    (re.compile(r"(?<![<>=!-])>(?![>=])"), ">=", "> to >="),
-    (re.compile(r"(?<![<>=!])>=(?!=)"), ">", ">= to >"),
-    (re.compile(r"(?<![<>=!])==(?!=)"), "!=", "== to !="),
-    (re.compile(r"(?<![<>=!])!=(?!=)"), "==", "!= to =="),
+    (re.compile(r"(?<= )<(?= )"), "<=", "< to <="),
+    (re.compile(r"(?<= )<=(?= )"), "<", "<= to <"),
+    (re.compile(r"(?<= )>(?= )"), ">=", "> to >="),
+    (re.compile(r"(?<= )>=(?= )"), ">", ">= to >"),
+    (re.compile(r"(?<= )==(?= )"), "!=", "== to !="),
+    (re.compile(r"(?<= )!=(?= )"), "==", "!= to =="),
     (re.compile(r"(?<=[\w)\]] )\+(?= [\w(])"), "-", "+ to -"),
     (re.compile(r"(?<=[\w)\]] )-(?= [\w(])"), "+", "- to +"),
     (re.compile(r"\btrue\b"), "false", "true to false"),
