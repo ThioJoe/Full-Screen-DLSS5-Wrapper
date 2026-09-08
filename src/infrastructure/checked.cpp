@@ -17,7 +17,7 @@ namespace {
 template <class T>
 [[nodiscard]] Result<T, ArithmeticError> FromIntsafe(HRESULT status, T value) noexcept
 {
-    if (FAILED(status))
+    if (status < 0)
         return Fail(ArithmeticError::Overflow);
     return value;
 }
