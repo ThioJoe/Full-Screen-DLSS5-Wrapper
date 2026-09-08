@@ -18,7 +18,6 @@ struct TextureRequest
     interior::Extent extent;
     DXGI_FORMAT format;
     D3D12_RESOURCE_FLAGS flags;
-    D3D12_HEAP_FLAGS heapFlags;
     D3D12_RESOURCE_STATES initialState;
     const wchar_t* name;
 };

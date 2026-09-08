@@ -50,9 +50,10 @@ std::string_view Describe(ApiCall call) noexcept
     case ApiCall::RoGetActivationFactory: return "RoGetActivationFactory";
     case ApiCall::WindowsCreateStringReference: return "WindowsCreateStringReference";
     case ApiCall::D3D11CreateDevice: return "D3D11CreateDevice";
-    case ApiCall::CreateSharedHandle: return "ID3D12Device::CreateSharedHandle";
-    case ApiCall::OpenSharedResource: return "ID3D11Device1::OpenSharedResource1";
-    case ApiCall::OpenSharedFence: return "ID3D11Device5::OpenSharedFence";
+    case ApiCall::CreateTexture2D: return "ID3D11Device::CreateTexture2D";
+    case ApiCall::D3D11CreateFence: return "ID3D11Device5::CreateFence";
+    case ApiCall::CreateSharedHandle: return "CreateSharedHandle";
+    case ApiCall::OpenSharedHandle: return "ID3D12Device::OpenSharedHandle";
     case ApiCall::ContextWait: return "ID3D11DeviceContext4::Wait";
     case ApiCall::ContextSignal: return "ID3D11DeviceContext4::Signal";
     case ApiCall::CreateDirect3D11DeviceFromDXGIDevice: return "CreateDirect3D11DeviceFromDXGIDevice";

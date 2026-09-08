@@ -177,11 +177,10 @@ struct Queues
     });
 }
 
-// The frame fence is shared: the capture device waits on it before it writes the canvas.
 [[nodiscard]] Result<Queues, Error> CreateQueues(ID3D12Device* device) noexcept
 {
     return CreateQueue(device).and_then(
-        [device](const Com<ID3D12CommandQueue>& queue) { return CreateFence(device, D3D12_FENCE_FLAG_SHARED).transform([&queue](const Com<ID3D12Fence>& fence) { return Queues{ queue, fence }; }); });
+        [device](const Com<ID3D12CommandQueue>& queue) { return CreateFence(device, D3D12_FENCE_FLAG_NONE).transform([&queue](const Com<ID3D12Fence>& fence) { return Queues{ queue, fence }; }); });
 }
 
 [[nodiscard]] GpuDevice Assemble(Core& core, Queues& queues, UniqueHandle& event, Com<ID3D12DescriptorHeap>& rtv, Com<ID3D12DescriptorHeap>& srv) noexcept

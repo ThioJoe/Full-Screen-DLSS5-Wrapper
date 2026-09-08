@@ -40,12 +40,12 @@ using infra::Status;
     return Texture{ resource, r.extent, r.format };
 }
 
-[[nodiscard]] Result<Com<ID3D12Resource>, Error> Committed(const GpuDevice& gpu, const D3D12_RESOURCE_DESC& desc, D3D12_HEAP_TYPE heapType, D3D12_HEAP_FLAGS heapFlags, D3D12_RESOURCE_STATES state,
-                                                           const D3D12_CLEAR_VALUE* clear, const wchar_t* name) noexcept
+[[nodiscard]] Result<Com<ID3D12Resource>, Error> Committed(const GpuDevice& gpu, const D3D12_RESOURCE_DESC& desc, D3D12_HEAP_TYPE heapType, D3D12_RESOURCE_STATES state, const D3D12_CLEAR_VALUE* clear,
+                                                           const wchar_t* name) noexcept
 {
     const D3D12_HEAP_PROPERTIES heap = HeapOf(heapType);
     Com<ID3D12Resource> resource;
-    const HRESULT hr = gpu.device->CreateCommittedResource(&heap, heapFlags, &desc, state, clear, IID_PPV_ARGS(&resource));
+    const HRESULT hr = gpu.device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, state, clear, IID_PPV_ARGS(&resource));
     return Check(hr, ApiCall::CreateCommittedResource).and_then([&] { return Check(resource->SetName(name), ApiCall::CreateCommittedResource); }).transform([&resource] { return resource; });
 }
 
@@ -97,21 +97,23 @@ using infra::Status;
 
 Result<Texture, Error> CreateTexture(const GpuDevice& gpu, const TextureRequest& request) noexcept
 {
-    return Committed(gpu, TextureDescription(request), D3D12_HEAP_TYPE_DEFAULT, request.heapFlags, request.initialState, nullptr, request.name)
-        .and_then([&request](const Com<ID3D12Resource>& resource) { return Verified(resource, request); });
+    return Committed(gpu, TextureDescription(request), D3D12_HEAP_TYPE_DEFAULT, request.initialState, nullptr, request.name).and_then([&request](const Com<ID3D12Resource>& resource) {
+        return Verified(resource, request);
+    });
 }
 
 Result<Texture, Error> CreateClearableTexture(const GpuDevice& gpu, const TextureRequest& request, float clearValue) noexcept
 {
     const D3D12_CLEAR_VALUE clear{ request.format, { { clearValue, 0.0f, 0.0f, 0.0f } } };
-    return Committed(gpu, TextureDescription(request), D3D12_HEAP_TYPE_DEFAULT, request.heapFlags, request.initialState, &clear, request.name)
-        .and_then([&request](const Com<ID3D12Resource>& resource) { return Verified(resource, request); });
+    return Committed(gpu, TextureDescription(request), D3D12_HEAP_TYPE_DEFAULT, request.initialState, &clear, request.name).and_then([&request](const Com<ID3D12Resource>& resource) {
+        return Verified(resource, request);
+    });
 }
 
 Result<Com<ID3D12Resource>, Error> CreateBuffer(const GpuDevice& gpu, interior::ByteCount bytes, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_STATES state, D3D12_RESOURCE_FLAGS flags,
                                                 const wchar_t* name) noexcept
 {
-    return Committed(gpu, BufferDescription(bytes, flags), heap, D3D12_HEAP_FLAG_NONE, state, nullptr, name);
+    return Committed(gpu, BufferDescription(bytes, flags), heap, state, nullptr, name);
 }
 
 Status<Error> WriteZeros(ID3D12Resource* upload, interior::ByteCount bytes) noexcept

@@ -49,24 +49,17 @@ using TableResult = Result<ResourceTable, Error>;
 
 [[nodiscard]] TextureRequest UavRequest(const Extent& extent, DXGI_FORMAT format, const wchar_t* name) noexcept
 {
-    return TextureRequest{ extent, format, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_HEAP_FLAG_NONE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, name };
-}
-
-// Written by the capture device, so it rests in COMMON and allows simultaneous access: Direct3D 11
-// tracks no resource states, and will not open a texture only one device may hold.
-[[nodiscard]] TextureRequest CanvasRequest(const SessionPlan& plan) noexcept
-{
-    return TextureRequest{ plan.source, DXGI_FORMAT_B8G8R8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS, D3D12_HEAP_FLAG_SHARED, D3D12_RESOURCE_STATE_COMMON, L"Capture canvas" };
+    return TextureRequest{ extent, format, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, name };
 }
 
 [[nodiscard]] TextureRequest DepthRequest(const SessionPlan& plan) noexcept
 {
-    return TextureRequest{ plan.source, DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_HEAP_FLAG_NONE, D3D12_RESOURCE_STATE_RENDER_TARGET, L"Constant depth plane" };
+    return TextureRequest{ plan.source, DXGI_FORMAT_R32_FLOAT, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, D3D12_RESOURCE_STATE_RENDER_TARGET, L"Constant depth plane" };
 }
 
 [[nodiscard]] TextureRequest FlowOutputRequest(const SessionPlan& plan) noexcept
 {
-    return TextureRequest{ plan.flowExtent, DXGI_FORMAT_R16G16_SINT, D3D12_RESOURCE_FLAG_NONE, D3D12_HEAP_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, L"Optical flow output" };
+    return TextureRequest{ plan.flowExtent, DXGI_FORMAT_R16G16_SINT, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COMMON, L"Optical flow output" };
 }
 
 [[nodiscard]] std::optional<TextureRequest> SrOutputRequest(const SessionPlan& plan, DXGI_FORMAT model) noexcept
@@ -236,9 +229,10 @@ struct Pyramid
     });
 }
 
-[[nodiscard]] TableResult CoreTextures(const ResourceTable& t, const GpuDevice& d, const SessionPlan& plan, DXGI_FORMAT model) noexcept
+// The canvas is the capture device's texture, opened on this device; everything else is created here.
+[[nodiscard]] TableResult CoreTextures(const ResourceTable& t, const GpuDevice& d, const SessionPlan& plan, DXGI_FORMAT model, ID3D12Resource* canvas) noexcept
 {
-    return WithTexture(t, d, SimpleId(ResourceKind::Canvas), CanvasRequest(plan))
+    return TableResult(WithResource(t, SimpleId(ResourceKind::Canvas), canvas))
         .and_then([&](const ResourceTable& n) { return WithTexture(n, d, SimpleId(ResourceKind::ModelColor), UavRequest(plan.source, model, L"Model colour")); })
         .and_then([&](const ResourceTable& n) { return WithDepth(n, d, plan); })
         .and_then([&](const ResourceTable& n) { return WithTexture(n, d, SimpleId(ResourceKind::MotionVectors), UavRequest(plan.source, DXGI_FORMAT_R16G16_FLOAT, L"Motion vectors")); });
@@ -263,10 +257,10 @@ struct Pyramid
     return WithLuma(t, d, extents, LumaLevels(plan)).and_then([&](const ResourceTable& n) { return WithPyramid(n, d, extents, Pyramid{ LevelKind::Flow, 0, FlowLevels(plan) }); });
 }
 
-[[nodiscard]] TableResult CreateResources(const GpuDevice& d, const SessionPlan& plan, const Presenter& presenter, const interior::LevelExtents& extents) noexcept
+[[nodiscard]] TableResult CreateResources(const GpuDevice& d, const SessionPlan& plan, const Presenter& presenter, const interior::LevelExtents& extents, ID3D12Resource* canvas) noexcept
 {
     const DXGI_FORMAT model = ModelFormatOf(plan.format);
-    return CoreTextures(WithBackBuffers(ResourceTable{}, presenter), d, plan, model)
+    return CoreTextures(WithBackBuffers(ResourceTable{}, presenter), d, plan, model, canvas)
         .and_then([&](const ResourceTable& n) { return ModelOutputs(n, d, plan, model); })
         .and_then([&](const ResourceTable& n) { return Buffers(n, d); })
         .and_then([&](const ResourceTable& n) { return Pyramids(n, d, plan, extents); });
@@ -302,11 +296,9 @@ struct Recording
 [[nodiscard]] Result<Gpu, Error> WithResourcesAndCapture(GpuDevice device, Presenter presenter, const Pipelines& pipelines, const Recording& recording, const SessionPlan& plan,
                                                          const interior::Geometry& geometry, const EnvironmentSettings& settings, const interior::LevelExtents& extents) noexcept
 {
-    return CreateResources(device, plan, presenter, extents).and_then([&](const ResourceTable& resources) {
-        return Lookup(resources, SimpleId(ResourceKind::Canvas)).and_then([&](ID3D12Resource* canvas) {
-            return CreateCapture(device, canvas, geometry.sourceRect, plan.source, geometry.source, CaptureSettingsOf(plan, settings)).transform([&](Capture capture) {
-                return Gpu{ std::move(device), pipelines, std::move(presenter), std::move(capture), recording.allocators, recording.list, resources, Models{}, OpticalFlowSlot{} };
-            });
+    return CreateCapture(device, geometry.sourceRect, plan.source, geometry.source, CaptureSettingsOf(plan, settings)).and_then([&](Capture capture) {
+        return CreateResources(device, plan, presenter, extents, capture.sharedCanvas.Get()).transform([&](const ResourceTable& resources) {
+            return Gpu{ std::move(device), pipelines, std::move(presenter), std::move(capture), recording.allocators, recording.list, resources, Models{}, OpticalFlowSlot{} };
         });
     });
 }
@@ -466,20 +458,20 @@ struct Prepared
         .transform([](interior::Fraction f) { return std::optional<interior::Fraction>{ f }; });
 }
 
-[[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, interior::FrameNumber number, interior::FenceValue lastFrame, std::optional<interior::Fraction> unmatched) noexcept
+[[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, interior::FrameNumber number, std::optional<interior::Fraction> unmatched) noexcept
 {
-    return AcquireFrames(gpu.capture, number, lastFrame).and_then([&](bool fresh) {
+    return AcquireFrames(gpu.capture, number).and_then([&](bool fresh) {
         return Now().and_then(
             [&](interior::Instant now) { return CurrentBackBuffer(gpu.presenter).transform([&](interior::BackBufferIndex index) { return Prepared{ fresh, index, unmatched, now }; }); });
     });
 }
 
-[[nodiscard]] Result<Prepared, Error> Prepare(const Gpu& gpu, std::uint32_t finestPixels, interior::FenceValue lastFrame, const interior::FrameState& state, interior::FrameSlot slot) noexcept
+[[nodiscard]] Result<Prepared, Error> Prepare(const Gpu& gpu, std::uint32_t finestPixels, const interior::FrameState& state, interior::FrameSlot slot) noexcept
 {
     return WaitForNextFrame(gpu.presenter)
         .and_then([&] { return AwaitSlot(gpu, state, slot); })
         .and_then([&] { return ReadUnmatched(gpu, finestPixels, state, slot); })
-        .and_then([&](std::optional<interior::Fraction> unmatched) { return Sampled(gpu, state.number, lastFrame, unmatched); });
+        .and_then([&](std::optional<interior::Fraction> unmatched) { return Sampled(gpu, state.number, unmatched); });
 }
 
 [[nodiscard]] interior::FrameInput InputOf(const WindowEvents& events, const Prepared& p) noexcept
@@ -500,9 +492,8 @@ struct Prepared
 [[nodiscard]] Result<Begun, Error> Begin(const Gpu& gpu, const OutputWindow& window, std::uint32_t finestPixels, interior::FenceValue fence, const interior::FrameState& state) noexcept
 {
     const interior::FrameSlot slot = interior::SlotOfFrame(state.number);
-    return PumpEvents(window).and_then([&](const WindowEvents& events) {
-        return Prepare(gpu, finestPixels, fence, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; });
-    });
+    return PumpEvents(window).and_then(
+        [&](const WindowEvents& events) { return Prepare(gpu, finestPixels, state, slot).transform([&](const Prepared& p) { return Begun{ ContextOf(state, slot, fence), InputOf(events, p) }; }); });
 }
 
 [[nodiscard]] bool IsReportDue(const Statistics& s, interior::Instant now) noexcept
