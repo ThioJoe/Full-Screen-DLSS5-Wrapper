@@ -53,9 +53,11 @@ using TableResult = Result<ResourceTable, Error>;
 }
 
 // Shared with the capture device, which writes it; between frames it rests in COMMON for that device.
+// Simultaneous access is what makes it openable there: Direct3D 11 tracks no states, so a texture it
+// opens must be one every device may hold at once.
 [[nodiscard]] TextureRequest CanvasRequest(const SessionPlan& plan) noexcept
 {
-    return TextureRequest{ plan.source, DXGI_FORMAT_B8G8R8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, D3D12_HEAP_FLAG_SHARED, D3D12_RESOURCE_STATE_COMMON, L"Capture canvas" };
+    return TextureRequest{ plan.source, DXGI_FORMAT_B8G8R8A8_UNORM, D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS, D3D12_HEAP_FLAG_SHARED, D3D12_RESOURCE_STATE_COMMON, L"Capture canvas" };
 }
 
 [[nodiscard]] TextureRequest DepthRequest(const SessionPlan& plan) noexcept
