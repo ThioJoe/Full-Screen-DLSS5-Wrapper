@@ -76,20 +76,21 @@ struct ToggleSpec
 {
     const wchar_t* label;
     const wchar_t* hint;
+    bool resettable; // a switch whose default is not obvious from the switch itself
 };
 
 constexpr std::array<ToggleSpec, kToggleCount> kToggles{ {
-    { L"Run the model", L"Whether the model runs at all. Off costs nothing and shows the captured picture as it was." },
-    { L"Auto mask", L"Let the model find skin itself. Skin structure and local structure do nothing while this is off." },
-    { L"UI correction", L"Ask the model to leave interface pixels alone. It reads a UI layer DlssScreen does not supply, so this is inert as wired." },
-    { L"Depth is inverted", L"Tell the model the depth plane counts the other way. With one flat plane it changes little." },
-    { L"Wait for the display", L"Present in step with the monitor. Off presents as fast as the pipeline allows." },
-    { L"Capture border", L"Let Windows draw its yellow border around what is being captured." },
-    { L"Always on top", L"Keep the output window above every other window." },
-    { L"Redirection surface", L"Give the output window a GDI surface. Diagnostic; fixed when the window is made." },
-    { L"Direct3D debug layer", L"Turn on the Direct3D 12 validation layer. Slow, and only useful when chasing a fault." },
-    { L"Model indicator", L"Let the model draw its own overlay naming its version, the preset it resolved and its working size." },
-    { L"Model kernel cache", L"Let the model cache its compiled kernels. Off makes it rebuild them every run." },
+    { L"Run the model", L"Whether the model runs at all. Off costs nothing and shows the captured picture as it was.", false },
+    { L"Auto mask", L"Let the model find skin itself. Skin structure and local structure do nothing while this is off.", true },
+    { L"UI correction", L"Ask the model to leave interface pixels alone. It reads a UI layer DlssScreen does not supply, so this is inert as wired.", true },
+    { L"Depth is inverted", L"Tell the model the depth plane counts the other way. With one flat plane it changes little.", true },
+    { L"Wait for the display", L"Present in step with the monitor. Off presents as fast as the pipeline allows.", true },
+    { L"Capture border", L"Let Windows draw its yellow border around what is being captured.", true },
+    { L"Always on top", L"Keep the output window above every other window.", true },
+    { L"Redirection surface", L"Give the output window a GDI surface. Diagnostic; fixed when the window is made.", true },
+    { L"Direct3D debug layer", L"Turn on the Direct3D 12 validation layer. Slow, and only useful when chasing a fault.", true },
+    { L"Model indicator", L"Let the model draw its own overlay naming its version, the preset it resolved and its working size.", true },
+    { L"Model kernel cache", L"Let the model cache its compiled kernels. Off makes it rebuild them every run.", true },
 } };
 
 struct GroupSpec
@@ -605,13 +606,19 @@ struct Built
     return check;
 }
 
+// A switch is its own answer, so only one whose default is not obvious from looking at it gets a reset.
+[[nodiscard]] HWND CreateToggleReset(HWND parent, const Metrics& m, std::size_t toggle) noexcept
+{
+    if (!kToggles[toggle].resettable)
+        return nullptr;
+    const Placement at = PlaceOfToggle(toggle, m);
+    return CreateButton(parent, m, L"Reset", 0, at.left + kResetOffset, at.control, kResetWidth);
+}
+
 [[nodiscard]] Built BuildToggles(HWND parent, const Metrics& m, const std::array<bool, kToggleCount>& on, Built built) noexcept
 {
     built.toggles = infra::Generated<HWND, kToggleCount>([&](std::size_t t) { return CreateToggle(parent, m, t, on[t]); });
-    built.toggleResets = infra::Generated<HWND, kToggleCount>([&](std::size_t t) {
-        const Placement at = PlaceOfToggle(t, m);
-        return CreateButton(parent, m, L"Reset", 0, at.left + kResetOffset, at.control, kResetWidth);
-    });
+    built.toggleResets = infra::Generated<HWND, kToggleCount>([&](std::size_t t) { return CreateToggleReset(parent, m, t); });
     return built;
 }
 
@@ -645,6 +652,8 @@ struct Built
     return box;
 }
 
+// WAIVER(R7): the label and the control of a row are built the same way whatever the row holds; what each
+// of these makes, and from which table, is what differs.
 [[nodiscard]] Built BuildTexts(HWND parent, const Metrics& m, const interior::Options& o, Built built) noexcept
 {
     built.textLabels = infra::Generated<HWND, kTextCount>([&](std::size_t t) { return CreateLabel(parent, m, kTexts[t].label, PlaceOfText(t, m).left, PlaceOfText(t, m).top, kColumnWidth); });
@@ -1094,24 +1103,30 @@ void ResizeToFit(HWND window, const Metrics& m) noexcept
     return std::ranges::all_of(controls, IsPresent);
 }
 
-[[nodiscard]] std::array<std::span<const HWND>, 11> GroupsOf(const ControlPanel& panel) noexcept
+[[nodiscard]] std::array<std::span<const HWND>, 10> GroupsOf(const ControlPanel& panel) noexcept
 {
-    return { panel.labels,
-             panel.sliders,
-             panel.boxes,
-             panel.spins,
-             panel.resets,
-             panel.toggles,
-             panel.toggleResets,
-             panel.groupLabels,
-             panel.textLabels,
-             panel.texts,
-             std::span<const HWND>(&panel.restart, 1) };
+    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.textLabels, panel.texts, std::span<const HWND>(&panel.restart, 1) };
+}
+
+// A switch's reset is there exactly when its spec asks for one, so both a missing and a spare one is a fault.
+[[nodiscard]] bool ResetAsSpecified(const ControlPanel& panel, std::size_t toggle) noexcept
+{
+    return kToggles[toggle].resettable == IsPresent(panel.toggleResets[toggle]);
+}
+
+[[nodiscard]] bool ResetsAsSpecified(const ControlPanel& panel) noexcept
+{
+    return std::ranges::all_of(std::views::iota(std::size_t{ 0 }, kToggleCount), [&panel](std::size_t t) { return ResetAsSpecified(panel, t); });
+}
+
+[[nodiscard]] bool EveryGroupPresent(const ControlPanel& panel) noexcept
+{
+    return std::ranges::all_of(GroupsOf(panel), AllPresent) && IsPresent(panel.tabs);
 }
 
 [[nodiscard]] bool IsComplete(const ControlPanel& panel) noexcept
 {
-    return std::ranges::all_of(GroupsOf(panel), AllPresent) && IsPresent(panel.tabs);
+    return EveryGroupPresent(panel) && ResetsAsSpecified(panel);
 }
 
 // A number's hint sits on the slider and on the box, so either one under the pointer explains itself.
