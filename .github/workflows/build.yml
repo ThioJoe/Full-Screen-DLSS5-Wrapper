@@ -45,6 +45,8 @@ jobs:
     env:
       CONFIGURATION: ${{ inputs.configuration || 'Release' }}
       SCCACHE_GHA_ENABLED: "true"
+      # Windows time zone id whose wall-clock time the artifact's file timestamps are written in.
+      ARTIFACT_TIME_ZONE: Pacific Standard Time
     steps:
       - name: Check out DlssScreen
         uses: actions/checkout@v7
@@ -110,6 +112,12 @@ jobs:
           if ($null -eq $dll) { throw "nvngx_dlss.dll was not found in the DLSS SDK checkout" }
           Copy-Item $dll.FullName dist
           foreach ($doc in "README.md", "LICENSE") { if (Test-Path $doc) { Copy-Item $doc dist } }
+          # Zip entries carry wall-clock times and the runner's clock is UTC, so stamp the files with the
+          # wall-clock time of the zone below; extracted on a machine in that zone they read as local time.
+          $zone = [System.TimeZoneInfo]::FindSystemTimeZoneById($env:ARTIFACT_TIME_ZONE)
+          foreach ($file in Get-ChildItem dist -File) {
+            $file.LastWriteTime = [System.TimeZoneInfo]::ConvertTimeFromUtc($file.LastWriteTimeUtc, $zone)
+          }
           Get-ChildItem dist
 
       - name: Upload the artifact
