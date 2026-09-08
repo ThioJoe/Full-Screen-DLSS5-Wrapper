@@ -1,0 +1,118 @@
+// WAIVER(R2): test suites accumulate failure counts and drive generated sequences with loops.
+#include "interior/options.h"
+#include "tests/test_registry.h"
+
+#include <array>
+#include <string>
+#include <vector>
+
+namespace tests {
+namespace {
+
+using namespace interior;
+
+constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all", L"--target", L"1", L"--nr-intensity", L"1.5", L"--sr", L"dlaa",
+                                                          L"--mv=nvof", L"--bogus", L"positional", L"--nr-style=cinematic" };
+
+[[nodiscard]] std::vector<std::wstring> RandomArguments(infra::RngState& rng) noexcept
+{
+    const std::uint32_t count = proptest::DrawBelow(rng, 8);
+    std::vector<std::wstring> args;
+    for (std::uint32_t i = 0; i < count; ++i) // WAIVER(R2): test generator.
+    {
+        if (proptest::DrawBool(rng))
+            args.emplace_back(kVocabulary[proptest::DrawBelow(rng, static_cast<std::uint32_t>(kVocabulary.size()))]);
+        else
+            args.emplace_back(std::wstring(proptest::DrawBelow(rng, 70), static_cast<wchar_t>(1 + proptest::DrawBelow(rng, 300))));
+    }
+    return args;
+}
+
+[[nodiscard]] std::vector<std::wstring_view> Views(const std::vector<std::wstring>& args) noexcept
+{
+    return std::vector<std::wstring_view>(args.begin(), args.end());
+}
+
+[[nodiscard]] bool ParserNeverPanicsAndErrorsAreEnumerated(infra::RngState& rng) noexcept
+{
+    const std::vector<std::wstring> args = RandomArguments(rng);
+    const std::vector<std::wstring_view> views = Views(args);
+    const auto parsed = ParseOptions(views);
+    return parsed.has_value() || static_cast<std::uint8_t>(parsed.error().kind) <= static_cast<std::uint8_t>(OptionsErrorKind::TargetWithAll);
+}
+
+[[nodiscard]] bool EmptyArgumentsGiveDefaults(infra::RngState&) noexcept
+{
+    const auto parsed = ParseOptions(std::span<const std::wstring_view>{});
+    return parsed.has_value() && *parsed == DefaultOptions();
+}
+
+[[nodiscard]] bool MonitorIndexRoundTrips(infra::RngState& rng) noexcept
+{
+    const std::uint32_t index = proptest::DrawBelow(rng, 100);
+    const std::wstring text = std::to_wstring(index);
+    const std::array<std::wstring_view, 2> args{ L"--monitor", text };
+    const auto parsed = ParseOptions(args);
+    return parsed.has_value() && parsed->source.kind == MonitorSelectionKind::Index && parsed->source.index.Get() == index;
+}
+
+[[nodiscard]] bool IntensityIsValidatedAgainstRange(infra::RngState& rng) noexcept
+{
+    const float value = proptest::DrawUnit(rng) * 3.0f;
+    const std::wstring text = std::to_wstring(value);
+    const std::array<std::wstring_view, 1> args{ std::wstring_view{} };
+    const std::wstring joined = L"--nr-intensity=" + text;
+    const std::array<std::wstring_view, 1> real{ joined };
+    const auto parsed = ParseOptions(real);
+    const bool inRange = value <= 2.0f;
+    (void)args;
+    return parsed.has_value() == inRange;
+}
+
+[[nodiscard]] bool TargetWithAllIsRejected(infra::RngState&) noexcept
+{
+    const std::array<std::wstring_view, 3> args{ L"--monitor=all", L"--target", L"0" };
+    const auto parsed = ParseOptions(args);
+    return !parsed.has_value() && parsed.error().kind == OptionsErrorKind::TargetWithAll;
+}
+
+[[nodiscard]] bool LastOccurrenceWins(infra::RngState& rng) noexcept
+{
+    const bool last = proptest::DrawBool(rng);
+    const std::array<std::wstring_view, 2> args{ last ? L"--vsync=off" : L"--vsync=on", last ? L"--vsync=on" : L"--vsync=off" };
+    const auto parsed = ParseOptions(args);
+    return parsed.has_value() && parsed->vsync == last;
+}
+
+[[nodiscard]] bool MissingValueIsReported(infra::RngState&) noexcept
+{
+    const std::array<std::wstring_view, 1> args{ L"--target" };
+    const auto parsed = ParseOptions(args);
+    return !parsed.has_value() && parsed.error().kind == OptionsErrorKind::MissingValue;
+}
+
+[[nodiscard]] bool HelpAliasesWork(infra::RngState& rng) noexcept
+{
+    const std::array<std::wstring_view, 3> aliases{ L"-h", L"--help", L"/?" };
+    const std::array<std::wstring_view, 1> args{ aliases[proptest::DrawBelow(rng, 3)] };
+    const auto parsed = ParseOptions(args);
+    return parsed.has_value() && parsed->showHelp;
+}
+
+} // namespace
+
+std::uint32_t OptionsSuite(std::uint64_t seed) noexcept
+{
+    std::uint32_t failures = 0;
+    failures += Failures(proptest::ForAll("option parser never panics on random input", seed, 3000, ParserNeverPanicsAndErrorsAreEnumerated));
+    failures += Failures(proptest::ForAll("empty arguments give the defaults", seed, 1, EmptyArgumentsGiveDefaults));
+    failures += Failures(proptest::ForAll("--monitor N round-trips", seed, 200, MonitorIndexRoundTrips));
+    failures += Failures(proptest::ForAll("--nr-intensity is range-validated", seed, 300, IntensityIsValidatedAgainstRange));
+    failures += Failures(proptest::ForAll("--target with --monitor all is rejected", seed, 1, TargetWithAllIsRejected));
+    failures += Failures(proptest::ForAll("last occurrence wins", seed, 20, LastOccurrenceWins));
+    failures += Failures(proptest::ForAll("missing value is reported", seed, 1, MissingValueIsReported));
+    failures += Failures(proptest::ForAll("help aliases work", seed, 10, HelpAliasesWork));
+    return failures;
+}
+
+} // namespace tests

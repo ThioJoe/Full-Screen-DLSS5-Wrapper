@@ -1,0 +1,8 @@
+# Dependency lock (R29, gate VIII.8). Only NVIDIA SDKs and the platform toolchain are used; there are no other third-party dependencies.
+# The gate compares the installed SDK headers against these values and fails on any mismatch.
+NGX_SDK          NVIDIA DLSS SDK, https://github.com/NVIDIA/DLSS, tag v310.4.0 or newer (feature 18 needs a 616.64+ driver, the SDK headers are unchanged)
+NGX_API_VERSION  NVSDK_NGX_VERSION_API_MACRO=0x0000015
+NGX_RUNTIME      nvngx_dlss.dll from the SDK; nvngx_dlssnr.dll from the driver store or next to DlssScreen.exe
+NVOF_SDK         NVIDIA Optical Flow SDK 5.x, https://developer.nvidia.com/optical-flow-sdk (optional, DSCREEN_ENABLE_NVOF=ON)
+NVOF_API_VERSION NV_OF_API_MAJOR_VERSION=5 NV_OF_API_MINOR_VERSION=0
+TOOLCHAIN        MSVC 19.38+ (Visual Studio 2022 17.8) or GCC 13+, CMake 3.21+, Windows SDK 10.0.22621+ (dxc.exe, DirectComposition, Windows.Graphics.Capture)
