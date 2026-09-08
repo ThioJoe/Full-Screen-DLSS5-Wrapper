@@ -43,7 +43,6 @@ std::string_view Describe(ApiCall call) noexcept
     case ApiCall::CreateComputePipelineState: return "ID3D12Device::CreateComputePipelineState";
     case ApiCall::CreateGraphicsPipelineState: return "ID3D12Device::CreateGraphicsPipelineState";
     case ApiCall::RegisterClassExW: return "RegisterClassExW";
-    case ApiCall::InitCommonControls: return "InitCommonControlsEx";
     case ApiCall::CreateWindowExW: return "CreateWindowExW";
     case ApiCall::SetWindowDisplayAffinity: return "SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)";
     case ApiCall::RegisterHotKey: return "RegisterHotKey";

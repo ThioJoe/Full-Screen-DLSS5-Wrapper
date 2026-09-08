@@ -87,8 +87,10 @@ target_link_libraries(DlssScreen PRIVATE dscreen_core dscreen_trace_flags dscree
   "$<IF:$<CONFIG:Debug>,${NGX_LIBRARY_DEBUG},${NGX_LIBRARY_RELEASE}>"
   d3d12 dxgi d3d11 dcomp dxguid user32 gdi32 comctl32 shcore shell32 ole32 runtimeobject)
 # The windows subsystem so a double-click opens no console; mainCRTStartup keeps the ordinary entry point,
-# and the program attaches to the console it was launched from when there is one.
-target_link_options(DlssScreen PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup /MAP)
+# and the program attaches to the console it was launched from when there is one. The manifest dependency
+# asks for version 6 of the common controls, which is what the panel's sliders and checkboxes come from.
+target_link_options(DlssScreen PRIVATE /SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup /MAP
+  "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 
 file(GLOB _ngx_dlls "${DLSS_SDK_DIR}/lib/Windows_x86_64/rel/nvngx_dlss.dll" "${DLSS_SDK_DIR}/lib/Windows_x86_64/nvngx_dlss.dll")
 foreach(_dll IN LISTS _ngx_dlls)

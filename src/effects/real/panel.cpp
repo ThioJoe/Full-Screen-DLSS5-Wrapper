@@ -167,10 +167,12 @@ void RefreshReadouts(const ControlPanel& panel) noexcept
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kSliderCount), [&panel](std::size_t row) { RefreshReadout(panel, row); });
 }
 
-[[nodiscard]] infra::Status<Error> InitialiseCommonControls() noexcept
+// Advisory: the older common controls register their classes as they load and refuse this call, while
+// version 6 needs asking. Either way the controls are checked once built, which is the answer that counts.
+void InitialiseCommonControls() noexcept
 {
     INITCOMMONCONTROLSEX controls{ sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES | ICC_STANDARD_CLASSES };
-    return CheckBool(::InitCommonControlsEx(&controls), ApiCall::InitCommonControls);
+    (void)::InitCommonControlsEx(&controls);
 }
 
 constexpr DWORD kPanelStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
@@ -270,9 +272,8 @@ constexpr DWORD kPanelStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIM
 
 Result<ControlPanel, Error> CreateControlPanel(const interior::ModelControls& initial) noexcept
 {
-    return RegisterWindowClass(ClassDescription()).and_then([] { return InitialiseCommonControls(); }).and_then([&initial] {
-        return CreatePanelWindow().and_then([&initial](UniqueWindow window) { return Populated(std::move(window), initial); });
-    });
+    InitialiseCommonControls();
+    return RegisterWindowClass(ClassDescription()).and_then([&initial] { return CreatePanelWindow().and_then([&initial](UniqueWindow window) { return Populated(std::move(window), initial); }); });
 }
 
 interior::ModelControls ReadControlPanel(const ControlPanel& panel, const interior::ModelControls& current) noexcept
