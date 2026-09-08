@@ -54,22 +54,32 @@ struct FieldSpec
     const wchar_t* label;
     const wchar_t* hint;
     int minimum;
-    int maximum;
+    int maximum; // where the slider ends, which for an open field is only where it ends to begin with
     int steps;
+    bool open; // whether the model lets the number go on past the slider's end
 };
 
+// As far as a number the model puts no top on may be typed or stepped. The slider stretches to follow.
+constexpr int kOpenUnits = 1000;
+
+[[nodiscard]] constexpr int CeilingOf(const FieldSpec& spec) noexcept
+{
+    return spec.open ? kOpenUnits * spec.steps : spec.maximum;
+}
+
 constexpr std::array<FieldSpec, kFieldCount> kFields{ {
-    { L"Intensity", L"How much of the model's work to keep. Past 1 the model makes no further difference, so 1 is the whole of it.", 0, 100, 100 },
-    { L"Local structure", L"Detail the model adds within a region. Does nothing while auto mask is off.", 0, 1000, 100 },
-    { L"Local tone", L"How far the model moves local brightness.", 0, 1000, 100 },
-    { L"Skin structure", L"Detail on skin; -1 follows local structure. Does nothing while auto mask is off.", -100, 1000, 100 },
-    { L"Motion vector scale X", L"What the model multiplies the horizontal motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100 },
-    { L"Motion vector scale Y", L"What the model multiplies the vertical motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100 },
-    { L"Split position", L"Where the divider sits in the split view. Ctrl+Alt+Shift and the mouse drags it on screen.", 0, 100, 100 },
-    { L"Depth plane", L"The desktop has no depth, so one flat value stands in for all of it. Changing it re-clears the plane.", 0, 100, 100 },
-    { L"Reset threshold", L"How much of the picture has to go unmatched before the model's history is thrown away.", 0, 100, 100 },
-    { L"Motion detail level", L"Finest level the matcher works at: 0 full resolution, 1 half, 2 quarter. Lower costs more.", 0, 7, 1 },
-    { L"Super resolution preset", L"Render preset asked of DLSS Super Resolution; 0 leaves the choice to the driver.", 0, 15, 1 },
+    { L"Intensity", L"How much of the model's work to keep. Past 1 the model makes no further difference, so 1 is the whole of it.", 0, 100, 100, false },
+    { L"Local structure", L"Detail the model adds within a region. The slider's end is not the model's: type or step past it and the slider follows. Does nothing while auto mask is off.", 0, 1000,
+      100, true },
+    { L"Local tone", L"How far the model moves local brightness. The slider's end is not the model's: type or step past it and the slider follows.", 0, 1000, 100, true },
+    { L"Skin structure", L"Detail on skin; -1 follows local structure. The slider's end is not the model's. Does nothing while auto mask is off.", -100, 1000, 100, true },
+    { L"Motion vector scale X", L"What the model multiplies the horizontal motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, false },
+    { L"Motion vector scale Y", L"What the model multiplies the vertical motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, false },
+    { L"Split position", L"Where the divider sits in the split view. Ctrl+Alt+Shift and the mouse drags it on screen.", 0, 100, 100, false },
+    { L"Depth plane", L"The desktop has no depth, so one flat value stands in for all of it. Changing it re-clears the plane.", 0, 100, 100, false },
+    { L"Reset threshold", L"How much of the picture has to go unmatched before the model's history is thrown away.", 0, 100, 100, false },
+    { L"Motion detail level", L"Finest level the matcher works at: 0 full resolution, 1 half, 2 quarter. Lower costs more.", 0, 7, 1, false },
+    { L"Super resolution preset", L"Render preset asked of DLSS Super Resolution; 0 leaves the choice to the driver.", 0, 15, 1, false },
 } };
 
 struct ToggleSpec
@@ -408,7 +418,7 @@ void AddHint(HWND tooltip, HWND parent, HWND control, const wchar_t* text) noexc
     const float value = std::wcstof(text.data(), &end);
     if (end == text.data())
         return std::nullopt;
-    return std::clamp(static_cast<int>(std::lround(value * static_cast<float>(spec.steps))), spec.minimum, spec.maximum);
+    return std::clamp(static_cast<int>(std::lround(value * static_cast<float>(spec.steps))), spec.minimum, CeilingOf(spec));
 }
 
 // The slider, the box and the arrows say the same number, so of the two that disagree the one the operator
@@ -458,8 +468,17 @@ void ShowInBox(HWND box, int steps, const FieldSpec& spec) noexcept
     ENSURE(::SetWindowTextW(box, Widened(Printed(steps, spec).Get()).data()) != FALSE);
 }
 
+// A number carried past the slider's end takes the slider with it, so all three controls keep agreeing and
+// the one that moved is still the one that stands out.
+void StretchSlider(HWND slider, int steps) noexcept
+{
+    if (steps > static_cast<int>(::SendMessageW(slider, TBM_GETRANGEMAX, 0, 0)))
+        (void)::SendMessageW(slider, TBM_SETRANGEMAX, TRUE, steps);
+}
+
 void Commit(const ControlPanel& panel, std::size_t field, int steps) noexcept
 {
+    StretchSlider(panel.sliders[field], steps);
     (void)::SendMessageW(panel.sliders[field], TBM_SETPOS, TRUE, steps);
     (void)::SendMessageW(panel.spins[field], UDM_SETPOS32, 0, steps);
     ShowInBox(panel.boxes[field], steps, kFields[field]);
@@ -533,7 +552,7 @@ void ChooseOnly(std::span<const HWND> group, std::size_t index) noexcept
 
 [[nodiscard]] int StepsOf(float value, const FieldSpec& spec) noexcept
 {
-    return std::clamp(static_cast<int>(std::lround(value * static_cast<float>(spec.steps))), spec.minimum, spec.maximum);
+    return std::clamp(static_cast<int>(std::lround(value * static_cast<float>(spec.steps))), spec.minimum, CeilingOf(spec));
 }
 
 [[nodiscard]] std::array<float, kFieldCount> StartingValues(const interior::Options& o, const interior::LiveSettings& live) noexcept
@@ -593,7 +612,7 @@ void AccelerateSpin(HWND spin, const FieldSpec& spec) noexcept
 [[nodiscard]] HWND ArrangedSpin(HWND spin, HWND box, const FieldSpec& spec, int steps) noexcept
 {
     (void)::SendMessageW(spin, UDM_SETBUDDY, reinterpret_cast<WPARAM>(box), 0);
-    (void)::SendMessageW(spin, UDM_SETRANGE32, static_cast<WPARAM>(spec.minimum), static_cast<LPARAM>(spec.maximum));
+    (void)::SendMessageW(spin, UDM_SETRANGE32, static_cast<WPARAM>(spec.minimum), static_cast<LPARAM>(CeilingOf(spec)));
     (void)::SendMessageW(spin, UDM_SETPOS32, 0, steps);
     AccelerateSpin(spin, spec);
     return spin;
