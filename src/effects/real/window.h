@@ -40,7 +40,12 @@ constexpr int kHotkeyQuit = 3;
 [[nodiscard]] infra::Status<Error> SetDpiAwareness() noexcept;
 [[nodiscard]] infra::Result<interior::MonitorList, Error> EnumerateMonitors() noexcept;
 // The first visible top-level window whose title contains what was asked for, as a source of its own.
-[[nodiscard]] infra::Result<interior::MonitorInfo, Error> FindWindowNamed(const interior::WindowTitle& title) noexcept;
+[[nodiscard]] infra::Result<interior::MonitorInfo, Error> FindWindowNamed(const interior::WindowTitle& asked) noexcept;
+// The title of a window, for showing which one was picked. Empty once the window has gone.
+[[nodiscard]] interior::WindowTitle TitleOfWindow(interior::MonitorHandle window) noexcept;
+// The top-level window under a point on the screen, skipping this program's own windows. Nothing over the
+// desktop, or over anything of ours.
+[[nodiscard]] std::optional<interior::MonitorHandle> WindowUnder(long x, long y) noexcept;
 // Where that window is now, so the overlay can follow it. Nothing once the window has gone.
 [[nodiscard]] std::optional<interior::ScreenRect> BoundsOfWindow(interior::MonitorHandle window) noexcept;
 // Moves the overlay so its top-left sits where the given point is. Its size is the session's and stays.

@@ -4,6 +4,7 @@
 #include "interior/options.h"
 
 #include <array>
+#include <optional>
 
 namespace real {
 
@@ -44,13 +45,14 @@ enum class Group : std::size_t { Compare, Style, Cursor, Motion, NvofGrid, NvofP
 // adapters the system has, the presets the model carries. An empty list has no row at all.
 enum class List : std::size_t { Preset, Source, Target, Adapter, Count };
 
-// A path the operator types. Too long and too free for a slider, so it gets a plain box of its own.
-enum class Text : std::size_t { Window, Count };
+// A window, picked by dragging a crosshair onto it. Nothing about a window fits a slider or a list, and
+// its title is not something anyone should have to type.
+enum class Pick : std::size_t { Window, Count };
 
 constexpr std::size_t kFieldCount = static_cast<std::size_t>(Field::Count);
 constexpr std::size_t kToggleCount = static_cast<std::size_t>(Toggle::Count);
 constexpr std::size_t kGroupCount = static_cast<std::size_t>(Group::Count);
-constexpr std::size_t kTextCount = static_cast<std::size_t>(Text::Count);
+constexpr std::size_t kPickCount = static_cast<std::size_t>(Pick::Count);
 constexpr std::size_t kListCount = static_cast<std::size_t>(List::Count);
 constexpr std::size_t kMaxListChoices = 20;
 constexpr std::size_t kMaxChoices = 4;
@@ -72,7 +74,8 @@ using PanelLists = std::array<PanelList, kListCount>;
 struct PanelFindings
 {
     PanelLists lists;
-    bool superResolution; // whether the driver offers it at all; without it the choice is shown but greyed
+    bool superResolution;                          // whether the driver offers it at all; without it the choice is shown but greyed
+    std::optional<interior::MonitorHandle> window; // the window this session is working on, when it is working on one
 };
 
 // The panel keeps no state of its own: the controls hold the operator's choices and are read each frame.
@@ -95,8 +98,9 @@ struct ControlPanel
     std::array<HWND, kToggleCount> toggleResets;
     std::array<HWND, kGroupCount> groupLabels;
     std::array<std::array<HWND, kMaxChoices>, kGroupCount> choices;
-    std::array<HWND, kTextCount> textLabels;
-    std::array<HWND, kTextCount> texts;
+    std::array<HWND, kPickCount> pickLabels;
+    std::array<HWND, kPickCount> crosshairs; // each holds the window it was last dragged onto
+    std::array<HWND, kPickCount> pickNames;
     std::array<HWND, kListCount> listLabels;
     std::array<std::array<HWND, kMaxListChoices>, kListCount> listChoices;
     std::array<std::size_t, kListCount> listCounts;

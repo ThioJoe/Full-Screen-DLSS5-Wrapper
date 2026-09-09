@@ -636,21 +636,6 @@ using Caption = real::ChoiceText;
     return real::NeuralRenderingPresetCount(*d.runtime).value_or(0);
 }
 
-[[nodiscard]] real::PanelFindings FindingsFor(const Base& b, const Devices& d) noexcept
-{
-    return real::PanelFindings{ ListsFor(b, real::UsableAdapters(d.device.factory.Get()), OfferedPresets(d)), OffersSuperResolution(d) };
-}
-
-// The panel is the ordinary way in: it opens unless --gui off asks for the overlay alone.
-[[nodiscard]] Result<std::optional<real::ControlPanel>, Error> CreatedPanel(const Base& b, const SessionPlan& plan, const real::PanelFindings& findings) noexcept
-{
-    if (!b.options.gui)
-        return std::optional<real::ControlPanel>{};
-    return real::CreateControlPanel(b.options, interior::StartingLive(plan), plan.initialDisplay, findings).transform([](real::ControlPanel panel) {
-        return std::optional<real::ControlPanel>{ std::move(panel) };
-    });
-}
-
 [[nodiscard]] bool CapturesOneWindow(const Base& b) noexcept
 {
     return !b.options.window.IsEmpty() && !b.geometry.source.IsEmpty();
@@ -661,6 +646,21 @@ using Caption = real::ChoiceText;
     if (!CapturesOneWindow(b))
         return std::nullopt;
     return b.geometry.source.At(0).handle;
+}
+
+[[nodiscard]] real::PanelFindings FindingsFor(const Base& b, const Devices& d) noexcept
+{
+    return real::PanelFindings{ ListsFor(b, real::UsableAdapters(d.device.factory.Get()), OfferedPresets(d)), OffersSuperResolution(d), FollowedWindow(b) };
+}
+
+// The panel is the ordinary way in: it opens unless --gui off asks for the overlay alone.
+[[nodiscard]] Result<std::optional<real::ControlPanel>, Error> CreatedPanel(const Base& b, const SessionPlan& plan, const real::PanelFindings& findings) noexcept
+{
+    if (!b.options.gui)
+        return std::optional<real::ControlPanel>{};
+    return real::CreateControlPanel(b.options, interior::StartingLive(plan), plan.initialDisplay, findings).transform([](real::ControlPanel panel) {
+        return std::optional<real::ControlPanel>{ std::move(panel) };
+    });
 }
 
 [[nodiscard]] real::EnvironmentSettings SettingsOf(const Base& b, const SessionPlan& plan) noexcept

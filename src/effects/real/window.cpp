@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <ranges>
 
 namespace real {
@@ -319,14 +320,14 @@ struct Search
     return title;
 }
 
-[[nodiscard]] bool IsPickable(HWND window) noexcept
+[[nodiscard]] bool IsTopLevel(HWND window) noexcept
 {
     return ::IsWindowVisible(window) != FALSE && ::GetWindow(window, GW_OWNER) == nullptr;
 }
 
 [[nodiscard]] bool Matches(HWND window, std::wstring_view wanted) noexcept
 {
-    if (!IsPickable(window))
+    if (!IsTopLevel(window))
         return false;
     return infra::ContainsIgnoringCase(std::wstring_view(TitleOf(window).data()), wanted);
 }
@@ -354,13 +355,94 @@ BOOL CALLBACK CollectWindow(HWND window, LPARAM parameter) noexcept
     });
 }
 
-Result<MonitorInfo, Error> FindWindowNamed(const interior::WindowTitle& title) noexcept
+[[nodiscard]] Result<MonitorInfo, Error> FoundByTitle(const interior::WindowTitle& title) noexcept
 {
     Search search{ title.Get(), nullptr }; // WAIVER(R2): filled by the enumeration, then read once.
     (void)::EnumWindows(&CollectWindow, reinterpret_cast<LPARAM>(&search));
     if (search.found == nullptr)
         return Fail(Error{ ApiCall::WindowNotFound, 0 });
     return infra::AsResult(SourceOf(search.found), Error{ ApiCall::WindowNotFound, 1 });
+}
+
+// The panel picks a window with the mouse and has its handle, so that is what it writes; a person typing a
+// command line has a title and not a handle, so both are accepted and the leading 0x tells them apart.
+[[nodiscard]] bool IsHexMarker(wchar_t c) noexcept
+{
+    return c == L'x' || c == L'X';
+}
+
+[[nodiscard]] bool StartsWithHex(std::wstring_view asked) noexcept
+{
+    return asked.starts_with(L'0') && IsHexMarker(asked[1]);
+}
+
+[[nodiscard]] bool IsHandleText(std::wstring_view asked) noexcept
+{
+    return asked.size() > 2 && StartsWithHex(asked);
+}
+
+[[nodiscard]] std::optional<HWND> HandleFrom(std::wstring_view asked) noexcept
+{
+    std::uintptr_t value = 0; // WAIVER(R2): the answer of one parse, read once after it.
+    const std::array<char, interior::WindowTitle::Capacity + 1> digits = infra::NarrowedChars<interior::WindowTitle::Capacity + 1>(asked.substr(2));
+    const std::from_chars_result parsed = std::from_chars(digits.data(), digits.data() + asked.size() - 2, value, 16);
+    if (parsed.ec != std::errc{})
+        return std::nullopt;
+    return reinterpret_cast<HWND>(value);
+}
+
+[[nodiscard]] bool NamesALiveWindow(const std::optional<HWND>& handle) noexcept
+{
+    return handle.has_value() && ::IsWindow(*handle) != FALSE;
+}
+
+[[nodiscard]] Result<MonitorInfo, Error> FoundByHandle(std::wstring_view asked) noexcept
+{
+    const std::optional<HWND> handle = HandleFrom(asked);
+    if (!NamesALiveWindow(handle))
+        return Fail(Error{ ApiCall::WindowNotFound, 3 });
+    return infra::AsResult(SourceOf(*handle), Error{ ApiCall::WindowNotFound, 4 });
+}
+
+Result<MonitorInfo, Error> FindWindowNamed(const interior::WindowTitle& asked) noexcept
+{
+    if (IsHandleText(asked.Get()))
+        return FoundByHandle(asked.Get());
+    return FoundByTitle(asked);
+}
+
+interior::WindowTitle TitleOfWindow(interior::MonitorHandle window) noexcept
+{
+    HWND handle = reinterpret_cast<HWND>(window.Get());
+    if (::IsWindow(handle) == FALSE)
+        return interior::WindowTitle{};
+    return interior::WindowTitle::Parse(std::wstring_view(TitleOf(handle).data()).substr(0, interior::WindowTitle::Capacity)).value_or(interior::WindowTitle{});
+}
+
+[[nodiscard]] bool IsOurs(HWND window) noexcept
+{
+    DWORD owner = 0; // WAIVER(R2): the answer of one query, read once after it.
+    (void)::GetWindowThreadProcessId(window, &owner);
+    return owner == ::GetCurrentProcessId();
+}
+
+[[nodiscard]] bool IsSomeoneElses(HWND window) noexcept
+{
+    return window != nullptr && !IsOurs(window);
+}
+
+[[nodiscard]] bool IsPickable(HWND window, HWND desktop) noexcept
+{
+    return window != desktop && IsSomeoneElses(window);
+}
+
+std::optional<interior::MonitorHandle> WindowUnder(long x, long y) noexcept
+{
+    const POINT point{ x, y };
+    HWND under = ::GetAncestor(::WindowFromPoint(point), GA_ROOT);
+    if (!IsPickable(under, ::GetDesktopWindow()))
+        return std::nullopt;
+    return infra::AsOptional(interior::MonitorHandleTag::Parse(reinterpret_cast<std::uintptr_t>(under)));
 }
 
 std::optional<interior::ScreenRect> BoundsOfWindow(interior::MonitorHandle window) noexcept

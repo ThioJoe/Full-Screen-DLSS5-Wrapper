@@ -22,6 +22,8 @@ using infra::Fail;
 using infra::Result;
 
 constexpr wchar_t kPanelClass[] = L"DlssScreenControlPanel";
+constexpr wchar_t kCrosshairClass[] = L"DlssScreenWindowPicker";
+constexpr int kCrosshairWidth = 34;
 constexpr int kReferenceDpi = 96;
 constexpr int kTextCapacity = 32;
 constexpr int kPathCapacity = 260;
@@ -140,12 +142,6 @@ constexpr std::array<GroupSpec, kGroupCount> kGroups{ {
     { L"Log level", L"How much the log says.", 4, { L"Debug", L"Info", L"Warn", L"Error" } },
 } };
 
-struct TextSpec
-{
-    const wchar_t* label;
-    const wchar_t* hint;
-};
-
 struct ListSpec
 {
     const wchar_t* label;
@@ -159,14 +155,22 @@ constexpr std::array<ListSpec, kListCount> kLists{ {
     { L"Adapter", L"Which graphics adapter to run the model on." },
 } };
 
-constexpr std::array<TextSpec, kTextCount> kTexts{ {
-    { L"Window title",
-      L"Part of the title of the one window to work on, ignoring case. Empty captures monitors instead. The capture follows the window as it moves; resizing it needs a new session." },
+struct PickSpec
+{
+    const wchar_t* label;
+    const wchar_t* hint;
+    const wchar_t* nothing;
+};
+
+constexpr std::array<PickSpec, kPickCount> kPicks{ {
+    { L"Window",
+      L"Drag this onto a window to work on that one window instead of a monitor. The title under the pointer is shown beside it as you go, and letting go over the desktop goes back to a monitor.",
+      L"none: capturing a monitor" },
 } };
 
 // --- what sits on which page, and in what order -------------------------------------------------------
 
-enum class Kind : std::uint8_t { Field, Toggle, Group, Text, List };
+enum class Kind : std::uint8_t { Field, Toggle, Group, Pick, List };
 
 struct RowSpec
 {
@@ -186,9 +190,9 @@ struct RowSpec
 {
     return RowSpec{ Kind::Group, static_cast<std::size_t>(g) };
 }
-[[nodiscard]] constexpr RowSpec Of(Text t) noexcept
+[[nodiscard]] constexpr RowSpec Of(Pick t) noexcept
 {
-    return RowSpec{ Kind::Text, static_cast<std::size_t>(t) };
+    return RowSpec{ Kind::Pick, static_cast<std::size_t>(t) };
 }
 [[nodiscard]] constexpr RowSpec Of(List l) noexcept
 {
@@ -213,7 +217,7 @@ constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
     { L"Start-up",
       15,
       { Of(List::Source), Of(List::Target), Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(Group::NvofGrid), Of(Group::NvofPerf), Of(List::Adapter),
-        Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache), Of(Text::Window) } },
+        Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache), Of(Pick::Window) } },
 } };
 
 // Every control belongs to exactly one page. One left off would be placed nowhere and stop the program as
@@ -229,7 +233,7 @@ constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
 static_assert(RowsOfKind(Kind::Field) == kFieldCount);
 static_assert(RowsOfKind(Kind::Toggle) == kToggleCount);
 static_assert(RowsOfKind(Kind::Group) == kGroupCount);
-static_assert(RowsOfKind(Kind::Text) == kTextCount);
+static_assert(RowsOfKind(Kind::Pick) == kPickCount);
 static_assert(RowsOfKind(Kind::List) == kListCount);
 
 [[nodiscard]] std::span<const RowSpec> RowsOf(Page page) noexcept
@@ -680,8 +684,9 @@ struct Built
     std::array<HWND, kToggleCount> toggleResets;
     std::array<HWND, kGroupCount> groupLabels;
     std::array<std::array<HWND, kMaxChoices>, kGroupCount> choices;
-    std::array<HWND, kTextCount> textLabels;
-    std::array<HWND, kTextCount> texts;
+    std::array<HWND, kPickCount> pickLabels;
+    std::array<HWND, kPickCount> crosshairs;
+    std::array<HWND, kPickCount> pickNames;
     std::array<HWND, kListCount> listLabels;
     std::array<std::array<HWND, kMaxListChoices>, kListCount> listChoices;
 };
@@ -820,13 +825,144 @@ struct Walk
     return built;
 }
 
-[[nodiscard]] HWND CreateTextBox(HWND parent, const Metrics& m, std::size_t text, const wchar_t* value) noexcept
+void ArmsOf(HDC dc, const RECT& box, int radius) noexcept;
+void VerticalArms(HDC dc, const RECT& box, int radius) noexcept;
+[[nodiscard]] LRESULT PaintedCrosshair(HWND window) noexcept;
+[[nodiscard]] LRESULT DraggedCrosshair(HWND window, UINT message, WPARAM w, LPARAM l) noexcept;
+[[nodiscard]] LRESULT StartedDrag(HWND window) noexcept;
+[[nodiscard]] LRESULT MovedDrag(HWND window) noexcept;
+[[nodiscard]] LRESULT FinishedDrag(HWND window, UINT message, WPARAM w, LPARAM l) noexcept;
+
+// The crosshair keeps the window it was last dragged onto in its own window data, so the panel can be
+// moved about and copied without the picking leaving anything dangling behind it.
+[[nodiscard]] std::optional<interior::MonitorHandle> PickedIn(HWND crosshair) noexcept
 {
-    const Placement at = PlaceOfRow(Kind::Text, text, m);
-    const HWND box = CreateChild(parent, WC_EDITW, value, WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, Bounds(m, at.left, at.control, kColumnWidth - kMargin, m.ControlHeight()));
-    if (box != nullptr)
-        (void)::SendMessageW(box, EM_SETLIMITTEXT, static_cast<WPARAM>(kPathCapacity - 1), 0);
-    return box;
+    return infra::AsOptional(interior::MonitorHandleTag::Parse(static_cast<std::uintptr_t>(::GetWindowLongPtrW(crosshair, GWLP_USERDATA))));
+}
+
+void KeepPicked(HWND crosshair, const std::optional<interior::MonitorHandle>& window) noexcept
+{
+    (void)::SetWindowLongPtrW(crosshair, GWLP_USERDATA, static_cast<LONG_PTR>(window.has_value() ? window->Get() : 0u));
+}
+
+// Dragging over one of our own windows, or over the desktop, picks nothing, which is how a window is let
+// go of again.
+void PickUnderCursor(HWND crosshair) noexcept
+{
+    POINT cursor{}; // WAIVER(R2): the answer of one query, read once after it.
+    if (::GetCursorPos(&cursor) == FALSE)
+        return;
+    KeepPicked(crosshair, WindowUnder(cursor.x, cursor.y));
+}
+
+void DrawCrosshair(HDC dc, const RECT& box) noexcept
+{
+    ::FillRect(dc, &box, ::GetSysColorBrush(COLOR_BTNFACE));
+    (void)::SelectObject(dc, ::GetStockObject(NULL_BRUSH));
+    const int radius = std::min(box.right - box.left, box.bottom - box.top) / 3;
+    ::Ellipse(dc, box.right / 2 - radius, box.bottom / 2 - radius, box.right / 2 + radius, box.bottom / 2 + radius);
+    ArmsOf(dc, box, radius);
+}
+
+void ArmsOf(HDC dc, const RECT& box, int radius) noexcept
+{
+    (void)::MoveToEx(dc, box.left + 1, box.bottom / 2, nullptr);
+    (void)::LineTo(dc, box.right / 2 - radius, box.bottom / 2);
+    (void)::MoveToEx(dc, box.right / 2 + radius, box.bottom / 2, nullptr);
+    (void)::LineTo(dc, box.right - 1, box.bottom / 2);
+    VerticalArms(dc, box, radius);
+}
+
+void VerticalArms(HDC dc, const RECT& box, int radius) noexcept
+{
+    (void)::MoveToEx(dc, box.right / 2, box.top + 1, nullptr);
+    (void)::LineTo(dc, box.right / 2, box.bottom / 2 - radius);
+    (void)::MoveToEx(dc, box.right / 2, box.bottom / 2 + radius, nullptr);
+    (void)::LineTo(dc, box.right / 2, box.bottom - 1);
+}
+
+void PaintCrosshair(HWND crosshair) noexcept
+{
+    PAINTSTRUCT paint{}; // WAIVER(R2): the record the OS fills to hand over the device context.
+    RECT box{};
+    (void)::GetClientRect(crosshair, &box);
+    DrawCrosshair(::BeginPaint(crosshair, &paint), box);
+    (void)::EndPaint(crosshair, &paint);
+}
+
+// WAIVER(R17): the window procedure is called by the OS, which discards nothing and ignores attributes.
+LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message == WM_PAINT)
+        return PaintedCrosshair(window);
+    return DraggedCrosshair(window, message, w, l);
+}
+
+[[nodiscard]] LRESULT PaintedCrosshair(HWND window) noexcept
+{
+    PaintCrosshair(window);
+    return 0;
+}
+
+// The drag is a capture rather than a modal loop, so the session keeps running and the panel keeps being
+// read while the operator is choosing.
+[[nodiscard]] LRESULT MovedOrFinished(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message == WM_MOUSEMOVE)
+        return MovedDrag(window);
+    return FinishedDrag(window, message, w, l);
+}
+
+[[nodiscard]] LRESULT DraggedCrosshair(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message == WM_LBUTTONDOWN)
+        return StartedDrag(window);
+    return MovedOrFinished(window, message, w, l);
+}
+
+[[nodiscard]] LRESULT StartedDrag(HWND window) noexcept
+{
+    (void)::SetCapture(window);
+    (void)::SetCursor(::LoadCursorW(nullptr, IDC_CROSS));
+    return 0;
+}
+
+[[nodiscard]] LRESULT MovedDrag(HWND window) noexcept
+{
+    if (::GetCapture() != window)
+        return 0;
+    (void)::SetCursor(::LoadCursorW(nullptr, IDC_CROSS));
+    PickUnderCursor(window);
+    return 0;
+}
+
+[[nodiscard]] LRESULT FinishedDrag(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message != WM_LBUTTONUP)
+        return ::DefWindowProcW(window, message, w, l);
+    (void)::ReleaseCapture();
+    return 0;
+}
+
+// WAIVER(R1): one API record, filled field by field because that is the only way it can be filled.
+[[nodiscard]] WNDCLASSEXW CrosshairDescription() noexcept
+{
+    WNDCLASSEXW description{}; // WAIVER(R2): a description filled once, before it is registered.
+    description.cbSize = sizeof(WNDCLASSEXW);
+    description.lpfnWndProc = &CrosshairProc;
+    description.hInstance = ::GetModuleHandleW(nullptr);
+    description.hCursor = ::LoadCursorW(nullptr, IDC_CROSS);
+    description.lpszClassName = kCrosshairClass;
+    return description;
+}
+
+[[nodiscard]] HWND CreateCrosshair(HWND parent, const Metrics& m, std::size_t pick, const std::optional<interior::MonitorHandle>& window) noexcept
+{
+    const Placement at = PlaceOfRow(Kind::Pick, pick, m);
+    const HWND crosshair = CreateChild(parent, kCrosshairClass, nullptr, 0, WS_EX_CLIENTEDGE, Bounds(m, at.left, at.control, kCrosshairWidth, m.ControlHeight()));
+    if (crosshair != nullptr)
+        KeepPicked(crosshair, window);
+    return crosshair;
 }
 
 // The choices of a runtime list run two to a line, wrapping down the row as far as the list is long.
@@ -870,20 +1006,28 @@ struct Walk
     return built;
 }
 
+[[nodiscard]] HWND CreatePickName(HWND parent, const Metrics& m, std::size_t pick) noexcept
+{
+    const Placement at = PlaceOfRow(Kind::Pick, pick, m);
+    const int left = at.left + kCrosshairWidth + kMargin;
+    return CreateChild(parent, WC_STATICW, kPicks[pick].nothing, SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, 0, Bounds(m, left, at.control, kColumnWidth - kCrosshairWidth - 2 * kMargin, m.ControlHeight()));
+}
+
 // WAIVER(R7): the label and the control of a row are built the same way whatever the row holds; what each
 // of these makes, and from which table, is what differs.
-[[nodiscard]] Built BuildTexts(HWND parent, const Metrics& m, const interior::Options& o, Built built) noexcept
+[[nodiscard]] Built BuildPicks(HWND parent, const Metrics& m, const PanelFindings& findings, Built built) noexcept
 {
-    built.textLabels =
-        infra::Generated<HWND, kTextCount>([&](std::size_t t) { return CreateLabel(parent, m, kTexts[t].label, PlaceOfRow(Kind::Text, t, m).left, PlaceOfRow(Kind::Text, t, m).top, kColumnWidth); });
-    built.texts = infra::Generated<HWND, kTextCount>([&](std::size_t t) { return CreateTextBox(parent, m, t, o.window.CString()); });
+    built.pickLabels =
+        infra::Generated<HWND, kPickCount>([&](std::size_t t) { return CreateLabel(parent, m, kPicks[t].label, PlaceOfRow(Kind::Pick, t, m).left, PlaceOfRow(Kind::Pick, t, m).top, kColumnWidth); });
+    built.crosshairs = infra::Generated<HWND, kPickCount>([&](std::size_t t) { return CreateCrosshair(parent, m, t, findings.window); });
+    built.pickNames = infra::Generated<HWND, kPickCount>([&](std::size_t t) { return CreatePickName(parent, m, t); });
     return built;
 }
 
-[[nodiscard]] Built BuildAll(HWND parent, const Metrics& m, const interior::Options& o, const interior::LiveSettings& live, interior::DisplayMode display) noexcept
+[[nodiscard]] Built BuildAll(HWND parent, const Metrics& m, const interior::Options& o, const interior::LiveSettings& live, interior::DisplayMode display, const PanelFindings& findings) noexcept
 {
     const Built numbers = BuildToggles(parent, m, StartingToggles(o, live), BuildFields(parent, m, StartingValues(o, live), Built{}));
-    return BuildLists(parent, m, BuildTexts(parent, m, o, BuildGroups(parent, m, StartingChoices(o, display), numbers)));
+    return BuildLists(parent, m, BuildPicks(parent, m, findings, BuildGroups(parent, m, StartingChoices(o, display), numbers)));
 }
 
 // --- the pages -------------------------------------------------------------------------------------------
@@ -932,9 +1076,9 @@ void ShowAll(std::span<const HWND> controls, int how) noexcept
     return visible ? SW_SHOW : SW_HIDE;
 }
 
-[[nodiscard]] std::array<HWND, 2> ControlsOfText(const ControlPanel& panel, std::size_t t) noexcept
+[[nodiscard]] std::array<HWND, 3> ControlsOfPick(const ControlPanel& panel, std::size_t t) noexcept
 {
-    return { panel.textLabels[t], panel.texts[t] };
+    return { panel.pickLabels[t], panel.crosshairs[t], panel.pickNames[t] };
 }
 
 void ShowNumberOrSwitch(const ControlPanel& panel, const RowSpec& row, int how) noexcept
@@ -956,7 +1100,7 @@ void ShowGroupOrText(const ControlPanel& panel, const RowSpec& row, int how) noe
     if (row.kind == Kind::Group)
         ShowGroup(panel, row.index, how);
     else
-        ShowAll(ControlsOfText(panel, row.index), how);
+        ShowAll(ControlsOfPick(panel, row.index), how);
 }
 
 // A number and a switch each stand on a row of their own; a group and a box are laid out differently.
@@ -996,7 +1140,7 @@ void ShowPage(const ControlPanel& panel, Page page, bool visible) noexcept
 // of its own kind, so the index is always in range for the array it picks.
 [[nodiscard]] HWND MarkerOf(const ControlPanel& panel, const RowSpec& row) noexcept
 {
-    const std::array<std::span<const HWND>, 5> byKind{ panel.labels, panel.toggles, panel.groupLabels, panel.textLabels, panel.listLabels };
+    const std::array<std::span<const HWND>, 5> byKind{ panel.labels, panel.toggles, panel.groupLabels, panel.pickLabels, panel.listLabels };
     return byKind[static_cast<std::size_t>(row.kind)][row.index];
 }
 
@@ -1155,6 +1299,23 @@ void ApplyNotice(const ControlPanel& panel) noexcept
     ResizeForNotice(panel, open);
 }
 
+// What the crosshair is currently pointing at, which during a drag is whatever is under the pointer.
+[[nodiscard]] interior::WindowTitle TitlePicked(const std::optional<interior::MonitorHandle>& picked) noexcept
+{
+    return picked.has_value() ? TitleOfWindow(*picked) : interior::WindowTitle{};
+}
+
+void ShowPickedName(const ControlPanel& panel, std::size_t pick) noexcept
+{
+    const interior::WindowTitle title = TitlePicked(PickedIn(panel.crosshairs[pick]));
+    ENSURE(::SetWindowTextW(panel.pickNames[pick], title.IsEmpty() ? kPicks[pick].nothing : title.CString()) != FALSE);
+}
+
+void ApplyPicks(const ControlPanel& panel) noexcept
+{
+    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kPickCount), [&panel](std::size_t p) { ShowPickedName(panel, p); });
+}
+
 void ApplyEnables(const ControlPanel& panel) noexcept
 {
     EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::Skin)), !IsOn(panel, Toggle::SkinFollowsStructure));
@@ -1265,12 +1426,22 @@ using Piece = infra::BoundedString<char, kPieceCapacity>;
     return Counted(name, static_cast<std::uint32_t>(chosen - 1));
 }
 
+// A handle rather than a title: the panel has the window itself, and a title is not a name for anything.
+[[nodiscard]] Piece WindowPiece(const ControlPanel& panel) noexcept
+{
+    const std::optional<interior::MonitorHandle> picked = PickedIn(panel.crosshairs[static_cast<std::size_t>(Pick::Window)]);
+    if (!picked.has_value())
+        return Piece{};
+    return Trimmed(infra::Formatted<kPieceCapacity>("--window=0x{:x}", picked->Get()).Get());
+}
+
 [[nodiscard]] Arguments StartupArguments(const ControlPanel& panel, const Arguments& so) noexcept
 {
     constexpr std::array<const char*, 2> formats{ "rgba8", "rgba16f" };
     constexpr std::array<const char*, 3> sr{ "auto", "dlaa", "off" };
     constexpr std::array<const char*, 3> motion{ "builtin", "nvof", "none" };
-    const std::array<Piece, 8> pieces{ SourcePiece(panel),
+    const std::array<Piece, 9> pieces{ WindowPiece(panel),
+                                       SourcePiece(panel),
                                        FromListPiece(panel, List::Target, "target"),
                                        Choice(panel, Group::Format, "format", formats),
                                        Choice(panel, Group::Sr, "sr", sr),
@@ -1426,7 +1597,7 @@ struct Notice
 {
     HWND parent = window.get();
     const HWND tabs = CreateTabs(parent, m);
-    const Built built = BuildAll(parent, m, o, live, display);
+    const Built built = BuildAll(parent, m, o, live, display, findings);
     const Notice notice = CreateNotice(parent, m);
     return ControlPanel{ std::move(window),
                          std::move(font),
@@ -1444,8 +1615,9 @@ struct Notice
                          built.toggleResets,
                          built.groupLabels,
                          built.choices,
-                         built.textLabels,
-                         built.texts,
+                         built.pickLabels,
+                         built.crosshairs,
+                         built.pickNames,
                          built.listLabels,
                          built.listChoices,
                          CountsOf(*m.lists),
@@ -1477,9 +1649,9 @@ struct Notice
 }
 
 // Every span here points into the panel itself, which outlives the answer.
-[[nodiscard]] std::array<std::span<const HWND>, 9> GroupsOf(const ControlPanel& panel) noexcept
+[[nodiscard]] std::array<std::span<const HWND>, 11> GroupsOf(const ControlPanel& panel) noexcept
 {
-    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.textLabels, panel.texts };
+    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.pickLabels, panel.crosshairs, panel.pickNames };
 }
 
 // A switch's reset is there exactly when its spec asks for one, so both a missing and a spare one is a fault.
@@ -1527,7 +1699,7 @@ void HintChoices(const ControlPanel& panel, HWND parent) noexcept
 {
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kToggleCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.toggles[t], kToggles[t].hint); });
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kGroupCount), [&panel, parent](std::size_t g) { AddHint(panel.tooltip, parent, panel.groupLabels[g], kGroups[g].hint); });
-    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kTextCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.texts[t], kTexts[t].hint); });
+    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kPickCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.crosshairs[t], kPicks[t].hint); });
 }
 
 // A greyed control that says nothing is just a control that does not work, so the reason replaces the hint.
@@ -1608,20 +1780,26 @@ void DressPanel(const ControlPanel& panel) noexcept
 Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options, const interior::LiveSettings& live, interior::DisplayMode display, const PanelFindings& findings) noexcept
 {
     InitialiseCommonControls();
-    return RegisterWindowClass(ClassDescription()).and_then([&] {
+    return RegisterWindowClass(ClassDescription()).and_then([] { return RegisterWindowClass(CrosshairDescription()); }).and_then([&] {
         return CreatePanelWindow().and_then([&](UniqueWindow window) { return Populated(std::move(window), options, live, display, findings); });
     });
 }
 
 // What the panel does to itself before it is read: the chosen page, the notice, what is greyed, and any
 // reset the operator is holding down.
+void Readback(const ControlPanel& panel) noexcept
+{
+    ApplyResets(panel);
+    ApplyPicks(panel);
+    SettleAll(panel);
+}
+
 void Arrange(const ControlPanel& panel) noexcept
 {
     ShowChosenPage(panel);
     ApplyNotice(panel);
     ApplyEnables(panel);
-    ApplyResets(panel);
-    SettleAll(panel);
+    Readback(panel);
 }
 
 PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSettings& current) noexcept
@@ -1651,25 +1829,17 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
     return Extended(so, line, written);
 }
 
-[[nodiscard]] std::array<wchar_t, kPathCapacity> PathOf(const ControlPanel& panel, Text text) noexcept
+[[nodiscard]] interior::CommandLine WithPaths(const interior::CommandLine& so, const interior::Options& o) noexcept
 {
-    std::array<wchar_t, kPathCapacity> typed{}; // WAIVER(R2): a local buffer filled once, before use.
-    (void)::GetWindowTextW(panel.texts[static_cast<std::size_t>(text)], typed.data(), kPathCapacity);
-    return typed;
-}
-
-[[nodiscard]] interior::CommandLine WithPaths(const interior::CommandLine& so, const ControlPanel& panel, const interior::Options& o) noexcept
-{
-    const std::array<wchar_t, kPathCapacity> window = PathOf(panel, Text::Window);
     const interior::CommandLine paths = WithPath(WithPath(so, L"ngx-path", o.ngxPath.Get()), L"app-data", o.appDataPath.Get());
-    return WithPath(WithPath(paths, L"log-file", o.logFile.Get()), L"window", std::wstring_view(window.data()));
+    return WithPath(paths, L"log-file", o.logFile.Get());
 }
 
 interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept
 {
     const Arguments arguments = RuntimeArguments(options, WindowArguments(panel, SurfaceArguments(panel, ModelArguments(panel, FlowArguments(panel, StartupArguments(panel, Arguments{}))))));
     const interior::CommandLine line = interior::CommandLine::Parse(WidenedLine(arguments.Get()).data()).value_or(interior::CommandLine{});
-    return WithPaths(line, panel, options);
+    return WithPaths(line, options);
 }
 
 void ApplyDisplay(const ControlPanel& panel, interior::DisplayMode display) noexcept

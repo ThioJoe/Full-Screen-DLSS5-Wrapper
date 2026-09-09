@@ -37,8 +37,10 @@ The control panel says the same thing at the foot of its window.
 
 ## Working on one window
 
-`--window TITLE` captures a single window instead of a monitor: the first visible top-level window whose
-title contains `TITLE`, ignoring case. The panel has a box for it on the Start-up page.
+On the panel's Start-up page, drag the crosshair onto a window to work on that one window instead of a
+monitor. The title under the pointer is shown beside it as you drag; letting go over the desktop goes back
+to capturing a monitor. From the command line, `--window` takes either part of a window's title, ignoring
+case, or a window handle as `0x...` — which is what the panel writes when it starts a new session.
 
 This uses Windows Graphics Capture's own per-window item, so the model sees that window's content and
 nothing else — not what is stacked in front of it — and the capture follows the window as it moves. It
