@@ -36,8 +36,10 @@ constexpr int kColumns = 2;
 constexpr int kPanelWidth = kColumns * kColumnWidth + (kColumns + 1) * kMargin;
 constexpr int kSliderWidth = 196;
 constexpr int kBoxOffset = 214;
-constexpr int kBoxWidth = 78;
-constexpr int kResetOffset = 302;
+constexpr int kBoxWidth = 74;
+constexpr int kSpinOffset = 288;
+constexpr int kSpinWidth = 18;
+constexpr int kResetOffset = 312;
 constexpr int kResetWidth = 28;
 constexpr int kChoiceWidth = 122;
 constexpr int kTabHeight = 30;
@@ -109,7 +111,7 @@ constexpr std::array<ToggleSpec, kToggleCount> kToggles{ {
       true },
     { L"UI correction", L"Ask the model to leave interface pixels alone. It reads a UI layer DlssScreen does not supply, so this is inert as wired.", true },
     { L"Depth is inverted", L"Tell the model the depth plane counts the other way. With one flat plane it changes little.", true },
-    { L"Wait for the display", L"Present in step with the monitor. Off presents as fast as the pipeline allows.", true },
+    { L"Vsync", L"Present in step with the monitor. Off presents as fast as the pipeline allows, which tears.", true },
     { L"Capture border", L"Let Windows draw its yellow border around what is being captured.", true },
     { L"Always on top", L"Keep the output window above every other window.", true },
     { L"Redirection surface", L"Give the output window a GDI surface. Diagnostic; fixed when the window is made.", true },
@@ -651,20 +653,20 @@ void AccelerateSpin(HWND spin, const FieldSpec& spec) noexcept
     (void)::SendMessageW(spin, UDM_SETACCEL, curve.size(), reinterpret_cast<LPARAM>(curve.data()));
 }
 
-[[nodiscard]] HWND ArrangedSpin(HWND spin, HWND box, const FieldSpec& spec, int steps) noexcept
+[[nodiscard]] HWND ArrangedSpin(HWND spin, const FieldSpec& spec, int steps) noexcept
 {
-    (void)::SendMessageW(spin, UDM_SETBUDDY, reinterpret_cast<WPARAM>(box), 0);
     (void)::SendMessageW(spin, UDM_SETRANGE32, static_cast<WPARAM>(spec.minimum), static_cast<LPARAM>(CeilingOf(spec)));
     (void)::SendMessageW(spin, UDM_SETPOS32, 0, steps);
     AccelerateSpin(spin, spec);
     return spin;
 }
 
-[[nodiscard]] HWND CreateSpin(HWND parent, HWND box, const FieldSpec& spec, int steps) noexcept
+// The arrows stand on their own rather than taking the box as a buddy: an up-down reads a buddy edit back
+// as its own position, as a whole number, so on a hundredths field the box said "1.00" and the arrows read 1.
+[[nodiscard]] HWND CreateSpin(HWND parent, const Metrics& m, const Placement& at, const FieldSpec& spec, int steps) noexcept
 {
-    const HWND spin =
-        ::CreateWindowExW(0, UPDOWN_CLASSW, nullptr, WS_CHILD | WS_VISIBLE | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0, 0, 0, 0, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
-    return spin == nullptr ? nullptr : ArrangedSpin(spin, box, spec, steps);
+    const HWND spin = CreateChild(parent, UPDOWN_CLASSW, nullptr, UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0, Bounds(m, at.left + kSpinOffset, at.control, kSpinWidth, m.ControlHeight()));
+    return spin == nullptr ? nullptr : ArrangedSpin(spin, spec, steps);
 }
 
 struct Built
@@ -756,7 +758,7 @@ struct Walk
         const Placement at = PlaceOfRow(Kind::Field, f, m);
         return CreateChild(parent, WC_EDITW, L"", ES_LEFT | ES_AUTOHSCROLL | WS_TABSTOP, WS_EX_CLIENTEDGE, Bounds(m, at.left + kBoxOffset, at.control, kBoxWidth, m.ControlHeight()));
     });
-    built.spins = infra::Generated<HWND, kFieldCount>([&](std::size_t f) { return CreateSpin(parent, built.boxes[f], kFields[f], steps(f)); });
+    built.spins = infra::Generated<HWND, kFieldCount>([&](std::size_t f) { return CreateSpin(parent, m, PlaceOfRow(Kind::Field, f, m), kFields[f], steps(f)); });
     built.resets = infra::Generated<HWND, kFieldCount>([&](std::size_t f) {
         const Placement at = PlaceOfRow(Kind::Field, f, m);
         return CreateButton(parent, m, kRefreshGlyph, 0, at.left + kResetOffset, at.control, kResetWidth);
@@ -1163,6 +1165,18 @@ void ApplyEnables(const ControlPanel& panel) noexcept
     EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::Skin)), !IsOn(panel, Toggle::SkinFollowsStructure));
     EnableAll(ChoicesOf(panel, Group::Sr), panel.superResolution);
     EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::SrPreset)), panel.superResolution);
+}
+
+// Every frame each number is read, settled, and written back to all three controls. Without this the boxes
+// were never filled in at all, and the three were free to disagree for good once any of them had moved.
+void SettleField(const ControlPanel& panel, std::size_t field) noexcept
+{
+    Commit(panel, field, Settled(panel, field));
+}
+
+void SettleAll(const ControlPanel& panel) noexcept
+{
+    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kFieldCount), [&panel](std::size_t f) { SettleField(panel, f); });
 }
 
 // A held reset puts its own control back where the defaults start it; the same answer every frame.
@@ -1613,6 +1627,7 @@ void Arrange(const ControlPanel& panel) noexcept
     ApplyNotice(panel);
     ApplyEnables(panel);
     ApplyResets(panel);
+    SettleAll(panel);
 }
 
 PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSettings& current) noexcept
