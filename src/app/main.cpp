@@ -238,9 +238,16 @@ struct Base
     return o.window.IsEmpty() ? o : AsWholeSource(o);
 }
 
+// Settled once for the whole program: how the process reads the display's scaling, and which apartment it
+// has. Asking for the scaling twice is refused outright, with an access denied that is nothing of the sort.
+[[nodiscard]] Status<Error> PrepareProcess() noexcept
+{
+    return real::SetDpiAwareness().and_then(real::InitializeRuntime).and_then(real::RequireCaptureSupport);
+}
+
 [[nodiscard]] Result<Base, Error> ResolveBase(const Console& console, const Options& options) noexcept
 {
-    return real::SetDpiAwareness().and_then(real::InitializeRuntime).and_then(real::RequireCaptureSupport).and_then(ExecutableDirectory).and_then([&](const interior::DirectoryPath& directory) {
+    return ExecutableDirectory().and_then([&](const interior::DirectoryPath& directory) {
         return real::EnumerateMonitors().and_then([&](const interior::MonitorList& monitors) {
             return SourcesFor(options, monitors).and_then([&](const interior::MonitorList& sources) { return BasedOn(console, SelectionFor(options), directory, monitors, sources); });
         });
@@ -827,13 +834,18 @@ void AcknowledgeIfHeld(const PanelHolder& held) noexcept
 
 // A loop rather than one session calling the next, so asking for a hundred of them costs a hundred
 // sessions and not a hundred stack frames.
-[[nodiscard]] Result<interior::FrameNumber, Error> Run(const Console& console, const Options& options) noexcept
+[[nodiscard]] Result<interior::FrameNumber, Error> Sessions(const Console& console, const Options& options) noexcept
 {
     PanelHolder held{};                                      // WAIVER(R2): the panel outlives the sessions, made once when the first asks for it.
     Cycle cycle{ options, RunOnce(console, options, held) }; // WAIVER(R2): one session at a time, replaced whole by the next.
     while (Continues(cycle))                                 // WAIVER(R2): one turn of the loop is one session.
         cycle = Next(console, cycle, held);
     return cycle.ended.transform([](const Ended& e) { return e.frames; });
+}
+
+[[nodiscard]] Result<interior::FrameNumber, Error> Run(const Console& console, const Options& options) noexcept
+{
+    return PrepareProcess().and_then([&] { return Sessions(console, options); });
 }
 
 [[nodiscard]] int Failed(const Console& console, const Error& error) noexcept

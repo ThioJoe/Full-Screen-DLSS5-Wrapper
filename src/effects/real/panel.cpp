@@ -1337,10 +1337,18 @@ void ShowChosenPage(const ControlPanel& panel) noexcept
 
 // --- the resets --------------------------------------------------------------------------------------
 
+// A slider stretched to follow a value past its end is put back where it started, so a reset takes back the
+// reach as well as the value.
+void Restored(const ControlPanel& panel, std::size_t f, float value) noexcept
+{
+    (void)::SendMessageW(panel.sliders[f], TBM_SETRANGEMAX, TRUE, kFields[f].maximum);
+    Commit(panel, f, StepsOf(value, kFields[f]));
+}
+
 void ResetField(const ControlPanel& panel, std::size_t f, float value) noexcept
 {
     if (IsPushed(panel.resets[f]))
-        Commit(panel, f, StepsOf(value, kFields[f]));
+        Restored(panel, f, value);
 }
 
 void ResetToggle(const ControlPanel& panel, std::size_t t, bool on) noexcept
