@@ -14,9 +14,9 @@ struct FontDeleter
 };
 using UniqueFont = std::unique_ptr<std::remove_pointer_t<HFONT>, FontDeleter>;
 
-// The panel's pages. Everything that takes effect at once is on the first three; the fourth holds what
-// only a fresh session can change, and the operator asks for that session with a button.
-enum class Page : std::size_t { Model, View, Startup, Count };
+// The panel's pages. Everything on all three applies itself: the model's own tuning, what is captured and
+// where it is shown, and the choices further down that are worth having but rarely worth changing.
+enum class Page : std::size_t { Model, View, Advanced, Count };
 
 // A number the operator sets: a slider to sweep it, a box to type it, arrows to step it.
 enum class Field : std::size_t { Intensity, LocalStructure, LocalTone, Skin, MvScaleX, MvScaleY, Split, DepthValue, ResetThreshold, MvLevel, SrPreset, Count };
@@ -100,6 +100,7 @@ struct ControlPanel
     std::array<HWND, kPickCount> pickLabels;
     std::array<HWND, kPickCount> crosshairs; // each holds the window it was last dragged onto
     std::array<HWND, kPickCount> pickNames;
+    std::array<HWND, kPickCount> pickResets; // lets go of the window again, back to capturing a monitor
     std::array<HWND, kListCount> listLabels;
     std::array<std::array<HWND, kMaxListChoices>, kListCount> listChoices;
     std::array<std::size_t, kListCount> listCounts;

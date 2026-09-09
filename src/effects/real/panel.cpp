@@ -116,9 +116,12 @@ constexpr std::array<ToggleSpec, kToggleCount> kToggles{ {
     { L"Capture border", L"Let Windows draw its yellow border around what is being captured.", true },
     { L"Always on top", L"Keep the output window above every other window.", true },
     { L"Redirection surface", L"Give the output window a GDI surface. Diagnostic; fixed when the window is made.", true },
-    { L"Direct3D debug layer", L"Turn on the Direct3D 12 validation layer. Slow, and only useful when chasing a fault.", true },
-    { L"Model indicator", L"Let the model draw its own overlay naming its version, the preset it resolved and its working size.", true },
-    { L"Model kernel cache", L"Let the model cache its compiled kernels. Off makes it rebuild them every run.", true },
+    { L"Direct3D debug layer",
+      L"Turn on the Direct3D 12 validation layer. Slow, and only useful when chasing a fault. Windows turns it on for the whole program and will not turn it off, so turning it off here starts the "
+      L"program again.",
+      true },
+    { L"Model indicator", L"Let the model draw its own overlay naming its version, the preset it resolved and its working size. Read as the model loads, so it may need the program restarted.", true },
+    { L"Model kernel cache", L"Let the model cache its compiled kernels. Off makes it rebuild them every run. Read as the model loads, so it may need the program restarted.", true },
 } };
 
 struct GroupSpec
@@ -212,11 +215,14 @@ constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
       15,
       { Of(Toggle::NeuralRendering), Of(Group::Style), Of(List::Preset), Of(Field::Intensity), Of(Field::LocalStructure), Of(Field::LocalTone), Of(Toggle::SkinFollowsStructure), Of(Field::Skin),
         Of(Toggle::AutoMask), Of(Toggle::UiCorrection), Of(Toggle::DepthInverted), Of(Field::DepthValue), Of(Field::ResetThreshold), Of(Field::MvScaleX), Of(Field::MvScaleY) } },
-    { L"View", 7, { Of(Group::Compare), Of(Field::Split), Of(Toggle::Vsync), Of(Group::Cursor), Of(Toggle::CaptureBorder), Of(Toggle::Topmost), Of(Group::LogLevel) } },
-    { L"Start-up",
-      15,
-      { Of(List::Source), Of(List::Target), Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(Group::NvofGrid), Of(Group::NvofPerf), Of(List::Adapter),
-        Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache), Of(Pick::Window) } },
+    { L"View",
+      10,
+      { Of(Pick::Window), Of(List::Source), Of(List::Target), Of(Group::Compare), Of(Field::Split), Of(Toggle::Vsync), Of(Group::Cursor), Of(Toggle::CaptureBorder), Of(Toggle::Topmost),
+        Of(Group::LogLevel) } },
+    { L"Advanced",
+      12,
+      { Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(Group::NvofGrid), Of(Group::NvofPerf), Of(List::Adapter), Of(Toggle::RedirectionBitmap),
+        Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache) } },
 } };
 
 // Every control belongs to exactly one page. One left off would be placed nowhere and stop the program as
@@ -427,6 +433,7 @@ void InitialiseCommonControls() noexcept
 // Segoe MDL2 Assets has shipped with Windows since 10, and its refresh glyph fits a button too short for a word.
 constexpr wchar_t kRefreshGlyph[] = L"\uE72C";
 constexpr wchar_t kResetHint[] = L"Put this setting back to the value it starts at.";
+constexpr wchar_t kReleaseHint[] = L"Let the window go and capture a monitor again.";
 
 [[nodiscard]] LOGFONTW FaceOf(int height, LONG weight, const wchar_t* name) noexcept
 {
@@ -841,6 +848,7 @@ struct Built
     std::array<HWND, kPickCount> pickLabels;
     std::array<HWND, kPickCount> crosshairs;
     std::array<HWND, kPickCount> pickNames;
+    std::array<HWND, kPickCount> pickResets;
     std::array<HWND, kListCount> listLabels;
     std::array<std::array<HWND, kMaxListChoices>, kListCount> listChoices;
 };
@@ -1165,11 +1173,17 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
     return built;
 }
 
+[[nodiscard]] HWND CreatePickReset(HWND parent, const Metrics& m, std::size_t pick) noexcept
+{
+    const Placement at = PlaceOfRow(Kind::Pick, pick, m);
+    return CreateButton(parent, m, kRefreshGlyph, 0, at.left + kResetOffset, at.control, kResetWidth);
+}
+
 [[nodiscard]] HWND CreatePickName(HWND parent, const Metrics& m, std::size_t pick) noexcept
 {
     const Placement at = PlaceOfRow(Kind::Pick, pick, m);
     const int left = at.left + kCrosshairWidth + kMargin;
-    return CreateChild(parent, WC_STATICW, kPicks[pick].nothing, SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, 0, Bounds(m, left, at.control, kColumnWidth - kCrosshairWidth - 2 * kMargin, m.ControlHeight()));
+    return CreateChild(parent, WC_STATICW, kPicks[pick].nothing, SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, 0, Bounds(m, left, at.control, kResetOffset - kCrosshairWidth - 2 * kMargin, m.ControlHeight()));
 }
 
 // WAIVER(R7): the label and the control of a row are built the same way whatever the row holds; what each
@@ -1180,6 +1194,7 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
         infra::Generated<HWND, kPickCount>([&](std::size_t t) { return CreateLabel(parent, m, kPicks[t].label, PlaceOfRow(Kind::Pick, t, m).left, PlaceOfRow(Kind::Pick, t, m).top, kColumnWidth); });
     built.crosshairs = infra::Generated<HWND, kPickCount>([&](std::size_t t) { return CreateCrosshair(parent, m, t, findings.window); });
     built.pickNames = infra::Generated<HWND, kPickCount>([&](std::size_t t) { return CreatePickName(parent, m, t); });
+    built.pickResets = infra::Generated<HWND, kPickCount>([&](std::size_t t) { return CreatePickReset(parent, m, t); });
     return built;
 }
 
@@ -1235,9 +1250,9 @@ void ShowAll(std::span<const HWND> controls, int how) noexcept
     return visible ? SW_SHOW : SW_HIDE;
 }
 
-[[nodiscard]] std::array<HWND, 3> ControlsOfPick(const ControlPanel& panel, std::size_t t) noexcept
+[[nodiscard]] std::array<HWND, 4> ControlsOfPick(const ControlPanel& panel, std::size_t t) noexcept
 {
-    return { panel.pickLabels[t], panel.crosshairs[t], panel.pickNames[t] };
+    return { panel.pickLabels[t], panel.crosshairs[t], panel.pickNames[t], panel.pickResets[t] };
 }
 
 void ShowNumberOrSwitch(const ControlPanel& panel, const RowSpec& row, int how) noexcept
@@ -1478,8 +1493,17 @@ void ShowPickedName(const ControlPanel& panel, std::size_t pick) noexcept
     ENSURE(::SetWindowTextW(panel.pickNames[pick], title.IsEmpty() ? kPicks[pick].nothing : title.CString()) != FALSE);
 }
 
+// Holding the reset lets the window go, and the session goes back to the monitor the source names.
+void ReleasePicked(const ControlPanel& panel, std::size_t pick) noexcept
+{
+    if (IsPushed(panel.pickResets[pick]))
+        KeepPicked(panel.crosshairs[pick], std::nullopt);
+}
+
+// WAIVER(R7): walking one small table twice is what several of these do; each does something else with it.
 void ApplyPicks(const ControlPanel& panel) noexcept
 {
+    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kPickCount), [&panel](std::size_t p) { ReleasePicked(panel, p); });
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kPickCount), [&panel](std::size_t p) { ShowPickedName(panel, p); });
 }
 
@@ -1790,6 +1814,7 @@ struct Notice
                          built.pickLabels,
                          built.crosshairs,
                          built.pickNames,
+                         built.pickResets,
                          built.listLabels,
                          built.listChoices,
                          CountsOf(*m.lists),
@@ -1821,9 +1846,9 @@ struct Notice
 }
 
 // Every span here points into the panel itself, which outlives the answer.
-[[nodiscard]] std::array<std::span<const HWND>, 11> GroupsOf(const ControlPanel& panel) noexcept
+[[nodiscard]] std::array<std::span<const HWND>, 12> GroupsOf(const ControlPanel& panel) noexcept
 {
-    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.pickLabels, panel.crosshairs, panel.pickNames };
+    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.pickLabels, panel.crosshairs, panel.pickNames, panel.pickResets };
 }
 
 // A switch's reset is there exactly when its spec asks for one, so both a missing and a spare one is a fault.
@@ -1852,6 +1877,7 @@ struct Notice
     return EveryGroupPresent(panel) && ResetsAsSpecified(panel);
 }
 
+// WAIVER(R7): walking one table twice is what several of these do; each does something else with it.
 // A number's hint sits on the slider and on the box, so either one under the pointer explains itself.
 void HintNumbers(const ControlPanel& panel, HWND parent) noexcept
 {
@@ -1872,6 +1898,7 @@ void HintChoices(const ControlPanel& panel, HWND parent) noexcept
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kToggleCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.toggles[t], kToggles[t].hint); });
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kGroupCount), [&panel, parent](std::size_t g) { AddHint(panel.tooltip, parent, panel.groupLabels[g], kGroups[g].hint); });
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kPickCount), [&panel, parent](std::size_t t) { AddHint(panel.tooltip, parent, panel.crosshairs[t], kPicks[t].hint); });
+    std::ranges::for_each(panel.pickResets, [&panel, parent](HWND button) { AddHint(panel.tooltip, parent, button, kReleaseHint); });
 }
 
 // A greyed control that says nothing is just a control that does not work, so the reason replaces the hint.
@@ -1904,6 +1931,7 @@ void IconiseResets(const ControlPanel& panel) noexcept
 {
     std::ranges::for_each(panel.resets, [&panel](HWND button) { WearIcon(panel, button); });
     std::ranges::for_each(panel.toggleResets, [&panel](HWND button) { WearIcon(panel, button); });
+    std::ranges::for_each(panel.pickResets, [&panel](HWND button) { WearIcon(panel, button); });
     WearIcon(panel, panel.expander);
     (void)::SendMessageW(panel.notice, WM_SETFONT, reinterpret_cast<WPARAM>(panel.boldFont.get()), TRUE);
 }

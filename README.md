@@ -108,13 +108,17 @@ feature, because the model reads it while the feature is built rather than on ea
 drawn again even when the desktop has sent nothing new, so a change shows even while the panel sits on
 another monitor.
 
-The Start-up page holds what a running session cannot change under itself: which monitor or window is
-captured, where it is presented, the colour format, super resolution, where motion comes from, which
-adapter. **Apply these settings** takes them: the session stops, everything it made is released, and a new
-one is built in the same process from what the page says — read back through the same parser the command
-line uses, so it is the session a fresh process would have built. The panel itself stays where it is,
-keeping its page and its position. The one exception is the Direct3D debug layer: Windows turns it on for
-the process and will not turn it off again, so turning it off starts a new process.
+Everything else applies itself too, just not by being read each frame. Which monitor or window is captured,
+where it is presented, the colour format, super resolution, where motion comes from, which adapter — a
+session cannot change any of those under itself, so changing one ends the session and builds another in the
+same process from what the panel now says, read back through the same parser the command line uses. It
+waits for the setting to settle first, so walking through three choices builds one session rather than
+three, and the panel stays where it is with its page and position.
+
+Two things are not quite so simple. The Direct3D debug layer is turned on for the whole program by Windows,
+which will not turn it off again, so turning it off is the one change that starts the program afresh. The
+model indicator and the kernel cache are read by the model as it loads, so they may want the program
+restarted rather than the session rebuilt.
 
 Closing the panel ends the session. Started from a console, the program attaches to it and logs there;
 `--console on` forces one, `--gui off` leaves the overlay to run alone.
