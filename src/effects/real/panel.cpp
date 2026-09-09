@@ -162,7 +162,6 @@ constexpr std::array<ListSpec, kListCount> kLists{ {
 constexpr std::array<TextSpec, kTextCount> kTexts{ {
     { L"Window title",
       L"Part of the title of the one window to work on, ignoring case. Empty captures monitors instead. The capture follows the window as it moves; resizing it needs a new session." },
-    { L"Log file", L"Where to mirror the log. Empty writes to the console only. Read when the session starts." },
 } };
 
 // --- what sits on which page, and in what order -------------------------------------------------------
@@ -212,9 +211,9 @@ constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
         Of(Toggle::AutoMask), Of(Toggle::UiCorrection), Of(Toggle::DepthInverted), Of(Field::DepthValue), Of(Field::ResetThreshold), Of(Field::MvScaleX), Of(Field::MvScaleY) } },
     { L"View", 7, { Of(Group::Compare), Of(Field::Split), Of(Toggle::Vsync), Of(Group::Cursor), Of(Toggle::CaptureBorder), Of(Toggle::Topmost), Of(Group::LogLevel) } },
     { L"Start-up",
-      16,
+      15,
       { Of(List::Source), Of(List::Target), Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(Group::NvofGrid), Of(Group::NvofPerf), Of(List::Adapter),
-        Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache), Of(Text::Window), Of(Text::LogFile) } },
+        Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache), Of(Text::Window) } },
 } };
 
 // Every control belongs to exactly one page. One left off would be placed nowhere and stop the program as
@@ -821,11 +820,6 @@ struct Walk
     return built;
 }
 
-[[nodiscard]] const wchar_t* StartingText(const interior::Options& o, std::size_t text) noexcept
-{
-    return text == static_cast<std::size_t>(Text::Window) ? o.window.CString() : o.logFile.CString();
-}
-
 [[nodiscard]] HWND CreateTextBox(HWND parent, const Metrics& m, std::size_t text, const wchar_t* value) noexcept
 {
     const Placement at = PlaceOfRow(Kind::Text, text, m);
@@ -882,7 +876,7 @@ struct Walk
 {
     built.textLabels =
         infra::Generated<HWND, kTextCount>([&](std::size_t t) { return CreateLabel(parent, m, kTexts[t].label, PlaceOfRow(Kind::Text, t, m).left, PlaceOfRow(Kind::Text, t, m).top, kColumnWidth); });
-    built.texts = infra::Generated<HWND, kTextCount>([&](std::size_t t) { return CreateTextBox(parent, m, t, StartingText(o, t)); });
+    built.texts = infra::Generated<HWND, kTextCount>([&](std::size_t t) { return CreateTextBox(parent, m, t, o.window.CString()); });
     return built;
 }
 
@@ -1666,10 +1660,9 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
 
 [[nodiscard]] interior::CommandLine WithPaths(const interior::CommandLine& so, const ControlPanel& panel, const interior::Options& o) noexcept
 {
-    const std::array<wchar_t, kPathCapacity> logFile = PathOf(panel, Text::LogFile);
     const std::array<wchar_t, kPathCapacity> window = PathOf(panel, Text::Window);
     const interior::CommandLine paths = WithPath(WithPath(so, L"ngx-path", o.ngxPath.Get()), L"app-data", o.appDataPath.Get());
-    return WithPath(WithPath(paths, L"log-file", std::wstring_view(logFile.data())), L"window", std::wstring_view(window.data()));
+    return WithPath(WithPath(paths, L"log-file", o.logFile.Get()), L"window", std::wstring_view(window.data()));
 }
 
 interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept

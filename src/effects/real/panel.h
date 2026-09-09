@@ -45,7 +45,7 @@ enum class Group : std::size_t { Compare, Style, Cursor, Motion, NvofGrid, NvofP
 enum class List : std::size_t { Preset, Source, Target, Adapter, Count };
 
 // A path the operator types. Too long and too free for a slider, so it gets a plain box of its own.
-enum class Text : std::size_t { Window, LogFile, Count };
+enum class Text : std::size_t { Window, Count };
 
 constexpr std::size_t kFieldCount = static_cast<std::size_t>(Field::Count);
 constexpr std::size_t kToggleCount = static_cast<std::size_t>(Toggle::Count);
