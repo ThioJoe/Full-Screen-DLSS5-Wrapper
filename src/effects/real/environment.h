@@ -58,6 +58,8 @@ public:
     [[nodiscard]] std::optional<interior::CommandLine> Restart(const interior::Options& options) const noexcept;
     // Whether the window being worked on changed size, which the sizes of a built session cannot follow.
     [[nodiscard]] bool Resized() const noexcept { return resized_; }
+    // Whether the window being worked on was closed, minimised or hidden, which leaves nothing to capture.
+    [[nodiscard]] bool Abandoned() const noexcept { return abandoned_; }
 
 private:
     [[nodiscard]] infra::Result<FrameStart, Error> Accept(const Begun& begun) noexcept;
@@ -70,6 +72,10 @@ private:
     // Keeps the overlay over the window the session is working on. The capture follows the window itself,
     // so only where the answer is shown has to be put right.
     void Followed(interior::Instant now) noexcept;
+    void Watched(interior::MonitorHandle window, interior::Instant now) noexcept;
+    void Abandon() noexcept;
+    [[nodiscard]] bool AsksForSettings() const noexcept;
+    [[nodiscard]] bool AsksToEnd() const noexcept;
     void Moved(const interior::ScreenRect& bounds, interior::Instant now) noexcept;
     void FollowedTo(const std::optional<interior::ScreenRect>& bounds, interior::Instant now) noexcept;
     void Settling(const interior::Extent& size, interior::Instant now) noexcept;
@@ -101,6 +107,7 @@ private:
     interior::CommandLine built_;       // the shape it was built with
     interior::CommandLine wanted_;      // WAIVER(R2): the shape the panel now describes, replaced whole as it changes.
     interior::Instant asked_;           // WAIVER(R2): when it first described it.
+    bool abandoned_;                    // WAIVER(R2): set once, when the window being followed stopped being on screen.
 };
 
 [[nodiscard]] infra::Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const interior::SessionPlan& plan, const interior::Geometry& geometry,

@@ -136,6 +136,10 @@ struct PanelReading
 // for a change: the rest of the panel it can follow while it runs, this it can only be rebuilt for.
 [[nodiscard]] interior::CommandLine SessionShape(const ControlPanel& panel) noexcept;
 
+// Lets go of the window the crosshair is holding, for when that window is closed, hidden or minimised
+// while a session is following it.
+void ReleaseWindow(const ControlPanel& panel) noexcept;
+
 // The command line the start-up page describes, for the session the operator has asked for.
 [[nodiscard]] interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept;
 

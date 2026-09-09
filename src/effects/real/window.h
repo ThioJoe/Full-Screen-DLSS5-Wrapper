@@ -48,6 +48,10 @@ constexpr int kHotkeyQuit = 3;
 [[nodiscard]] std::optional<interior::MonitorHandle> WindowUnder(long x, long y) noexcept;
 // Where that window is now, so the overlay can follow it. Nothing once the window has gone.
 [[nodiscard]] std::optional<interior::ScreenRect> BoundsOfWindow(interior::MonitorHandle window) noexcept;
+
+// Whether a window is still something to capture. Closed, hidden and minimised all answer no, and a
+// session following such a window is built again for the monitor its source names.
+[[nodiscard]] bool IsWindowShowing(interior::MonitorHandle window) noexcept;
 // Moves the overlay so its top-left sits where the given point is. Its size is the session's and stays.
 void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& rect) noexcept;
 [[nodiscard]] infra::Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept;

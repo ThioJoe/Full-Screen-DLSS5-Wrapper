@@ -639,7 +639,7 @@ RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow 
                                  const interior::Options& options, std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
     : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(panel), console_(console), finestPixels_(finestPixels),
       frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false), resized_(false),
-      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start)
+      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false)
 {
 }
 
@@ -696,11 +696,36 @@ void RealEnvironment::FollowedTo(const std::optional<interior::ScreenRect>& boun
         Moved(*bounds, now);
 }
 
+// The panel is the operator's, so what it shows has to agree: with the window gone, the crosshair holds
+// nothing and the source it names is what the next session is built from.
+void LetGoOfWindow(const ControlPanel* panel) noexcept
+{
+    if (panel == nullptr)
+        return;
+    ReleaseWindow(*panel);
+}
+
+void RealEnvironment::Abandon() noexcept
+{
+    abandoned_ = true; // WAIVER(R2): set once, and never unset.
+    LetGoOfWindow(panel_);
+}
+
+// A window closed, minimised or hidden has nothing left to capture, and the overlay would sit over it
+// showing the last frame it got. The session ends instead, and the next takes the monitor the source names.
+void RealEnvironment::Watched(interior::MonitorHandle window, interior::Instant now) noexcept
+{
+    if (!IsWindowShowing(window))
+        Abandon();
+    else
+        FollowedTo(BoundsOfWindow(window), now);
+}
+
 void RealEnvironment::Followed(interior::Instant now) noexcept
 {
     if (!applied_.followed.has_value())
         return;
-    FollowedTo(BoundsOfWindow(*applied_.followed), now);
+    Watched(*applied_.followed, now);
 }
 
 // What a session cannot follow while it runs, it is rebuilt for, once the panel has settled on it. Settling
@@ -744,16 +769,28 @@ void RealEnvironment::Reconsidered(interior::Instant now) noexcept
     return Begun{ begun.frame, input, begun.reading };
 }
 
-[[nodiscard]] Begun StoppedIfResized(const Begun& begun, bool resized) noexcept
+[[nodiscard]] Begun StoppedIf(const Begun& begun, bool ending) noexcept
 {
-    return resized ? Stopping(begun) : begun;
+    return ending ? Stopping(begun) : begun;
+}
+
+// The three ways a session ends short of the operator quitting: the window it was working on changed size,
+// the panel settled on other settings, or the window it was working on went away.
+bool RealEnvironment::AsksForSettings() const noexcept
+{
+    return restartWanted_ || abandoned_;
+}
+
+bool RealEnvironment::AsksToEnd() const noexcept
+{
+    return resized_ || AsksForSettings();
 }
 
 Result<FrameStart, Error> RealEnvironment::Began(const Begun& begun) noexcept
 {
     Followed(begun.input.now);
     Reconsidered(begun.input.now);
-    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(StoppedIfResized(begun, resized_ || restartWanted_)); });
+    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(StoppedIf(begun, AsksToEnd())); });
 }
 
 Result<FrameStart, Error> RealEnvironment::BeginFrame(const interior::FrameState& state) noexcept
@@ -842,7 +879,7 @@ Status<Error> RealEnvironment::Settled(const PanelReading& reading) noexcept
 
 std::optional<interior::CommandLine> RealEnvironment::Restart(const interior::Options& options) const noexcept
 {
-    if (!AsksForANewSession(restartWanted_, panel_))
+    if (!AsksForANewSession(AsksForSettings(), panel_))
         return std::nullopt;
     return RestartCommandLine(*panel_, options);
 }

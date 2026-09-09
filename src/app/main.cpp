@@ -727,6 +727,7 @@ struct Ended
     interior::FrameNumber frames;
     std::optional<interior::CommandLine> again;
     bool resized;
+    bool abandoned; // the one window it was working on was closed, minimised or hidden
 };
 
 [[nodiscard]] Result<Ended, Error> Drive(const Console& console, const Options& options, const SessionPlan& plan, real::RealEnvironment& env) noexcept
@@ -734,7 +735,7 @@ struct Ended
     real::ShowOutputWindow(env.Window());
     return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit")
         .and_then([&] { return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit)); })
-        .transform([&](interior::FrameNumber frames) { return Ended{ frames, env.Restart(options), env.Resized() }; });
+        .transform([&](interior::FrameNumber frames) { return Ended{ .frames = frames, .again = env.Restart(options), .resized = env.Resized(), .abandoned = env.Abandoned() }; });
 }
 
 // One session, from the devices up. Everything it makes goes away when it returns, which is what lets the
@@ -794,9 +795,14 @@ struct Cycle
     Result<Ended, Error> ended;
 };
 
+[[nodiscard]] bool AsksForTheSame(const Ended& ended) noexcept
+{
+    return ended.resized || ended.abandoned;
+}
+
 [[nodiscard]] bool AsksAgain(const Ended& ended) noexcept
 {
-    return ended.again.has_value() || ended.resized;
+    return ended.again.has_value() || AsksForTheSame(ended);
 }
 
 [[nodiscard]] bool Continues(const Cycle& c) noexcept
@@ -811,17 +817,36 @@ struct Cycle
     return was.debugLayer && !now.debugLayer;
 }
 
+// The window a session was following went away, so the next one is not given one: the source that session
+// already carries names the monitor, and that is where the model goes back to.
+[[nodiscard]] Options WithoutWindow(const Options& o) noexcept
+{
+    Options next = o; // WAIVER(R2): a copy with one answer replaced, read once after it.
+    next.window = interior::WindowTitle{};
+    return next;
+}
+
+[[nodiscard]] Options WantedNext(const Cycle& c) noexcept
+{
+    return c.ended->abandoned ? WithoutWindow(c.wanted) : c.wanted;
+}
+
+[[nodiscard]] Cycle Again(const Console& console, const Options& o, PanelHolder& held) noexcept
+{
+    return Cycle{ o, RunOnce(console, o, held) };
+}
+
 [[nodiscard]] Cycle Relaunching(const Cycle& c, const Options& now) noexcept
 {
     const interior::FrameNumber frames = c.ended->frames;
-    return Cycle{ now, Relaunch(*c.ended->again).transform([frames] { return Ended{ frames, std::nullopt, false }; }) };
+    return Cycle{ now, Relaunch(*c.ended->again).transform([frames] { return Ended{ .frames = frames, .again = std::nullopt, .resized = false, .abandoned = false }; }) };
 }
 
 [[nodiscard]] Cycle Continued(const Console& console, const Cycle& c, const Options& now, PanelHolder& held) noexcept
 {
     if (NeedsAFreshProcess(c.wanted, now))
         return Relaunching(c, now);
-    return Cycle{ now, RunOnce(console, now, held) };
+    return Again(console, now, held);
 }
 
 [[nodiscard]] Cycle Asked(const Console& console, const Cycle& c, PanelHolder& held) noexcept
@@ -836,7 +861,7 @@ struct Cycle
 [[nodiscard]] Cycle Next(const Console& console, const Cycle& c, PanelHolder& held) noexcept
 {
     if (!c.ended->again.has_value())
-        return Cycle{ c.wanted, RunOnce(console, c.wanted, held) };
+        return Again(console, WantedNext(c), held);
     return Asked(console, c, held);
 }
 

@@ -37,7 +37,7 @@ The control panel says the same thing at the foot of its window.
 
 ## Working on one window
 
-On the panel's Start-up page, drag the crosshair onto a window to work on that one window instead of a
+On the panel's View page, drag the crosshair onto a window to work on that one window instead of a
 monitor. The title under the pointer is shown beside it as you drag; letting go over the desktop goes back
 to capturing a monitor. From the command line, `--window` takes either part of a window's title, ignoring
 case, or a window handle as `0x...` — which is what the panel writes when it starts a new session.
@@ -50,6 +50,11 @@ Every size downstream is fixed when the session is planned, so a window that cha
 building the session again — once the size has stopped changing and stayed still for a moment, rather than
 once for every step of a drag. Moving a window needs no rebuild at all: the capture follows it, and only
 the overlay is moved.
+
+A window that is closed, minimised or hidden leaves nothing to capture, so the session lets it go rather
+than leaving the overlay sitting over where it used to be. The crosshair goes back to holding nothing and
+the next session takes the monitor the Source setting names, which is the primary one unless it says
+otherwise. Restoring the window does not take it back: drag the crosshair onto it again.
 
 ## The model file
 

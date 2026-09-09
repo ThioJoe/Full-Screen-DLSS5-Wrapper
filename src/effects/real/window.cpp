@@ -476,6 +476,19 @@ std::optional<interior::ScreenRect> BoundsOfWindow(interior::MonitorHandle windo
     return VisibleBoundsOf(reinterpret_cast<HWND>(window.Get())).and_then([](const RECT& bounds) { return infra::AsOptional(RectOf(bounds)); });
 }
 
+// A minimised window keeps its handle and its style but has nothing on screen to capture, and a hidden one
+// is the same; both answer no here, as a window that has been closed does.
+[[nodiscard]] bool IsOnScreen(HWND window) noexcept
+{
+    return ::IsWindowVisible(window) != FALSE && ::IsIconic(window) == FALSE;
+}
+
+bool IsWindowShowing(interior::MonitorHandle window) noexcept
+{
+    HWND handle = reinterpret_cast<HWND>(window.Get());
+    return ::IsWindow(handle) != FALSE && IsOnScreen(handle);
+}
+
 Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept
 {
     return RegisterWindowClass(ClassDescription()).and_then([&] { return CreateHandle(rect, settings); }).and_then([&](UniqueWindow handle) {

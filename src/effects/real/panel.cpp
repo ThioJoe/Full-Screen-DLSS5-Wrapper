@@ -2035,6 +2035,14 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
     return WithPath(paths, L"log-file", o.logFile.Get());
 }
 
+// The window a session was following has gone: the panel lets go of it too, so what it shows is the source
+// the next session is built from, and the crosshair is ready to be dragged onto another window.
+void ReleaseWindow(const ControlPanel& panel) noexcept
+{
+    KeepPicked(panel.crosshairs[static_cast<std::size_t>(Pick::Window)], std::nullopt);
+    ShowPickedName(panel, static_cast<std::size_t>(Pick::Window));
+}
+
 interior::CommandLine SessionShape(const ControlPanel& panel) noexcept
 {
     const Arguments shape = FlowArguments(panel, StartupArguments(panel, Arguments{}));
