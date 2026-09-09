@@ -1461,14 +1461,17 @@ struct Notice
     return std::ranges::all_of(controls, IsPresent);
 }
 
+// The controls that belong to the panel rather than to any one page. Returned by value, so it is only ever
+// looked at within the expression that asks for it: a span kept past that would outlive what it points at.
 [[nodiscard]] std::array<HWND, 4> Furniture(const ControlPanel& panel) noexcept
 {
     return { panel.restart, panel.notice, panel.expander, panel.noticeBody };
 }
 
-[[nodiscard]] std::array<std::span<const HWND>, 10> GroupsOf(const ControlPanel& panel) noexcept
+// Every span here points into the panel itself, which outlives the answer.
+[[nodiscard]] std::array<std::span<const HWND>, 9> GroupsOf(const ControlPanel& panel) noexcept
 {
-    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.textLabels, panel.texts, Furniture(panel) };
+    return { panel.labels, panel.sliders, panel.boxes, panel.spins, panel.resets, panel.toggles, panel.groupLabels, panel.textLabels, panel.texts };
 }
 
 // A switch's reset is there exactly when its spec asks for one, so both a missing and a spare one is a fault.
@@ -1482,9 +1485,14 @@ struct Notice
     return std::ranges::all_of(std::views::iota(std::size_t{ 0 }, kToggleCount), [&panel](std::size_t t) { return ResetAsSpecified(panel, t); });
 }
 
-[[nodiscard]] bool EveryGroupPresent(const ControlPanel& panel) noexcept
+[[nodiscard]] bool EveryRowPresent(const ControlPanel& panel) noexcept
 {
     return std::ranges::all_of(GroupsOf(panel), AllPresent) && IsPresent(panel.tabs);
+}
+
+[[nodiscard]] bool EveryGroupPresent(const ControlPanel& panel) noexcept
+{
+    return EveryRowPresent(panel) && AllPresent(Furniture(panel));
 }
 
 [[nodiscard]] bool IsComplete(const ControlPanel& panel) noexcept
