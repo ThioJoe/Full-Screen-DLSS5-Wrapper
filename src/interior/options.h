@@ -99,6 +99,7 @@ struct Options
     ConsoleMode console;
     bool indicator;
     bool cubinCache;
+    bool showInert; // show the panel page holding the settings that change nothing on a desktop
     [[nodiscard]] friend constexpr bool operator==(const Options&, const Options&) noexcept = default;
 };
 

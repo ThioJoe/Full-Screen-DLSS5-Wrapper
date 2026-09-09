@@ -103,10 +103,10 @@ cmake -S . -B build-linux -G Ninja && cmake --build build-linux && ctest --test-
 Double-clicking the executable opens the control panel and the overlay, with no console window. Every
 command line option except `--help`, `--list-monitors`, `--gui` and the NGX runtime settings has a control
 on the panel, on one of three pages: **Model** for what the model reads, **View** for the window and the
-capture, and **Start-up** for what only a fresh session can change. A number is a slider to sweep it, a box
-to type an exact value and arrows to step it, with a reset beside each; a choice is a row of buttons; a
-path is a box to type in. Every row is measured from the height of the display's own text, so nothing
-crowds or clips whatever the scaling.
+capture, and **Advanced** for the rest. A number is a slider to sweep it, a box to type an exact value and
+arrows to step it, with a reset beside each; a choice is a row of buttons; a path is a box to type in.
+Every row is measured from the height of the display's own text, so nothing crowds or clips whatever the
+scaling, and the window is only as tall as the deepest page it is showing.
 
 Moving anything on the first two pages takes effect at once. Changing the tuning rebuilds the model's
 feature, because the model reads it while the feature is built rather than on each frame, and the frame is
@@ -127,6 +127,20 @@ restarted rather than the session rebuilt.
 
 Closing the panel ends the session. Started from a console, the program attaches to it and logs there;
 `--console on` forces one, `--gui off` leaves the overlay to run alone.
+
+### The settings that do nothing here
+
+The desktop is not a game engine, and five settings have nothing to act on because of it. The **depth
+plane** is one constant value for every pixel, which tells the model nothing about what stands in front of
+what, so its value and **depth is inverted** both make no difference. **UI correction** is passed to the
+model, but the model reads it from a UI layer DlssScreen never binds. **Optical flow grid** and **optical
+flow effort** configure NVIDIA's hardware flow engine, which the shipped build leaves out.
+
+All five are still there, on an **Inert** page that `--show-inert on` adds. Without it they are off the
+panel entirely and the window is shorter for it. The command line options behind them keep working either
+way. Motion vectors are not on that page: they are real, computed by matching blocks between frames, so
+`--mv-scale-x`, `--mv-scale-y`, `--mv-level` and `--reset-threshold` all do something — just nothing
+visible while the picture holds still.
 
 ```
 DlssScreen.exe                       # neural rendering on the primary monitor

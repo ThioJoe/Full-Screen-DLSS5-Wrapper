@@ -58,7 +58,7 @@ constexpr wchar_t kNoticeBody[] =
 constexpr int kNoticeLines = 9;
 constexpr int kExpanderWidth = 28;
 
-constexpr int kMinRowsPerColumn = 9;
+constexpr int kMinRowsPerColumn = 7;
 constexpr int kMaxRowsPerColumn = 16;
 
 // Each slider counts in steps of a unit: 1 counts whole numbers, 100 counts hundredths. A range says how
@@ -91,7 +91,7 @@ constexpr std::array<FieldSpec, kFieldCount> kFields{ {
     { L"Motion vector scale X", L"What the model multiplies the horizontal motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, 10, false },
     { L"Motion vector scale Y", L"What the model multiplies the vertical motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, 10, false },
     { L"Split position", L"Where the divider sits in the split view. Ctrl+Alt+Shift and the mouse drags it on screen.", 0, 100, 100, 10, false },
-    { L"Depth plane", L"The desktop has no depth, so one flat value stands in for all of it. Changing it re-clears the plane.", 0, 100, 100, 10, false },
+    { L"Depth plane", L"The desktop has no depth, so one flat value stands in for all of it. Every pixel carries the same number, so changing it does nothing you can see.", 0, 100, 100, 10, false },
     { L"Reset threshold", L"How much of the picture has to go unmatched before the model's history is thrown away.", 0, 100, 100, 10, false },
     { L"Motion detail level", L"Finest level the matcher works at: 0 full resolution, 1 half, 2 quarter. Lower costs more.", 0, 7, 1, 1, false },
     { L"Super resolution preset", L"Render preset asked of DLSS Super Resolution; 0 leaves the choice to the driver.", 0, 15, 1, 1, false },
@@ -110,8 +110,8 @@ constexpr std::array<ToggleSpec, kToggleCount> kToggles{ {
     { L"Skin follows local structure",
       L"Give skin whatever local structure is given, which is what the model reads -1 as. It is the only value between -1 and 0 that means anything, so it is a switch rather than part of the slider.",
       true },
-    { L"UI correction", L"Ask the model to leave interface pixels alone. It reads a UI layer DlssScreen does not supply, so this is inert as wired.", true },
-    { L"Depth is inverted", L"Tell the model the depth plane counts the other way. With one flat plane it changes little.", true },
+    { L"UI correction", L"Ask the model to leave interface pixels alone. The model reads this from a UI layer DlssScreen never binds, so it does nothing either way.", true },
+    { L"Depth is inverted", L"Tell the model the depth plane counts the other way. The plane is one constant, and a constant read backwards is the same constant, so this does nothing.", true },
     { L"Vsync", L"Present in step with the monitor. Off presents as fast as the pipeline allows, which tears.", true },
     { L"Capture border", L"Let Windows draw its yellow border around what is being captured.", true },
     { L"Always on top", L"Keep the output window above every other window.", true },
@@ -137,8 +137,8 @@ constexpr std::array<GroupSpec, kGroupCount> kGroups{ {
     { L"Style", L"Which of the model's three looks to ask for. The model clamps anything else.", 3, { L"Standard", L"Natural", L"Cinematic" } },
     { L"Cursor", L"Whether the captured picture includes the mouse pointer. Auto keeps the session's own choice.", 3, { L"Auto", L"On", L"Off" } },
     { L"Motion vectors", L"Where the model's motion comes from: matching blocks between frames, the hardware flow engine, or nothing at all.", 3, { L"Block matching", L"Optical flow", L"None" } },
-    { L"Optical flow grid", L"How coarse the hardware flow engine's output is.", 3, { L"1", L"2", L"4" } },
-    { L"Optical flow effort", L"How hard the hardware flow engine works.", 3, { L"Slow", L"Medium", L"Fast" } },
+    { L"Optical flow grid", L"How coarse the hardware flow engine's output is. This build leaves that engine out, so it does nothing.", 3, { L"1", L"2", L"4" } },
+    { L"Optical flow effort", L"How hard the hardware flow engine works. This build leaves that engine out, so it does nothing.", 3, { L"Slow", L"Medium", L"Fast" } },
     { L"Super resolution", L"Whether DLSS Super Resolution runs before the model, and whether it runs at all when the sizes match.", 3, { L"Auto", L"DLAA", L"Off" } },
     { L"Colour format", L"How much precision the model's picture carries.", 2, { L"8 bit", L"16 bit float", nullptr } },
     { L"Log level", L"How much the log says.", 4, { L"Debug", L"Info", L"Warn", L"Error" } },
@@ -210,19 +210,22 @@ struct PageSpec
     std::array<RowSpec, kMaxRows> rows;
 };
 
+// The Inert page holds what a desktop gives the model no way to answer to: the depth plane is one constant,
+// UI correction reads a layer nothing binds, and optical flow drives a backend this build leaves out.
 constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
     { L"Model",
-      15,
+      12,
       { Of(Toggle::NeuralRendering), Of(Group::Style), Of(List::Preset), Of(Field::Intensity), Of(Field::LocalStructure), Of(Field::LocalTone), Of(Toggle::SkinFollowsStructure), Of(Field::Skin),
-        Of(Toggle::AutoMask), Of(Toggle::UiCorrection), Of(Toggle::DepthInverted), Of(Field::DepthValue), Of(Field::ResetThreshold), Of(Field::MvScaleX), Of(Field::MvScaleY) } },
+        Of(Toggle::AutoMask), Of(Field::ResetThreshold), Of(Field::MvScaleX), Of(Field::MvScaleY) } },
     { L"View",
       10,
       { Of(Pick::Window), Of(List::Source), Of(List::Target), Of(Group::Compare), Of(Field::Split), Of(Toggle::Vsync), Of(Group::Cursor), Of(Toggle::CaptureBorder), Of(Toggle::Topmost),
         Of(Group::LogLevel) } },
     { L"Advanced",
-      12,
-      { Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(Group::NvofGrid), Of(Group::NvofPerf), Of(List::Adapter), Of(Toggle::RedirectionBitmap),
-        Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache) } },
+      10,
+      { Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(List::Adapter), Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator),
+        Of(Toggle::CubinCache) } },
+    { L"Inert", 5, { Of(Field::DepthValue), Of(Toggle::DepthInverted), Of(Toggle::UiCorrection), Of(Group::NvofGrid), Of(Group::NvofPerf) } },
 } };
 
 // Every control belongs to exactly one page. One left off would be placed nowhere and stop the program as
@@ -240,6 +243,13 @@ static_assert(RowsOfKind(Kind::Toggle) == kToggleCount);
 static_assert(RowsOfKind(Kind::Group) == kGroupCount);
 static_assert(RowsOfKind(Kind::Pick) == kPickCount);
 static_assert(RowsOfKind(Kind::List) == kListCount);
+
+// The Inert page is there only when it was asked for, so it neither wears a tab nor makes the panel taller.
+// Its rows are still laid out and its controls still built, which is what keeps every control on a page.
+[[nodiscard]] constexpr std::size_t PagesShown(bool showInert) noexcept
+{
+    return showInert ? static_cast<std::size_t>(Page::Count) : static_cast<std::size_t>(Page::Inert);
+}
 
 [[nodiscard]] std::span<const RowSpec> RowsOf(Page page) noexcept
 {
@@ -894,25 +904,32 @@ struct Walk
     return *at;
 }
 
-// How many slots the tallest page needs down one column, which is how tall the panel is made.
-[[nodiscard]] std::size_t SlotsOnPage(Page page, const PanelLists& lists) noexcept
+[[nodiscard]] Cell Past(const Cell& at, std::size_t slots) noexcept
 {
-    const auto add = [&lists](std::size_t so, const RowSpec& row) { return so + SlotsOf(row, lists); };
-    return std::ranges::fold_left(RowsOf(page), std::size_t{ 0 }, add);
+    return Cell{ at.column, at.slot + slots };
 }
 
-[[nodiscard]] std::size_t DeepestPage(const PanelLists& lists) noexcept
+// A row cannot straddle a column, so a page can need more room than its slots alone say. Rather than guess
+// at that from a share of the slots, the layout itself is asked how many columns it takes.
+[[nodiscard]] std::size_t ColumnsNeeded(Page page, const PanelLists& lists, std::size_t rows) noexcept
 {
-    const auto pages = std::views::iota(std::size_t{ 0 }, static_cast<std::size_t>(Page::Count));
-    const auto deeper = [&lists](std::size_t so, std::size_t page) { return std::max(so, SlotsOnPage(static_cast<Page>(page), lists)); };
-    return std::ranges::fold_left(pages, std::size_t{ 0 }, deeper);
+    const auto step = [&lists, rows](const Cell& at, const RowSpec& row) { return Past(Fitted(at, SlotsOf(row, lists), rows), SlotsOf(row, lists)); };
+    return std::ranges::fold_left(RowsOf(page), Cell{ 0, 0 }, step).column + 1;
 }
 
-// A row cannot straddle a column, so a column has to be a little taller than an even share of the slots.
-[[nodiscard]] int RowsPerColumn(const PanelLists& lists) noexcept
+[[nodiscard]] bool FitsAt(const PanelLists& lists, bool showInert, std::size_t rows) noexcept
 {
-    const std::size_t share = (DeepestPage(lists) + kColumns) / static_cast<std::size_t>(kColumns);
-    return std::clamp(static_cast<int>(share), kMinRowsPerColumn, kMaxRowsPerColumn);
+    const auto pages = std::views::iota(std::size_t{ 0 }, PagesShown(showInert));
+    return std::ranges::all_of(pages, [&lists, rows](std::size_t page) { return ColumnsNeeded(static_cast<Page>(page), lists, rows) <= static_cast<std::size_t>(kColumns); });
+}
+
+// The shortest column every page shown fits two of. The panel is as tall as that and no taller, so pages
+// left out cost nothing and a page losing rows makes the window shorter.
+[[nodiscard]] int RowsPerColumn(const PanelLists& lists, bool showInert) noexcept
+{
+    const auto depths = std::views::iota(kMinRowsPerColumn, kMaxRowsPerColumn + 1);
+    const auto found = std::ranges::find_if(depths, [&lists, showInert](int rows) { return FitsAt(lists, showInert, static_cast<std::size_t>(rows)); });
+    return found == depths.end() ? kMaxRowsPerColumn : *found;
 }
 
 [[nodiscard]] Built BuildFields(HWND parent, const Metrics& m, const std::array<float, kFieldCount>& values, Built built) noexcept
@@ -1217,9 +1234,9 @@ void AddTab(HWND tabs, std::size_t index, const wchar_t* title) noexcept
     (void)::SendMessageW(tabs, TCM_INSERTITEMW, index, reinterpret_cast<LPARAM>(&item));
 }
 
-void AddTabs(HWND tabs) noexcept
+void AddTabs(HWND tabs, bool showInert) noexcept
 {
-    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, static_cast<std::size_t>(Page::Count)), [tabs](std::size_t i) { AddTab(tabs, i, kPages[i].title); });
+    std::ranges::for_each(std::views::iota(std::size_t{ 0 }, PagesShown(showInert)), [tabs](std::size_t i) { AddTab(tabs, i, kPages[i].title); });
 }
 
 [[nodiscard]] Page ChosenPage(const ControlPanel& panel) noexcept
@@ -1713,8 +1730,9 @@ using Piece = infra::BoundedString<char, kPieceCapacity>;
 [[nodiscard]] Arguments RuntimeArguments(const interior::Options& o, const Arguments& so) noexcept
 {
     constexpr std::array<const char*, 3> ngxLog{ "0", "1", "2" };
-    const std::array<Piece, 3> pieces{ Trimmed(infra::Formatted<kPieceCapacity>("--ngx-log={}", ngxLog[static_cast<std::size_t>(o.ngxLogLevel)]).Get()),
-                                       Trimmed(infra::Formatted<kPieceCapacity>("--ngx-project-id={}", o.ngxProjectId.Get()).Get()), AppIdPiece(o.ngxAppId) };
+    const std::array<Piece, 4> pieces{ Trimmed(infra::Formatted<kPieceCapacity>("--ngx-log={}", ngxLog[static_cast<std::size_t>(o.ngxLogLevel)]).Get()),
+                                       Trimmed(infra::Formatted<kPieceCapacity>("--ngx-project-id={}", o.ngxProjectId.Get()).Get()), AppIdPiece(o.ngxAppId),
+                                       Trimmed(infra::Formatted<kPieceCapacity>("--show-inert={}", Word(o.showInert)).Get()) };
     return JoinedAll(so, pieces);
 }
 
@@ -1739,9 +1757,9 @@ constexpr DWORD kPanelStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIM
     return UniqueWindow(window);
 }
 
-[[nodiscard]] Metrics MetricsOf(HWND window, HFONT font, const PanelLists& lists) noexcept
+[[nodiscard]] Metrics MetricsOf(HWND window, HFONT font, const PanelLists& lists, bool showInert) noexcept
 {
-    return Metrics{ static_cast<int>(::GetDpiForWindow(window)), LineHeight(window, font), RowsPerColumn(lists), &lists };
+    return Metrics{ static_cast<int>(::GetDpiForWindow(window)), LineHeight(window, font), RowsPerColumn(lists, showInert), &lists };
 }
 
 // What the window measures on the outside for a page of a given height on the inside.
@@ -1821,6 +1839,7 @@ struct Notice
                          o.displayAffinity,
                          o.clickThrough,
                          findings.superResolution,
+                         o.showInert,
                          notice.line,
                          notice.expander,
                          notice.body,
@@ -1947,7 +1966,7 @@ void DressPanel(const ControlPanel& panel) noexcept
             return TRUE;
         },
         reinterpret_cast<LPARAM>(font));
-    AddTabs(panel.tabs);
+    AddTabs(panel.tabs, panel.showInert);
     IconiseResets(panel);
     HintRows(panel);
 }
@@ -1970,7 +1989,7 @@ void DressPanel(const ControlPanel& panel) noexcept
                                                     const PanelFindings& findings) noexcept
 {
     UniqueFont font = MessageFont(static_cast<int>(::GetDpiForWindow(window.get())));
-    const Metrics m = MetricsOf(window.get(), font.get(), findings.lists);
+    const Metrics m = MetricsOf(window.get(), font.get(), findings.lists, o.showInert);
     ResizeToFit(window.get(), m);
     return Shown(Assembled(std::move(window), std::move(font), m, o, live, display, findings));
 }

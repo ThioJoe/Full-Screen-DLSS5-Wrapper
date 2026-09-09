@@ -14,9 +14,9 @@ struct FontDeleter
 };
 using UniqueFont = std::unique_ptr<std::remove_pointer_t<HFONT>, FontDeleter>;
 
-// The panel's pages. Everything on all three applies itself: the model's own tuning, what is captured and
-// where it is shown, and the choices further down that are worth having but rarely worth changing.
-enum class Page : std::size_t { Model, View, Advanced, Count };
+// The panel's pages: the model's own tuning, what is captured and where it is shown, and the choices worth
+// having but rarely worth changing. Inert holds what changes nothing on a desktop; --show-inert asks for it.
+enum class Page : std::size_t { Model, View, Advanced, Inert, Count };
 
 // A number the operator sets: a slider to sweep it, a box to type it, arrows to step it.
 enum class Field : std::size_t { Intensity, LocalStructure, LocalTone, Skin, MvScaleX, MvScaleY, Split, DepthValue, ResetThreshold, MvLevel, SrPreset, Count };
@@ -109,6 +109,7 @@ struct ControlPanel
     bool displayAffinity;
     bool clickThrough;
     bool superResolution;
+    bool showInert;  // whether the Inert page has a tab, which is what decides how tall the panel is
     HWND notice;     // the one line that is always there
     HWND expander;   // holds its own state, which is the panel's record of whether the notice is open
     HWND noticeBody; // the rest of it, shown only when the operator opens it

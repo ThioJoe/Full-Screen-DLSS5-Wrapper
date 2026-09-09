@@ -120,6 +120,14 @@ constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all",  
     return parsed.has_value() && parsed->depthInverted == wanted;
 }
 
+[[nodiscard]] bool ShowInertRoundTrips(infra::RngState& rng) noexcept
+{
+    const bool wanted = proptest::DrawBool(rng);
+    const std::array<std::wstring_view, 1> args{ wanted ? L"--show-inert=on" : L"--show-inert=off" };
+    const auto parsed = ParseOptions(args);
+    return parsed.has_value() && parsed->showInert == wanted;
+}
+
 [[nodiscard]] bool TargetWithAllIsRejected(infra::RngState&) noexcept
 {
     const std::array<std::wstring_view, 3> args{ L"--monitor=all", L"--target", L"0" };
@@ -195,7 +203,7 @@ constexpr std::array<std::pair<std::wstring_view, bool>, 8> kSpellings{
 [[nodiscard]] bool DefaultWindowMatchesTheDocumentation(const Options& d) noexcept
 {
     return d.displayAffinity && d.topmost && d.clickThrough && !d.redirectionBitmap && !d.debugLayer && !d.adapter.has_value() && d.logLevel == LogLevel::Info && d.logFile.IsEmpty() && !d.showHelp &&
-           !d.listMonitors;
+           !d.listMonitors && !d.showInert;
 }
 
 [[nodiscard]] bool DefaultsMatchTheDocumentation(infra::RngState&) noexcept
@@ -232,6 +240,7 @@ std::uint32_t OptionsSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("--mv-scale-x accepts every finite value", seed, 300, MotionScaleAcceptsEveryFiniteValue));
     failures += Failures(proptest::ForAll("a motion scale not asked for stays absent", seed, 1, MotionScaleIsAbsentUnlessAsked));
     failures += Failures(proptest::ForAll("--depth-inverted round-trips", seed, 20, DepthInversionRoundTrips));
+    failures += Failures(proptest::ForAll("--show-inert round-trips", seed, 20, ShowInertRoundTrips));
     failures += Failures(proptest::ForAll("--target with --monitor all is rejected", seed, 1, TargetWithAllIsRejected));
     failures += Failures(proptest::ForAll("last occurrence wins", seed, 20, LastOccurrenceWins));
     failures += Failures(proptest::ForAll("missing value is reported", seed, 1, MissingValueIsReported));
