@@ -138,7 +138,6 @@ constexpr std::array<GroupSpec, kGroupCount> kGroups{ {
     { L"Super resolution", L"Whether DLSS Super Resolution runs before the model, and whether it runs at all when the sizes match.", 3, { L"Auto", L"DLAA", L"Off" } },
     { L"Colour format", L"How much precision the model's picture carries.", 2, { L"8 bit", L"16 bit float", nullptr } },
     { L"Log level", L"How much the log says.", 4, { L"Debug", L"Info", L"Warn", L"Error" } },
-    { L"Console", L"Whether to use the console the program was launched from, make one, or go without.", 3, { L"Auto", L"On", L"Off" } },
 } };
 
 struct TextSpec
@@ -213,9 +212,9 @@ constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
         Of(Toggle::AutoMask), Of(Toggle::UiCorrection), Of(Toggle::DepthInverted), Of(Field::DepthValue), Of(Field::ResetThreshold), Of(Field::MvScaleX), Of(Field::MvScaleY) } },
     { L"View", 7, { Of(Group::Compare), Of(Field::Split), Of(Toggle::Vsync), Of(Group::Cursor), Of(Toggle::CaptureBorder), Of(Toggle::Topmost), Of(Group::LogLevel) } },
     { L"Start-up",
-      17,
+      16,
       { Of(List::Source), Of(List::Target), Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(Group::NvofGrid), Of(Group::NvofPerf), Of(List::Adapter),
-        Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache), Of(Group::Console), Of(Text::Window), Of(Text::LogFile) } },
+        Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache), Of(Text::Window), Of(Text::LogFile) } },
 } };
 
 // Every control belongs to exactly one page. One left off would be placed nowhere and stop the program as
@@ -538,6 +537,8 @@ void SetChecked(HWND check, bool checked) noexcept
     (void)::SendMessageW(check, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
 }
 
+// A plain button reads as pushed only while it is actually held down, which suits a reset the operator
+// leans on and does not suit anything answered by a single click: between two reads the click is gone.
 [[nodiscard]] bool IsPushed(HWND button) noexcept
 {
     return (::SendMessageW(button, BM_GETSTATE, 0, 0) & BST_PUSHED) != 0;
@@ -629,8 +630,8 @@ void ChooseOnly(std::span<const HWND> group, std::size_t index) noexcept
 
 [[nodiscard]] std::array<std::size_t, kGroupCount> StartingChoices(const interior::Options& o, interior::DisplayMode display) noexcept
 {
-    return { static_cast<std::size_t>(display),    interior::StyleCode(o.tuning.style), static_cast<std::size_t>(o.cursor), static_cast<std::size_t>(o.motion),   CodeOfGrid(o.nvofGrid),
-             static_cast<std::size_t>(o.nvofPerf), static_cast<std::size_t>(o.sr),      static_cast<std::size_t>(o.format), static_cast<std::size_t>(o.logLevel), static_cast<std::size_t>(o.console) };
+    return { static_cast<std::size_t>(display),    interior::StyleCode(o.tuning.style), static_cast<std::size_t>(o.cursor), static_cast<std::size_t>(o.motion),  CodeOfGrid(o.nvofGrid),
+             static_cast<std::size_t>(o.nvofPerf), static_cast<std::size_t>(o.sr),      static_cast<std::size_t>(o.format), static_cast<std::size_t>(o.logLevel) };
 }
 
 // --- building the controls -----------------------------------------------------------------------------
@@ -1290,11 +1291,10 @@ using Piece = infra::BoundedString<char, kPieceCapacity>;
 {
     constexpr std::array<const char*, 3> grids{ "1", "2", "4" };
     constexpr std::array<const char*, 3> effort{ "slow", "medium", "fast" };
-    constexpr std::array<const char*, 3> console{ "auto", "on", "off" };
-    const std::array<Piece, 7> pieces{ Choice(panel, Group::NvofGrid, "nvof-grid", grids), Choice(panel, Group::NvofPerf, "nvof-perf", effort),
-                                       Choice(panel, Group::Console, "console", console),  Switch(panel, Toggle::RedirectionBitmap, "redirection-bitmap"),
-                                       Switch(panel, Toggle::DebugLayer, "debug-layer"),   Switch(panel, Toggle::Indicator, "indicator"),
-                                       Switch(panel, Toggle::CubinCache, "cubin-cache") };
+    const std::array<Piece, 6> pieces{
+        Choice(panel, Group::NvofGrid, "nvof-grid", grids), Choice(panel, Group::NvofPerf, "nvof-perf", effort), Switch(panel, Toggle::RedirectionBitmap, "redirection-bitmap"),
+        Switch(panel, Toggle::DebugLayer, "debug-layer"),   Switch(panel, Toggle::Indicator, "indicator"),       Switch(panel, Toggle::CubinCache, "cubin-cache")
+    };
     return JoinedAll(so, pieces);
 }
 
@@ -1440,7 +1440,7 @@ struct Notice
                          BoldFont(m.dpi),
                          tabs,
                          tabs == nullptr ? nullptr : CreateTooltip(parent),
-                         CreateButton(parent, m, L"Start a new session with these", 0, kMargin, m.ButtonTop(), kColumnWidth),
+                         CreateButton(parent, m, L"Start a new session with these", BS_AUTOCHECKBOX | BS_PUSHLIKE, kMargin, m.ButtonTop(), kColumnWidth),
                          built.labels,
                          built.sliders,
                          built.boxes,
@@ -1634,7 +1634,7 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
 {
     Arrange(panel);
     const interior::Fraction split = interior::FractionTag::Parse(SettledValue(panel, Field::Split)).value_or(*kCentre);
-    return PanelReading{ LiveOf(panel, current), SurfaceOf(panel), DisplayFrom(ChosenIn(panel, Group::Compare, 0)), split, IsPushed(panel.restart) };
+    return PanelReading{ LiveOf(panel, current), SurfaceOf(panel), DisplayFrom(ChosenIn(panel, Group::Compare, 0)), split, IsChecked(panel.restart) };
 }
 
 // A line too long for the buffer leaves the old one standing, so no session starts from half a path.

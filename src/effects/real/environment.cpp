@@ -559,10 +559,27 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
     return reading->live;
 }
 
+[[nodiscard]] bool AsksForANewSession(const std::optional<PanelReading>& reading) noexcept
+{
+    return reading.has_value() && reading->restartWanted;
+}
+
+// Asking for a new session ends this one, which is what starts the new one: the command line the panel
+// describes is read and launched once the loop has stopped and the device is idle.
+[[nodiscard]] bool LeftThePanel(const Prepared& p) noexcept
+{
+    return p.panelClosed || AsksForANewSession(p.reading);
+}
+
+[[nodiscard]] bool AsksToStop(const WindowEvents& events, const Prepared& p) noexcept
+{
+    return events.quit || LeftThePanel(p);
+}
+
 [[nodiscard]] interior::FrameInput InputOf(const WindowEvents& events, const Prepared& p) noexcept
 {
     return interior::FrameInput{
-        p.fresh, p.backBuffer, p.unmatched, p.now, events.toggleOriginal, events.toggleSplit, SplitFrom(p), DisplayFrom(p.reading), ControlsFrom(p.reading), events.quit || p.panelClosed
+        p.fresh, p.backBuffer, p.unmatched, p.now, events.toggleOriginal, events.toggleSplit, SplitFrom(p), DisplayFrom(p.reading), ControlsFrom(p.reading), AsksToStop(events, p)
     };
 }
 

@@ -38,7 +38,7 @@ enum class Toggle : std::size_t {
 };
 
 // A choice among a few named alternatives.
-enum class Group : std::size_t { Compare, Style, Cursor, Motion, NvofGrid, NvofPerf, Sr, Format, LogLevel, Console, Count };
+enum class Group : std::size_t { Compare, Style, Cursor, Motion, NvofGrid, NvofPerf, Sr, Format, LogLevel, Count };
 
 // A set of named alternatives only known once the machine has been looked at: the monitors attached, the
 // adapters the system has, the presets the model carries. An empty list has no row at all.
