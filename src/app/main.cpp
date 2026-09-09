@@ -720,11 +720,13 @@ struct PanelHolder
     });
 }
 
-// What one session leaves behind: how far it got, and the settings the operator asked the next one for.
+// What one session leaves behind: how far it got, the settings the operator asked the next one for, and
+// whether the window it was working on changed size, which asks for the same settings over again.
 struct Ended
 {
     interior::FrameNumber frames;
     std::optional<interior::CommandLine> again;
+    bool resized;
 };
 
 [[nodiscard]] Result<Ended, Error> Drive(const Console& console, const Options& options, const SessionPlan& plan, real::RealEnvironment& env) noexcept
@@ -732,7 +734,7 @@ struct Ended
     real::ShowOutputWindow(env.Window());
     return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit")
         .and_then([&] { return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit)); })
-        .transform([&](interior::FrameNumber frames) { return Ended{ frames, env.Restart(options) }; });
+        .transform([&](interior::FrameNumber frames) { return Ended{ frames, env.Restart(options), env.Resized() }; });
 }
 
 // One session, from the devices up. Everything it makes goes away when it returns, which is what lets the
@@ -792,9 +794,14 @@ struct Cycle
     Result<Ended, Error> ended;
 };
 
+[[nodiscard]] bool AsksAgain(const Ended& ended) noexcept
+{
+    return ended.again.has_value() || ended.resized;
+}
+
 [[nodiscard]] bool Continues(const Cycle& c) noexcept
 {
-    return c.ended.has_value() && c.ended->again.has_value();
+    return c.ended.has_value() && AsksAgain(*c.ended);
 }
 
 // The debug layer is the one setting a session cannot take back: Direct3D turns it on for the process and
@@ -813,7 +820,7 @@ void AcknowledgeIfHeld(const PanelHolder& held) noexcept
 [[nodiscard]] Cycle Relaunching(const Cycle& c, const Options& now) noexcept
 {
     const interior::FrameNumber frames = c.ended->frames;
-    return Cycle{ now, Relaunch(*c.ended->again).transform([frames] { return Ended{ frames, std::nullopt }; }) };
+    return Cycle{ now, Relaunch(*c.ended->again).transform([frames] { return Ended{ frames, std::nullopt, false }; }) };
 }
 
 [[nodiscard]] Cycle Continued(const Console& console, const Cycle& c, const Options& now, PanelHolder& held) noexcept
@@ -824,12 +831,20 @@ void AcknowledgeIfHeld(const PanelHolder& held) noexcept
     return Cycle{ now, RunOnce(console, now, held) };
 }
 
-[[nodiscard]] Cycle Next(const Console& console, const Cycle& c, PanelHolder& held) noexcept
+[[nodiscard]] Cycle Asked(const Console& console, const Cycle& c, PanelHolder& held) noexcept
 {
     const Result<Options, Error> now = Reread(*c.ended->again);
     if (!now.has_value())
         return Cycle{ c.wanted, Fail(now.error()) };
     return Continued(console, c, *now, held);
+}
+
+// A window that changed size asks for the settings it already had: the same window, measured again.
+[[nodiscard]] Cycle Next(const Console& console, const Cycle& c, PanelHolder& held) noexcept
+{
+    if (!c.ended->again.has_value())
+        return Cycle{ c.wanted, RunOnce(console, c.wanted, held) };
+    return Asked(console, c, held);
 }
 
 // A loop rather than one session calling the next, so asking for a hundred of them costs a hundred

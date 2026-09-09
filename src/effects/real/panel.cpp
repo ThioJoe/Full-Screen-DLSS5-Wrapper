@@ -314,6 +314,65 @@ struct Cell
     return 0;
 }
 
+// Dragging the panel by its title bar is done here rather than left to Windows, whose way of doing it owns
+// the thread until the button comes up. That thread draws the picture, which stopped dead for every drag.
+[[nodiscard]] POINT CursorNow() noexcept
+{
+    POINT cursor{ 0, 0 }; // WAIVER(R2): the answer of one query, read once after it.
+    (void)::GetCursorPos(&cursor);
+    return cursor;
+}
+
+// Where the window's corner sits relative to the pointer, packed into the window's own data: two halves of
+// one number, so the drag needs nowhere else to keep anything.
+void HoldGrip(HWND window, LONG x, LONG y) noexcept
+{
+    const std::uint64_t packed = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(x)) << 32) | static_cast<std::uint32_t>(y);
+    (void)::SetWindowLongPtrW(window, GWLP_USERDATA, static_cast<LONG_PTR>(packed));
+}
+
+[[nodiscard]] POINT Grip(HWND window) noexcept
+{
+    const std::uint64_t packed = static_cast<std::uint64_t>(::GetWindowLongPtrW(window, GWLP_USERDATA));
+    return POINT{ static_cast<LONG>(static_cast<std::int32_t>(packed >> 32)), static_cast<LONG>(static_cast<std::int32_t>(packed & 0xFFFFFFFFu)) };
+}
+
+[[nodiscard]] LRESULT Captured(HWND window) noexcept
+{
+    (void)::SetCapture(window);
+    return 0;
+}
+
+[[nodiscard]] LRESULT GrabbedCaption(HWND window) noexcept
+{
+    RECT frame{ 0, 0, 0, 0 }; // WAIVER(R2): the answer of one query, read once after it.
+    ENSURE(::GetWindowRect(window, &frame) != FALSE);
+    const POINT cursor = CursorNow();
+    HoldGrip(window, frame.left - cursor.x, frame.top - cursor.y);
+    return Captured(window);
+}
+
+[[nodiscard]] LRESULT DraggedTo(HWND window) noexcept
+{
+    if (::GetCapture() != window)
+        return 0;
+    const POINT cursor = CursorNow();
+    const POINT grip = Grip(window);
+    (void)::SetWindowPos(window, nullptr, cursor.x + grip.x, cursor.y + grip.y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    return 0;
+}
+
+[[nodiscard]] LRESULT Released() noexcept
+{
+    (void)::ReleaseCapture();
+    return 0;
+}
+
+[[nodiscard]] bool GrabsCaption(UINT message, WPARAM w) noexcept
+{
+    return message == WM_NCLBUTTONDOWN && w == HTCAPTION;
+}
+
 [[nodiscard]] LRESULT Notified(LPARAM l) noexcept;
 
 [[nodiscard]] LRESULT NotifiedOrDefault(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
@@ -323,12 +382,33 @@ struct Cell
     return ::DefWindowProcW(window, message, w, l);
 }
 
-// WAIVER(R17): the window procedure is called by the OS, which discards nothing and ignores attributes.
-LRESULT CALLBACK PanelProc(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+[[nodiscard]] LRESULT LetGoOrDefault(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message == WM_LBUTTONUP)
+        return Released();
+    return NotifiedOrDefault(window, message, w, l);
+}
+
+[[nodiscard]] LRESULT MovedOrDefault(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message == WM_MOUSEMOVE)
+        return DraggedTo(window);
+    return LetGoOrDefault(window, message, w, l);
+}
+
+[[nodiscard]] LRESULT ClosedOrMoved(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
 {
     if (message == WM_CLOSE)
         return Closed(window);
-    return NotifiedOrDefault(window, message, w, l);
+    return MovedOrDefault(window, message, w, l);
+}
+
+// WAIVER(R17): the window procedure is called by the OS, which discards nothing and ignores attributes.
+LRESULT CALLBACK PanelProc(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (GrabsCaption(message, w))
+        return GrabbedCaption(window);
+    return ClosedOrMoved(window, message, w, l);
 }
 
 [[nodiscard]] WNDCLASSEXW ClassDescription() noexcept
@@ -1403,8 +1483,14 @@ void ApplyPicks(const ControlPanel& panel) noexcept
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, kPickCount), [&panel](std::size_t p) { ShowPickedName(panel, p); });
 }
 
+[[nodiscard]] bool ShowsASplit(const ControlPanel& panel) noexcept
+{
+    return DisplayFrom(ChosenIn(panel, Group::Compare, 0)) == interior::DisplayMode::Split;
+}
+
 void ApplyEnables(const ControlPanel& panel) noexcept
 {
+    EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::Split)), ShowsASplit(panel));
     EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::Skin)), !IsOn(panel, Toggle::SkinFollowsStructure));
     EnableAll(ChoicesOf(panel, Group::Sr), panel.superResolution);
     EnableAll(ControlsOfField(panel, static_cast<std::size_t>(Field::SrPreset)), panel.superResolution);

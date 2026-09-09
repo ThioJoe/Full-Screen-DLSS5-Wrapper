@@ -46,8 +46,10 @@ This uses Windows Graphics Capture's own per-window item, so the model sees that
 nothing else — not what is stacked in front of it — and the capture follows the window as it moves. It
 still opens nothing belonging to the other process. The overlay follows the window each frame.
 
-The sizes of everything downstream are fixed when the session starts, so resizing the window is not
-followed: the capture is cropped to the size that was planned for until a new session is started.
+Every size downstream is fixed when the session is planned, so a window that changes size is followed by
+building the session again — once the size has stopped changing and stayed still for a moment, rather than
+once for every step of a drag. Moving a window needs no rebuild at all: the capture follows it, and only
+the overlay is moved.
 
 ## The model file
 

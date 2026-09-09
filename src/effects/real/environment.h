@@ -56,6 +56,8 @@ public:
     [[nodiscard]] interior::FenceValue LastFence() const noexcept { return frame_.fence; }
     // The session the operator asked the panel for, or nothing when they simply left.
     [[nodiscard]] std::optional<interior::CommandLine> Restart(const interior::Options& options) const noexcept;
+    // Whether the window being worked on changed size, which the sizes of a built session cannot follow.
+    [[nodiscard]] bool Resized() const noexcept { return resized_; }
 
 private:
     [[nodiscard]] infra::Result<FrameStart, Error> Accept(const Begun& begun) noexcept;
@@ -67,7 +69,14 @@ private:
     [[nodiscard]] infra::Status<Error> Recleared(interior::DepthValue depth) noexcept;
     // Keeps the overlay over the window the session is working on. The capture follows the window itself,
     // so only where the answer is shown has to be put right.
-    void Followed() noexcept;
+    void Followed(interior::Instant now) noexcept;
+    void Moved(const interior::ScreenRect& bounds, interior::Instant now) noexcept;
+    void FollowedTo(const std::optional<interior::ScreenRect>& bounds, interior::Instant now) noexcept;
+    void Settling(const interior::Extent& size, interior::Instant now) noexcept;
+    void Noticed(const interior::Extent& size, interior::Instant now) noexcept;
+    [[nodiscard]] bool HasSettled(interior::Instant now) const noexcept;
+    [[nodiscard]] bool AsksForARebuild(const interior::Extent& size, interior::Instant now) const noexcept;
+    void Held(const interior::Extent& size, interior::Instant now) noexcept;
 
     Gpu gpu_;
     interior::SessionPlan plan_;
@@ -80,6 +89,9 @@ private:
     EnvironmentSettings applied_;       // WAIVER(R2): what the window and the capture were last told, replaced whole on a change.
     interior::DepthValue clearedDepth_; // WAIVER(R2): the value the depth plane was last cleared to.
     bool restartWanted_;                // WAIVER(R2): set once, when the operator asks the panel for a new session.
+    bool resized_;                      // WAIVER(R2): set once, when the window being followed has settled at another size.
+    interior::Extent pending_;          // WAIVER(R2): the size the window was last seen at, replaced whole as it changes.
+    interior::Instant since_;           // WAIVER(R2): when it was first seen at that size.
 };
 
 [[nodiscard]] infra::Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const interior::SessionPlan& plan, const interior::Geometry& geometry,

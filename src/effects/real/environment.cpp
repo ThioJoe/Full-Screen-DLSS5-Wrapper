@@ -643,29 +643,87 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
 RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, const ControlPanel* panel, const Console& console, const EnvironmentSettings& settings,
                                  std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
     : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(panel), console_(console), finestPixels_(finestPixels),
-      frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false)
+      frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false), resized_(false),
+      pending_(plan.source), since_(start)
 {
 }
 
-void MoveIfFound(const OutputWindow& window, const std::optional<interior::ScreenRect>& bounds) noexcept
+// A window dragged by its corner changes size many times a second, and none of those is a session worth
+// building. The session is built again once the size has stopped changing and stayed still for a moment.
+constexpr std::uint64_t kSettleMicroseconds = 300000;
+
+[[nodiscard]] interior::Extent SizeOf(const interior::ScreenRect& bounds, const interior::Extent& absent) noexcept
+{
+    return interior::ExtentOf(bounds).value_or(absent);
+}
+
+bool RealEnvironment::HasSettled(interior::Instant now) const noexcept
+{
+    return now.Get() - since_.Get() >= kSettleMicroseconds;
+}
+
+void RealEnvironment::Noticed(const interior::Extent& size, interior::Instant now) noexcept
+{
+    pending_ = size; // WAIVER(R2): the size last seen, replaced whole.
+    since_ = now;    // WAIVER(R2): when it was first seen, replaced whole with it.
+}
+
+[[nodiscard]] bool RealEnvironment::AsksForARebuild(const interior::Extent& size, interior::Instant now) const noexcept
+{
+    return size != plan_.source && HasSettled(now);
+}
+
+void RealEnvironment::Held(const interior::Extent& size, interior::Instant now) noexcept
+{
+    if (AsksForARebuild(size, now))
+        resized_ = true; // WAIVER(R2): set once, and never unset.
+}
+
+void RealEnvironment::Settling(const interior::Extent& size, interior::Instant now) noexcept
+{
+    if (size != pending_)
+        Noticed(size, now);
+    else
+        Held(size, now);
+}
+
+// A window that only moves needs the overlay moved and nothing else, because the capture follows it. Every
+// size below this was settled when the session was planned, so a resize asks for the session to be rebuilt.
+void RealEnvironment::Moved(const interior::ScreenRect& bounds, interior::Instant now) noexcept
+{
+    MoveOutputWindow(window_, bounds);
+    Settling(SizeOf(bounds, plan_.source), now);
+}
+
+void RealEnvironment::FollowedTo(const std::optional<interior::ScreenRect>& bounds, interior::Instant now) noexcept
 {
     if (bounds.has_value())
-        MoveOutputWindow(window, *bounds);
+        Moved(*bounds, now);
 }
 
-// The capture of a window follows the window itself, so only the overlay showing the answer has to move.
-// A resized window is no longer the size the session was planned for, and is cropped to it until restarted.
-void RealEnvironment::Followed() noexcept
+void RealEnvironment::Followed(interior::Instant now) noexcept
 {
     if (!applied_.followed.has_value())
         return;
-    MoveIfFound(window_, BoundsOfWindow(*applied_.followed));
+    FollowedTo(BoundsOfWindow(*applied_.followed), now);
+}
+
+[[nodiscard]] Begun Stopping(const Begun& begun) noexcept
+{
+    interior::FrameInput input = begun.input; // WAIVER(R2): a copy with one answer replaced, read once after.
+    input.quit = true;
+    return Begun{ begun.frame, input, begun.reading };
+}
+
+[[nodiscard]] Begun StoppedIfResized(const Begun& begun, bool resized) noexcept
+{
+    return resized ? Stopping(begun) : begun;
 }
 
 Result<FrameStart, Error> RealEnvironment::Began(const Begun& begun) noexcept
 {
-    Followed();
-    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(begun); });
+    Followed(begun.input.now);
+    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(StoppedIfResized(begun, resized_)); });
 }
 
 Result<FrameStart, Error> RealEnvironment::BeginFrame(const interior::FrameState& state) noexcept
