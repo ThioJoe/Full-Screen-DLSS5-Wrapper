@@ -669,7 +669,7 @@ using Caption = real::ChoiceText;
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan, const real::ControlPanel* panel) noexcept
 {
     return CreatedWindow(console, b).and_then([&](real::OutputWindow window) {
-        return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), panel, SettingsOf(b, plan), console);
+        return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), panel, SettingsOf(b, plan), b.options, console);
     });
 }
 
@@ -811,12 +811,6 @@ struct Cycle
     return was.debugLayer && !now.debugLayer;
 }
 
-void AcknowledgeIfHeld(const PanelHolder& held) noexcept
-{
-    if (held.panel.has_value())
-        real::AcknowledgeRestart(*held.panel);
-}
-
 [[nodiscard]] Cycle Relaunching(const Cycle& c, const Options& now) noexcept
 {
     const interior::FrameNumber frames = c.ended->frames;
@@ -827,7 +821,6 @@ void AcknowledgeIfHeld(const PanelHolder& held) noexcept
 {
     if (NeedsAFreshProcess(c.wanted, now))
         return Relaunching(c, now);
-    AcknowledgeIfHeld(held);
     return Cycle{ now, RunOnce(console, now, held) };
 }
 

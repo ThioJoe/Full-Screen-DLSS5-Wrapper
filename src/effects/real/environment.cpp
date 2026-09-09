@@ -432,10 +432,10 @@ struct Ready
 }
 
 [[nodiscard]] Result<RealEnvironment, Error> Assembled(Ready r, const SessionPlan& plan, OutputWindow window, const ControlPanel* panel, const Console& console, const EnvironmentSettings& settings,
-                                                       const interior::LevelExtents& extents) noexcept
+                                                       const interior::Options& options, const interior::LevelExtents& extents) noexcept
 {
     return FinestPixels(plan, extents).and_then([&](std::uint32_t finest) {
-        return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), panel, console, settings, finest, r.fence, start); });
+        return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), panel, console, settings, options, finest, r.fence, start); });
     });
 }
 
@@ -558,21 +558,11 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
     return reading->live;
 }
 
-[[nodiscard]] bool AsksForANewSession(const std::optional<PanelReading>& reading) noexcept
-{
-    return reading.has_value() && reading->restartWanted;
-}
-
 // Asking for a new session ends this one, which is what starts the new one: the command line the panel
 // describes is read and launched once the loop has stopped and the device is idle.
-[[nodiscard]] bool LeftThePanel(const Prepared& p) noexcept
-{
-    return p.panelClosed || AsksForANewSession(p.reading);
-}
-
 [[nodiscard]] bool AsksToStop(const WindowEvents& events, const Prepared& p) noexcept
 {
-    return events.quit || LeftThePanel(p);
+    return events.quit || p.panelClosed;
 }
 
 [[nodiscard]] interior::FrameInput InputOf(const WindowEvents& events, const Prepared& p) noexcept
@@ -638,13 +628,18 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
     return LogThroughput(console, s, input.now).transform([&] { return Counted(Restarted(input.now), input.freshCapture); });
 }
 
+[[nodiscard]] interior::CommandLine ShapeOf(const ControlPanel* panel) noexcept
+{
+    return panel == nullptr ? interior::CommandLine{} : SessionShape(*panel);
+}
+
 } // namespace
 
 RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, const ControlPanel* panel, const Console& console, const EnvironmentSettings& settings,
-                                 std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
+                                 const interior::Options& options, std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
     : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(panel), console_(console), finestPixels_(finestPixels),
       frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false), resized_(false),
-      pending_(plan.source), since_(start)
+      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start)
 {
 }
 
@@ -708,6 +703,40 @@ void RealEnvironment::Followed(interior::Instant now) noexcept
     FollowedTo(BoundsOfWindow(*applied_.followed), now);
 }
 
+// What a session cannot follow while it runs, it is rebuilt for, once the panel has settled on it. Settling
+// first is what keeps a walk through three choices from building three sessions.
+void RealEnvironment::Asked(const interior::CommandLine& shape, interior::Instant now) noexcept
+{
+    wanted_ = shape; // WAIVER(R2): the shape last described, replaced whole.
+    asked_ = now;    // WAIVER(R2): when it was first described, replaced whole with it.
+}
+
+[[nodiscard]] bool RealEnvironment::AsksForAnother(const interior::CommandLine& shape, interior::Instant now) const noexcept
+{
+    return shape != built_ && now.Get() - asked_.Get() >= kSettleMicroseconds;
+}
+
+void RealEnvironment::HeldSettings(const interior::CommandLine& shape, interior::Instant now) noexcept
+{
+    if (AsksForAnother(shape, now))
+        restartWanted_ = true; // WAIVER(R2): set once, and never unset.
+}
+
+void RealEnvironment::Considering(const interior::CommandLine& shape, interior::Instant now) noexcept
+{
+    if (shape != wanted_)
+        Asked(shape, now);
+    else
+        HeldSettings(shape, now);
+}
+
+void RealEnvironment::Reconsidered(interior::Instant now) noexcept
+{
+    if (panel_ == nullptr)
+        return;
+    Considering(SessionShape(*panel_), now);
+}
+
 [[nodiscard]] Begun Stopping(const Begun& begun) noexcept
 {
     interior::FrameInput input = begun.input; // WAIVER(R2): a copy with one answer replaced, read once after.
@@ -723,7 +752,8 @@ void RealEnvironment::Followed(interior::Instant now) noexcept
 Result<FrameStart, Error> RealEnvironment::Began(const Begun& begun) noexcept
 {
     Followed(begun.input.now);
-    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(StoppedIfResized(begun, resized_)); });
+    Reconsidered(begun.input.now);
+    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(StoppedIfResized(begun, resized_ || restartWanted_)); });
 }
 
 Result<FrameStart, Error> RealEnvironment::BeginFrame(const interior::FrameState& state) noexcept
@@ -802,7 +832,6 @@ Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surfa
 
 Status<Error> RealEnvironment::Settled(const PanelReading& reading) noexcept
 {
-    restartWanted_ = restartWanted_ || reading.restartWanted; // WAIVER(R2): set once, and never unset.
     return Resurfaced(reading.surface).and_then([this, &reading] { return Recleared(reading.live.depth); });
 }
 
@@ -852,12 +881,12 @@ Error RealEnvironment::FromPlanError(interior::PlanFrameError error) noexcept
 }
 
 Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const SessionPlan& plan, const interior::Geometry& geometry, OutputWindow window,
-                                                 const ControlPanel* panel, const EnvironmentSettings& settings, const Console& console) noexcept
+                                                 const ControlPanel* panel, const EnvironmentSettings& settings, const interior::Options& options, const Console& console) noexcept
 {
     return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
         return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents)
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
-            .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), panel, console, settings, extents); });
+            .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), panel, console, settings, options, extents); });
     });
 }
 

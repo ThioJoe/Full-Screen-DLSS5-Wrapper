@@ -42,8 +42,8 @@ struct EnvironmentSettings
 class RealEnvironment final
 {
 public:
-    RealEnvironment(Gpu gpu, const interior::SessionPlan& plan, OutputWindow window, const ControlPanel* panel, const Console& console, const EnvironmentSettings& settings, std::uint32_t finestPixels,
-                    interior::FenceValue fence, interior::Instant start) noexcept;
+    RealEnvironment(Gpu gpu, const interior::SessionPlan& plan, OutputWindow window, const ControlPanel* panel, const Console& console, const EnvironmentSettings& settings,
+                    const interior::Options& options, std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept;
 
     [[nodiscard]] infra::Result<FrameStart, Error> BeginFrame(const interior::FrameState& state) noexcept;
     [[nodiscard]] infra::Result<ExecutionReport, Error> Execute(const interior::FramePlan& plan) noexcept;
@@ -54,7 +54,7 @@ public:
     [[nodiscard]] const Gpu& Devices() const noexcept { return gpu_; }
     [[nodiscard]] const OutputWindow& Window() const noexcept { return window_; }
     [[nodiscard]] interior::FenceValue LastFence() const noexcept { return frame_.fence; }
-    // The session the operator asked the panel for, or nothing when they simply left.
+    // The session the panel now describes, once it has settled on it, or nothing when nothing changed.
     [[nodiscard]] std::optional<interior::CommandLine> Restart(const interior::Options& options) const noexcept;
     // Whether the window being worked on changed size, which the sizes of a built session cannot follow.
     [[nodiscard]] bool Resized() const noexcept { return resized_; }
@@ -73,6 +73,11 @@ private:
     void Moved(const interior::ScreenRect& bounds, interior::Instant now) noexcept;
     void FollowedTo(const std::optional<interior::ScreenRect>& bounds, interior::Instant now) noexcept;
     void Settling(const interior::Extent& size, interior::Instant now) noexcept;
+    void Reconsidered(interior::Instant now) noexcept;
+    void Considering(const interior::CommandLine& shape, interior::Instant now) noexcept;
+    void Asked(const interior::CommandLine& shape, interior::Instant now) noexcept;
+    [[nodiscard]] bool AsksForAnother(const interior::CommandLine& shape, interior::Instant now) const noexcept;
+    void HeldSettings(const interior::CommandLine& shape, interior::Instant now) noexcept;
     void Noticed(const interior::Extent& size, interior::Instant now) noexcept;
     [[nodiscard]] bool HasSettled(interior::Instant now) const noexcept;
     [[nodiscard]] bool AsksForARebuild(const interior::Extent& size, interior::Instant now) const noexcept;
@@ -92,9 +97,14 @@ private:
     bool resized_;                      // WAIVER(R2): set once, when the window being followed has settled at another size.
     interior::Extent pending_;          // WAIVER(R2): the size the window was last seen at, replaced whole as it changes.
     interior::Instant since_;           // WAIVER(R2): when it was first seen at that size.
+    interior::Options options_;         // what this session was built from, which the panel is compared against
+    interior::CommandLine built_;       // the shape it was built with
+    interior::CommandLine wanted_;      // WAIVER(R2): the shape the panel now describes, replaced whole as it changes.
+    interior::Instant asked_;           // WAIVER(R2): when it first described it.
 };
 
 [[nodiscard]] infra::Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const interior::SessionPlan& plan, const interior::Geometry& geometry,
-                                                                      OutputWindow window, const ControlPanel* panel, const EnvironmentSettings& settings, const Console& console) noexcept;
+                                                                      OutputWindow window, const ControlPanel* panel, const EnvironmentSettings& settings, const interior::Options& options,
+                                                                      const Console& console) noexcept;
 
 } // namespace real

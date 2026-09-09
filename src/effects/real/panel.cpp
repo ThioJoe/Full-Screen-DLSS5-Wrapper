@@ -256,10 +256,9 @@ struct Metrics
     [[nodiscard]] int ControlHeight() const noexcept { return std::max(Of(22), line + Of(9)); }
     [[nodiscard]] int RowHeight() const noexcept { return LabelHeight() + ControlHeight() + Of(10); }
     [[nodiscard]] int PageTop() const noexcept { return Of(kMargin + kTabHeight); }
-    // The rows, then the button that starts a new session below them, then the notice, then the margin.
-    [[nodiscard]] int PageHeight() const noexcept { return rows * RowHeight() + 2 * ControlHeight() + Of(3 * kMargin); }
-    [[nodiscard]] int ButtonTop() const noexcept { return PageTop() + rows * RowHeight(); }
-    [[nodiscard]] int NoticeTop() const noexcept { return ButtonTop() + ControlHeight() + Of(kMargin); }
+    // The rows, then the notice under them, then the margin.
+    [[nodiscard]] int PageHeight() const noexcept { return rows * RowHeight() + ControlHeight() + Of(2 * kMargin); }
+    [[nodiscard]] int NoticeTop() const noexcept { return PageTop() + rows * RowHeight() + Of(kMargin); }
     [[nodiscard]] int BodyHeight() const noexcept { return kNoticeLines * line + Of(kMargin); }
 };
 
@@ -504,7 +503,8 @@ constexpr wchar_t kResetHint[] = L"Put this setting back to the value it starts 
 
 [[nodiscard]] HWND CreateChild(HWND parent, const wchar_t* className, const wchar_t* text, DWORD style, DWORD extended, RECT bounds) noexcept
 {
-    return ::CreateWindowExW(extended, className, text, WS_CHILD | WS_VISIBLE | style, bounds.left, bounds.top, bounds.right, bounds.bottom, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+    return ::CreateWindowExW(extended, className, text, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | style, bounds.left, bounds.top, bounds.right, bounds.bottom, parent, nullptr,
+                             ::GetModuleHandleW(nullptr), nullptr);
 }
 
 // Horizontal places are given in reference pixels and scaled; vertical ones are already in the display's
@@ -819,8 +819,8 @@ void AccelerateSpin(HWND spin, const FieldSpec&) noexcept
 // end and sizes it. It is not asked to write the box, because it can only write whole numbers.
 [[nodiscard]] HWND CreateSpin(HWND parent, HWND box, std::size_t field, const FieldSpec& spec, int steps) noexcept
 {
-    const HWND spin =
-        ::CreateWindowExW(0, UPDOWN_CLASSW, nullptr, WS_CHILD | WS_VISIBLE | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0, 0, 0, 0, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+    const HWND spin = ::CreateWindowExW(0, UPDOWN_CLASSW, nullptr, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0, 0, 0, 0, parent, nullptr,
+                                        ::GetModuleHandleW(nullptr), nullptr);
     if (spin == nullptr)
         return nullptr;
     (void)::SetWindowLongPtrW(spin, GWLP_USERDATA, static_cast<LONG_PTR>(field));
@@ -928,7 +928,7 @@ struct Walk
 [[nodiscard]] HWND CreateToggle(HWND parent, const Metrics& m, std::size_t toggle, bool on) noexcept
 {
     const Placement at = PlaceOfRow(Kind::Toggle, toggle, m);
-    const HWND check = CreateButton(parent, m, kToggles[toggle].label, BS_AUTOCHECKBOX, at.left, at.control, kColumnWidth - kResetWidth - kMargin);
+    const HWND check = CreateButton(parent, m, kToggles[toggle].label, BS_AUTOCHECKBOX, at.left, at.control, kResetOffset - kMargin);
     if (check != nullptr)
         SetChecked(check, on);
     return check;
@@ -1324,11 +1324,11 @@ void ShowPage(const ControlPanel& panel, Page page, bool visible) noexcept
     return ::IsWindowVisible(PageMarker(panel, chosen)) != FALSE;
 }
 
+// WAIVER(R7): showing the pages and naming the tabs both walk the page table; what they do with it differs.
 void ShowOnly(const ControlPanel& panel, Page chosen) noexcept
 {
     std::ranges::for_each(std::views::iota(std::size_t{ 0 }, static_cast<std::size_t>(Page::Count)),
                           [&panel, chosen](std::size_t p) { ShowPage(panel, static_cast<Page>(p), static_cast<Page>(p) == chosen); });
-    (void)::ShowWindow(panel.restart, chosen == Page::Startup ? SW_SHOW : SW_HIDE);
 }
 
 void ShowChosenPage(const ControlPanel& panel) noexcept
@@ -1778,7 +1778,6 @@ struct Notice
                          BoldFont(m.dpi),
                          tabs,
                          tabs == nullptr ? nullptr : CreateTooltip(parent),
-                         CreateButton(parent, m, L"Apply these settings", BS_AUTOCHECKBOX | BS_PUSHLIKE, kMargin, m.ButtonTop(), kColumnWidth),
                          built.labels,
                          built.sliders,
                          built.boxes,
@@ -1816,9 +1815,9 @@ struct Notice
 
 // The controls that belong to the panel rather than to any one page. Returned by value, so it is only ever
 // looked at within the expression that asks for it: a span kept past that would outlive what it points at.
-[[nodiscard]] std::array<HWND, 4> Furniture(const ControlPanel& panel) noexcept
+[[nodiscard]] std::array<HWND, 3> Furniture(const ControlPanel& panel) noexcept
 {
-    return { panel.restart, panel.notice, panel.expander, panel.noticeBody };
+    return { panel.notice, panel.expander, panel.noticeBody };
 }
 
 // Every span here points into the panel itself, which outlives the answer.
@@ -1979,7 +1978,7 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
 {
     Arrange(panel);
     const interior::Fraction split = interior::FractionTag::Parse(SettledValue(panel, Field::Split)).value_or(*kCentre);
-    return PanelReading{ LiveOf(panel, current), SurfaceOf(panel), DisplayFrom(ChosenIn(panel, Group::Compare, 0)), split, IsChecked(panel.restart) };
+    return PanelReading{ LiveOf(panel, current), SurfaceOf(panel), DisplayFrom(ChosenIn(panel, Group::Compare, 0)), split };
 }
 
 // A line too long for the buffer leaves the old one standing, so no session starts from half a path.
@@ -2008,9 +2007,10 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
     return WithPath(paths, L"log-file", o.logFile.Get());
 }
 
-void AcknowledgeRestart(const ControlPanel& panel) noexcept
+interior::CommandLine SessionShape(const ControlPanel& panel) noexcept
 {
-    SetChecked(panel.restart, false);
+    const Arguments shape = FlowArguments(panel, StartupArguments(panel, Arguments{}));
+    return interior::CommandLine::Parse(WidenedLine(shape.Get()).data()).value_or(interior::CommandLine{});
 }
 
 interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept

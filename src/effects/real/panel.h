@@ -88,7 +88,6 @@ struct ControlPanel
     UniqueFont boldFont; // the notice under the controls, which should not read as one more label
     HWND tabs;
     HWND tooltip;
-    HWND restart;
     std::array<HWND, kFieldCount> labels;
     std::array<HWND, kFieldCount> sliders;
     std::array<HWND, kFieldCount> boxes;
@@ -123,7 +122,6 @@ struct PanelReading
     interior::SurfaceSettings surface;
     interior::DisplayMode display;
     interior::Fraction split;
-    bool restartWanted;
 };
 
 [[nodiscard]] infra::Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options, const interior::LiveSettings& live, interior::DisplayMode display,
@@ -133,8 +131,9 @@ struct PanelReading
 // answer back to all three. A value a unit refuses keeps what `current` holds.
 [[nodiscard]] PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSettings& current) noexcept;
 
-// Takes the request back once it has been acted on, so a session rebuilt in place does not ask again.
-void AcknowledgeRestart(const ControlPanel& panel) noexcept;
+// The settings that decide what a session is built from, as a line of their own. A session watches this
+// for a change: the rest of the panel it can follow while it runs, this it can only be rebuilt for.
+[[nodiscard]] interior::CommandLine SessionShape(const ControlPanel& panel) noexcept;
 
 // The command line the start-up page describes, for the session the operator has asked for.
 [[nodiscard]] interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept;
