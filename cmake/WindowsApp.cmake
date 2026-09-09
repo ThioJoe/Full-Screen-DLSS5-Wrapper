@@ -86,7 +86,7 @@ else()
 endif()
 target_link_libraries(DlssScreen PRIVATE dscreen_core dscreen_trace_flags dscreen_stack
   "$<IF:$<CONFIG:Debug>,${NGX_LIBRARY_DEBUG},${NGX_LIBRARY_RELEASE}>"
-  d3d12 dxgi d3d11 dcomp dxguid user32 gdi32 comctl32 shcore shell32 ole32 runtimeobject wintrust crypt32)
+  d3d12 dxgi d3d11 dcomp dwmapi dxguid user32 gdi32 comctl32 shcore shell32 ole32 runtimeobject wintrust crypt32)
 # The windows subsystem so a double-click opens no console; mainCRTStartup keeps the ordinary entry point,
 # and the program attaches to the console it was launched from when there is one. The manifest dependency
 # asks for version 6 of the common controls, which is what the panel's sliders and checkboxes come from.

@@ -3,6 +3,8 @@
 #include "infrastructure/fold.h"
 #include "infrastructure/text.h"
 
+#include <dwmapi.h>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -342,13 +344,37 @@ BOOL CALLBACK CollectWindow(HWND window, LPARAM parameter) noexcept
     return FALSE;
 }
 
+// What the window looks like on screen. GetWindowRect includes the invisible resize border the desktop
+// manager keeps around a window, which the capture leaves out.
+[[nodiscard]] std::optional<RECT> ExtendedFrameOf(HWND window) noexcept
+{
+    RECT frame{}; // WAIVER(R2): the answer of one query, read once after it.
+    if (IsFailure(::DwmGetWindowAttribute(window, DWMWA_EXTENDED_FRAME_BOUNDS, &frame, sizeof(frame))))
+        return std::nullopt;
+    return frame;
+}
+
+[[nodiscard]] std::optional<RECT> WholeWindowOf(HWND window) noexcept
+{
+    RECT whole{}; // WAIVER(R2): the answer of one query, read once after it.
+    if (::GetWindowRect(window, &whole) == FALSE)
+        return std::nullopt;
+    return whole;
+}
+
+// Without a desktop manager there is no extended frame, and the whole window is the best answer there is.
+[[nodiscard]] std::optional<RECT> VisibleBoundsOf(HWND window) noexcept
+{
+    return ExtendedFrameOf(window).or_else([window] { return WholeWindowOf(window); });
+}
+
 [[nodiscard]] std::optional<MonitorInfo> SourceOf(HWND window) noexcept
 {
-    RECT bounds{};
-    if (::GetWindowRect(window, &bounds) == FALSE)
+    const std::optional<RECT> bounds = VisibleBoundsOf(window);
+    if (!bounds.has_value())
         return std::nullopt;
     return infra::AsOptional(interior::MonitorHandleTag::Parse(reinterpret_cast<std::uintptr_t>(window))).and_then([&](interior::MonitorHandle h) {
-        return infra::AsOptional(RectOf(bounds)).transform([&](const interior::ScreenRect& rect) {
+        return infra::AsOptional(RectOf(*bounds)).transform([&](const interior::ScreenRect& rect) {
             return MonitorInfo{ h, rect, false, interior::DeviceName::Parse(std::wstring_view(TitleOf(window).data()).substr(0, interior::DeviceName::Capacity)).value_or(interior::DeviceName{}),
                                 interior::SourceKind::Window };
         });
@@ -447,10 +473,7 @@ std::optional<interior::MonitorHandle> WindowUnder(long x, long y) noexcept
 
 std::optional<interior::ScreenRect> BoundsOfWindow(interior::MonitorHandle window) noexcept
 {
-    RECT bounds{};
-    if (::GetWindowRect(reinterpret_cast<HWND>(window.Get()), &bounds) == FALSE)
-        return std::nullopt;
-    return infra::AsOptional(RectOf(bounds));
+    return VisibleBoundsOf(reinterpret_cast<HWND>(window.Get())).and_then([](const RECT& bounds) { return infra::AsOptional(RectOf(bounds)); });
 }
 
 Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept
