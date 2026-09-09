@@ -38,9 +38,7 @@ constexpr int kColumns = 2;
 constexpr int kPanelWidth = kColumns * kColumnWidth + (kColumns + 1) * kMargin;
 constexpr int kSliderWidth = 196;
 constexpr int kBoxOffset = 214;
-constexpr int kBoxWidth = 74;
-constexpr int kSpinOffset = 288;
-constexpr int kSpinWidth = 18;
+constexpr int kBoxWidth = 78;
 constexpr int kResetOffset = 312;
 constexpr int kResetWidth = 28;
 constexpr int kChoiceWidth = 122;
@@ -72,7 +70,8 @@ struct FieldSpec
     int minimum;
     int maximum; // where the slider ends, which for an open field is only where it ends to begin with
     int steps;
-    bool open; // whether the model lets the number go on past the slider's end
+    int increment; // what one click of an arrow moves, in the same steps as the rest
+    bool open;     // whether the model lets the number go on past the slider's end
 };
 
 // As far as a number the model puts no top on may be typed or stepped. The slider stretches to follow.
@@ -84,18 +83,18 @@ constexpr int kOpenUnits = 1000;
 }
 
 constexpr std::array<FieldSpec, kFieldCount> kFields{ {
-    { L"Intensity", L"How much of the model's work to keep. Past 1 the model makes no further difference, so 1 is the whole of it.", 0, 100, 100, false },
+    { L"Intensity", L"How much of the model's work to keep. Past 1 the model makes no further difference, so 1 is the whole of it.", 0, 100, 100, 10, false },
     { L"Local structure", L"Detail the model adds within a region. The slider's end is not the model's: type or step past it and the slider follows. Does nothing while auto mask is off.", 0, 1000,
-      100, true },
-    { L"Local tone", L"How far the model moves local brightness. The slider's end is not the model's: type or step past it and the slider follows.", 0, 1000, 100, true },
-    { L"Skin structure", L"Detail on skin. The slider's end is not the model's. Does nothing while auto mask is off, or while skin follows local structure.", 0, 1000, 100, true },
-    { L"Motion vector scale X", L"What the model multiplies the horizontal motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, false },
-    { L"Motion vector scale Y", L"What the model multiplies the vertical motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, false },
-    { L"Split position", L"Where the divider sits in the split view. Ctrl+Alt+Shift and the mouse drags it on screen.", 0, 100, 100, false },
-    { L"Depth plane", L"The desktop has no depth, so one flat value stands in for all of it. Changing it re-clears the plane.", 0, 100, 100, false },
-    { L"Reset threshold", L"How much of the picture has to go unmatched before the model's history is thrown away.", 0, 100, 100, false },
-    { L"Motion detail level", L"Finest level the matcher works at: 0 full resolution, 1 half, 2 quarter. Lower costs more.", 0, 7, 1, false },
-    { L"Super resolution preset", L"Render preset asked of DLSS Super Resolution; 0 leaves the choice to the driver.", 0, 15, 1, false },
+      100, 100, true },
+    { L"Local tone", L"How far the model moves local brightness. The slider's end is not the model's: type or step past it and the slider follows.", 0, 1000, 100, 100, true },
+    { L"Skin structure", L"Detail on skin. The slider's end is not the model's. Does nothing while auto mask is off, or while skin follows local structure.", 0, 1000, 100, 100, true },
+    { L"Motion vector scale X", L"What the model multiplies the horizontal motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, 10, false },
+    { L"Motion vector scale Y", L"What the model multiplies the vertical motion by. 1 passes the synthesised vectors through unchanged.", -400, 400, 100, 10, false },
+    { L"Split position", L"Where the divider sits in the split view. Ctrl+Alt+Shift and the mouse drags it on screen.", 0, 100, 100, 10, false },
+    { L"Depth plane", L"The desktop has no depth, so one flat value stands in for all of it. Changing it re-clears the plane.", 0, 100, 100, 10, false },
+    { L"Reset threshold", L"How much of the picture has to go unmatched before the model's history is thrown away.", 0, 100, 100, 10, false },
+    { L"Motion detail level", L"Finest level the matcher works at: 0 full resolution, 1 half, 2 quarter. Lower costs more.", 0, 7, 1, 1, false },
+    { L"Super resolution preset", L"Render preset asked of DLSS Super Resolution; 0 leaves the choice to the driver.", 0, 15, 1, 1, false },
 } };
 
 struct ToggleSpec
@@ -308,21 +307,33 @@ struct Cell
 
 // --- the window and its furniture ------------------------------------------------------------------------
 
+// Closing hides the panel rather than destroying it; the session reads that as the operator leaving.
+[[nodiscard]] LRESULT Closed(HWND window) noexcept
+{
+    (void)::ShowWindow(window, SW_HIDE);
+    return 0;
+}
+
+[[nodiscard]] LRESULT Notified(LPARAM l) noexcept;
+
+[[nodiscard]] LRESULT NotifiedOrDefault(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message == WM_NOTIFY)
+        return Notified(l);
+    return ::DefWindowProcW(window, message, w, l);
+}
+
 // WAIVER(R17): the window procedure is called by the OS, which discards nothing and ignores attributes.
 LRESULT CALLBACK PanelProc(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
 {
-    // Closing hides the panel rather than destroying it; the session reads that as the operator leaving.
     if (message == WM_CLOSE)
-    {
-        ::ShowWindow(window, SW_HIDE);
-        return 0;
-    }
-    return ::DefWindowProcW(window, message, w, l);
+        return Closed(window);
+    return NotifiedOrDefault(window, message, w, l);
 }
 
 [[nodiscard]] WNDCLASSEXW ClassDescription() noexcept
 {
-    return WNDCLASSEXW{ sizeof(WNDCLASSEXW), 0,      PanelProc, 0, 0, ::GetModuleHandleW(nullptr), nullptr, ::LoadCursorW(nullptr, IDC_ARROW), reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1), nullptr,
+    return WNDCLASSEXW{ sizeof(WNDCLASSEXW), 0,      &PanelProc, 0, 0, ::GetModuleHandleW(nullptr), nullptr, ::LoadCursorW(nullptr, IDC_ARROW), ::GetSysColorBrush(COLOR_BTNFACE), nullptr,
                         kPanelClass,         nullptr };
 }
 
@@ -338,12 +349,29 @@ void InitialiseCommonControls() noexcept
 constexpr wchar_t kRefreshGlyph[] = L"\uE72C";
 constexpr wchar_t kResetHint[] = L"Put this setting back to the value it starts at.";
 
+[[nodiscard]] LOGFONTW FaceOf(int height, LONG weight, const wchar_t* name) noexcept
+{
+    LOGFONTW description{ .lfHeight = height,
+                          .lfWidth = 0,
+                          .lfEscapement = 0,
+                          .lfOrientation = 0,
+                          .lfWeight = weight,
+                          .lfItalic = FALSE,
+                          .lfUnderline = FALSE,
+                          .lfStrikeOut = FALSE,
+                          .lfCharSet = DEFAULT_CHARSET,
+                          .lfOutPrecision = OUT_DEFAULT_PRECIS,
+                          .lfClipPrecision = CLIP_DEFAULT_PRECIS,
+                          .lfQuality = DEFAULT_QUALITY,
+                          .lfPitchAndFamily = DEFAULT_PITCH | FF_DONTCARE,
+                          .lfFaceName = {} };
+    ENSURE(::wcscpy_s(description.lfFaceName, name) == 0);
+    return description;
+}
+
 [[nodiscard]] UniqueFont IconFont(int dpi) noexcept
 {
-    LOGFONTW description{}; // WAIVER(R2): a request record filled once, before it is asked.
-    description.lfHeight = -::MulDiv(11, dpi, kReferenceDpi);
-    description.lfCharSet = DEFAULT_CHARSET;
-    ENSURE(::wcscpy_s(description.lfFaceName, L"Segoe MDL2 Assets") == 0);
+    const LOGFONTW description = FaceOf(-::MulDiv(11, dpi, kReferenceDpi), FW_NORMAL, L"Segoe MDL2 Assets");
     return UniqueFont(::CreateFontIndirectW(&description));
 }
 
@@ -418,7 +446,15 @@ constexpr wchar_t kResetHint[] = L"Put this setting back to the value it starts 
 
 [[nodiscard]] TTTOOLINFOW HintFor(HWND parent, HWND control, const wchar_t* text) noexcept
 {
-    TTTOOLINFOW info{ sizeof(TTTOOLINFOW), TTF_IDISHWND | TTF_SUBCLASS, parent, reinterpret_cast<UINT_PTR>(control), RECT{}, nullptr, const_cast<wchar_t*>(text), 0, nullptr };
+    TTTOOLINFOW info{ .cbSize = sizeof(TTTOOLINFOW),
+                      .uFlags = TTF_IDISHWND | TTF_SUBCLASS,
+                      .hwnd = parent,
+                      .uId = reinterpret_cast<UINT_PTR>(control),
+                      .rect = RECT{ 0, 0, 0, 0 },
+                      .hinst = nullptr,
+                      .lpszText = const_cast<wchar_t*>(text),
+                      .lParam = 0,
+                      .lpReserved = nullptr };
     return info;
 }
 
@@ -433,11 +469,6 @@ void AddHint(HWND tooltip, HWND parent, HWND control, const wchar_t* text) noexc
 [[nodiscard]] int SliderPosition(HWND slider) noexcept
 {
     return static_cast<int>(::SendMessageW(slider, TBM_GETPOS, 0, 0));
-}
-
-[[nodiscard]] int SpinPosition(HWND spin) noexcept
-{
-    return static_cast<int>(::SendMessageW(spin, UDM_GETPOS32, 0, 0));
 }
 
 [[nodiscard]] std::array<wchar_t, kTextCapacity> TextOf(HWND control) noexcept
@@ -457,28 +488,25 @@ void AddHint(HWND tooltip, HWND parent, HWND control, const wchar_t* text) noexc
     return std::clamp(static_cast<int>(std::lround(value * static_cast<float>(spec.steps))), spec.minimum, CeilingOf(spec));
 }
 
-// The slider, the box and the arrows say the same number, so of the two that disagree the one the operator
-// moved is the one that no longer matches the box, which still shows what all three last agreed on.
-[[nodiscard]] int AwayFromBox(int slider, int spin, int typed) noexcept
+// The value the slider and the box were last agreed on, kept beside the box. Whichever of the two now
+// differs from it is the one the operator moved, and the arrows move the box.
+[[nodiscard]] int CommittedIn(HWND box) noexcept
 {
-    return slider != typed ? slider : spin;
+    return static_cast<int>(::GetWindowLongPtrW(box, GWLP_USERDATA));
 }
 
-// Answering with the slider whichever of the two had moved is what made the arrows look dead: they moved
-// the spin, the slider answered, and the old value went straight back over them.
-[[nodiscard]] int Moved(int slider, int spin, const std::optional<int>& typed) noexcept
+void KeepCommitted(HWND box, int steps) noexcept
 {
-    return typed.has_value() ? AwayFromBox(slider, spin, *typed) : slider;
+    (void)::SetWindowLongPtrW(box, GWLP_USERDATA, static_cast<LONG_PTR>(steps));
 }
 
 [[nodiscard]] int Settled(const ControlPanel& panel, std::size_t field) noexcept
 {
+    const int committed = CommittedIn(panel.boxes[field]);
     const int slider = SliderPosition(panel.sliders[field]);
-    const int spin = SpinPosition(panel.spins[field]);
-    const std::optional<int> typed = TypedSteps(panel.boxes[field], kFields[field]);
-    if (slider != spin)
-        return Moved(slider, spin, typed);
-    return typed.value_or(spin);
+    if (slider != committed)
+        return slider;
+    return TypedSteps(panel.boxes[field], kFields[field]).value_or(committed);
 }
 
 [[nodiscard]] infra::BoundedString<char, 15> Printed(int steps, const FieldSpec& spec) noexcept
@@ -497,11 +525,43 @@ void AddHint(HWND tooltip, HWND parent, HWND control, const wchar_t* text) noexc
 }
 
 // The box is left alone while it has the keyboard, or a half-typed number would be rewritten under it.
+void WriteBox(HWND box, int steps, const FieldSpec& spec) noexcept
+{
+    ENSURE(::SetWindowTextW(box, Widened(Printed(steps, spec).Get()).data()) != FALSE);
+}
+
+// A box being typed into is left alone; anything else moves the caret out from under the operator.
 void ShowInBox(HWND box, int steps, const FieldSpec& spec) noexcept
 {
     if (::GetFocus() == box)
         return;
-    ENSURE(::SetWindowTextW(box, Widened(Printed(steps, spec).Get()).data()) != FALSE);
+    WriteBox(box, steps, spec);
+}
+
+void NudgeBox(HWND box, const FieldSpec& spec, int steps) noexcept
+{
+    const std::optional<int> now = TypedSteps(box, spec);
+    if (!now.has_value())
+        return;
+    WriteBox(box, std::clamp(*now + steps * spec.increment, spec.minimum, CeilingOf(spec)), spec);
+}
+
+// An up-down can only write whole numbers into its buddy, so it is answered here instead: one turn of an
+// arrow is one of the field's own increments, applied to the box, which is what the panel reads.
+void Nudge(const NMUPDOWN* delta) noexcept
+{
+    const std::size_t field = static_cast<std::size_t>(::GetWindowLongPtrW(delta->hdr.hwndFrom, GWLP_USERDATA));
+    HWND box = reinterpret_cast<HWND>(::SendMessageW(delta->hdr.hwndFrom, UDM_GETBUDDY, 0, 0));
+    NudgeBox(box, kFields[field], delta->iDelta);
+}
+
+[[nodiscard]] LRESULT Notified(LPARAM l) noexcept
+{
+    const NMHDR* header = reinterpret_cast<const NMHDR*>(l);
+    if (header->code != UDN_DELTAPOS)
+        return 0;
+    Nudge(reinterpret_cast<const NMUPDOWN*>(l));
+    return 1; // the control keeps the position it was given, which nothing reads
 }
 
 // A number carried past the slider's end takes the slider with it, so all three controls keep agreeing and
@@ -516,7 +576,7 @@ void Commit(const ControlPanel& panel, std::size_t field, int steps) noexcept
 {
     StretchSlider(panel.sliders[field], steps);
     (void)::SendMessageW(panel.sliders[field], TBM_SETPOS, TRUE, steps);
-    (void)::SendMessageW(panel.spins[field], UDM_SETPOS32, 0, steps);
+    KeepCommitted(panel.boxes[field], steps);
     ShowInBox(panel.boxes[field], steps, kFields[field]);
 }
 
@@ -639,6 +699,15 @@ void ChooseOnly(std::span<const HWND> group, std::size_t index) noexcept
 
 // --- building the controls -----------------------------------------------------------------------------
 
+// An arrow key on the slider moves what an arrow beside the box moves, and a page moves five of them, so
+// the three ways of nudging a number all agree with one another.
+[[nodiscard]] HWND Stepped(HWND slider, const FieldSpec& spec) noexcept
+{
+    (void)::SendMessageW(slider, TBM_SETLINESIZE, 0, spec.increment);
+    (void)::SendMessageW(slider, TBM_SETPAGESIZE, 0, 5 * spec.increment);
+    return slider;
+}
+
 [[nodiscard]] HWND CreateSlider(HWND parent, const Metrics& m, const FieldSpec& spec, const Placement& at, int steps) noexcept
 {
     const HWND slider = CreateChild(parent, TRACKBAR_CLASSW, nullptr, TBS_HORZ | TBS_NOTICKS, 0, Bounds(m, at.left, at.control, kSliderWidth, m.ControlHeight()));
@@ -646,31 +715,36 @@ void ChooseOnly(std::span<const HWND> group, std::size_t index) noexcept
         return nullptr;
     (void)::SendMessageW(slider, TBM_SETRANGE, TRUE, MAKELPARAM(spec.minimum, spec.maximum));
     (void)::SendMessageW(slider, TBM_SETPOS, TRUE, steps);
-    return slider;
+    return Stepped(slider, spec);
 }
 
-// One click is one step, which on a hundredths field is a hundredth. Held down, the arrow works up to a
-// tenth of a unit and then to a whole one, so the far end of a range is reachable without a hundred clicks.
-void AccelerateSpin(HWND spin, const FieldSpec& spec) noexcept
+// One click asks for one, and holding an arrow asks for five at a time; what one of them is worth is the
+// field's own increment, applied where the arrows are answered.
+void AccelerateSpin(HWND spin, const FieldSpec&) noexcept
 {
-    std::array<UDACCEL, 3> curve{ { { 0, 1 }, { 1, static_cast<UINT>(std::max(spec.steps / 10, 1)) }, { 3, static_cast<UINT>(spec.steps) } } };
+    std::array<UDACCEL, 2> curve{ { { 0, 1 }, { 2, 5 } } };
     (void)::SendMessageW(spin, UDM_SETACCEL, curve.size(), reinterpret_cast<LPARAM>(curve.data()));
 }
 
-[[nodiscard]] HWND ArrangedSpin(HWND spin, const FieldSpec& spec, int steps) noexcept
+[[nodiscard]] HWND ArrangedSpin(HWND spin, HWND box, const FieldSpec& spec, int steps) noexcept
 {
+    (void)::SendMessageW(spin, UDM_SETBUDDY, reinterpret_cast<WPARAM>(box), 0);
     (void)::SendMessageW(spin, UDM_SETRANGE32, static_cast<WPARAM>(spec.minimum), static_cast<LPARAM>(CeilingOf(spec)));
     (void)::SendMessageW(spin, UDM_SETPOS32, 0, steps);
     AccelerateSpin(spin, spec);
     return spin;
 }
 
-// The arrows stand on their own rather than taking the box as a buddy: an up-down reads a buddy edit back
-// as its own position, as a whole number, so on a hundredths field the box said "1.00" and the arrows read 1.
-[[nodiscard]] HWND CreateSpin(HWND parent, const Metrics& m, const Placement& at, const FieldSpec& spec, int steps) noexcept
+// A plain number box: the up-down takes the edit control as its buddy, which puts it at the box's right-hand
+// end and sizes it. It is not asked to write the box, because it can only write whole numbers.
+[[nodiscard]] HWND CreateSpin(HWND parent, HWND box, std::size_t field, const FieldSpec& spec, int steps) noexcept
 {
-    const HWND spin = CreateChild(parent, UPDOWN_CLASSW, nullptr, UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0, Bounds(m, at.left + kSpinOffset, at.control, kSpinWidth, m.ControlHeight()));
-    return spin == nullptr ? nullptr : ArrangedSpin(spin, spec, steps);
+    const HWND spin =
+        ::CreateWindowExW(0, UPDOWN_CLASSW, nullptr, WS_CHILD | WS_VISIBLE | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_NOTHOUSANDS, 0, 0, 0, 0, parent, nullptr, ::GetModuleHandleW(nullptr), nullptr);
+    if (spin == nullptr)
+        return nullptr;
+    (void)::SetWindowLongPtrW(spin, GWLP_USERDATA, static_cast<LONG_PTR>(field));
+    return ArrangedSpin(spin, box, spec, steps);
 }
 
 struct Built
@@ -763,7 +837,7 @@ struct Walk
         const Placement at = PlaceOfRow(Kind::Field, f, m);
         return CreateChild(parent, WC_EDITW, L"", ES_LEFT | ES_AUTOHSCROLL | WS_TABSTOP, WS_EX_CLIENTEDGE, Bounds(m, at.left + kBoxOffset, at.control, kBoxWidth, m.ControlHeight()));
     });
-    built.spins = infra::Generated<HWND, kFieldCount>([&](std::size_t f) { return CreateSpin(parent, m, PlaceOfRow(Kind::Field, f, m), kFields[f], steps(f)); });
+    built.spins = infra::Generated<HWND, kFieldCount>([&](std::size_t f) { return CreateSpin(parent, built.boxes[f], f, kFields[f], steps(f)); });
     built.resets = infra::Generated<HWND, kFieldCount>([&](std::size_t f) {
         const Placement at = PlaceOfRow(Kind::Field, f, m);
         return CreateButton(parent, m, kRefreshGlyph, 0, at.left + kResetOffset, at.control, kResetWidth);
@@ -944,16 +1018,21 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
     return 0;
 }
 
-// WAIVER(R1): one API record, filled field by field because that is the only way it can be filled.
+// WAIVER(R7): two window classes are described the same way; the procedure, the cursor and the name differ.
 [[nodiscard]] WNDCLASSEXW CrosshairDescription() noexcept
 {
-    WNDCLASSEXW description{}; // WAIVER(R2): a description filled once, before it is registered.
-    description.cbSize = sizeof(WNDCLASSEXW);
-    description.lpfnWndProc = &CrosshairProc;
-    description.hInstance = ::GetModuleHandleW(nullptr);
-    description.hCursor = ::LoadCursorW(nullptr, IDC_CROSS);
-    description.lpszClassName = kCrosshairClass;
-    return description;
+    return WNDCLASSEXW{ .cbSize = sizeof(WNDCLASSEXW),
+                        .style = 0,
+                        .lpfnWndProc = &CrosshairProc,
+                        .cbClsExtra = 0,
+                        .cbWndExtra = 0,
+                        .hInstance = ::GetModuleHandleW(nullptr),
+                        .hIcon = nullptr,
+                        .hCursor = ::LoadCursorW(nullptr, IDC_CROSS),
+                        .hbrBackground = ::GetSysColorBrush(COLOR_BTNFACE),
+                        .lpszMenuName = nullptr,
+                        .lpszClassName = kCrosshairClass,
+                        .hIconSm = nullptr };
 }
 
 [[nodiscard]] HWND CreateCrosshair(HWND parent, const Metrics& m, std::size_t pick, const std::optional<interior::MonitorHandle>& window) noexcept

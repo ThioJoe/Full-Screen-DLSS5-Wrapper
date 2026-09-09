@@ -30,25 +30,26 @@ constexpr std::size_t kNameCapacity = 256;
 
 [[nodiscard]] WINTRUST_FILE_INFO FileInfoFor(const wchar_t* path, void* handle) noexcept
 {
-    WINTRUST_FILE_INFO file{}; // WAIVER(R2): a request record filled once, before it is asked.
-    file.cbStruct = sizeof(WINTRUST_FILE_INFO);
-    file.pcwszFilePath = path;
-    file.hFile = handle;
-    return file;
+    return WINTRUST_FILE_INFO{ .cbStruct = sizeof(WINTRUST_FILE_INFO), .pcwszFilePath = path, .hFile = handle, .pgKnownSubject = nullptr };
 }
 
 // Asked of the handle already held rather than of the path, so it cannot be answered about another file.
-// WAIVER(R1): one API record, filled field by field because that is the only way it can be filled.
+// WAIVER(R1): every field is named, including the ones that want nothing, which is the point of it.
 [[nodiscard]] WINTRUST_DATA RequestFor(WINTRUST_FILE_INFO* file) noexcept
 {
     WINTRUST_DATA request{}; // WAIVER(R2): a request record filled once, before it is asked.
     request.cbStruct = sizeof(WINTRUST_DATA);
+    request.pPolicyCallbackData = nullptr;
+    request.pSIPClientData = nullptr;
     request.dwUIChoice = WTD_UI_NONE;
     request.fdwRevocationChecks = WTD_REVOKE_NONE;
     request.dwUnionChoice = WTD_CHOICE_FILE;
     request.pFile = file;
     request.dwStateAction = WTD_STATEACTION_VERIFY;
+    request.hWVTStateData = nullptr;
+    request.pwszURLReference = nullptr;
     request.dwProvFlags = WTD_SAFER_FLAG | WTD_CACHE_ONLY_URL_RETRIEVAL;
+    request.dwUIContext = 0;
     return request;
 }
 
