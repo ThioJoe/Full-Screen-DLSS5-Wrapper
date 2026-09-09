@@ -92,6 +92,7 @@ enum class ApiCall : std::uint8_t {
     NgxOptimalSettings,
     NgxParameterRoundTrip,
     NgxNeuralRenderingUnavailable,
+    WindowNotFound,
     OpenModelFile,
     ModelNotSigned,
     ModelNotFromNvidia,

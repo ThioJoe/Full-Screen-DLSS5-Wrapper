@@ -22,6 +22,7 @@ enum class OptionId : std::uint8_t {
     Help,
     ListMonitors,
     Monitor,
+    Window,
     Target,
     Nr,
     NrPreset,
@@ -86,6 +87,7 @@ enum class ValueKind : std::uint8_t {
     Log,
     Console,
     Path,
+    Title,
     Text,
 };
 
@@ -96,10 +98,11 @@ struct OptionSpec
     ValueKind kind;
 };
 
-constexpr std::array<OptionSpec, 46> kSpecs{ {
+constexpr std::array<OptionSpec, 47> kSpecs{ {
     { L"help", OptionId::Help, ValueKind::Flag },
     { L"list-monitors", OptionId::ListMonitors, ValueKind::Flag },
     { L"monitor", OptionId::Monitor, ValueKind::MonitorSel },
+    { L"window", OptionId::Window, ValueKind::Title },
     { L"target", OptionId::Target, ValueKind::UInt },
     { L"nr", OptionId::Nr, ValueKind::Bool },
     { L"nr-preset", OptionId::NrPreset, ValueKind::UInt },
@@ -165,7 +168,7 @@ struct NarrowBuffer
 };
 
 using OptionValue = std::variant<FlagValue, std::uint32_t, float, std::uint64_t, bool, MonitorSelValue, CursorMode, SrMode, MotionBackend, CompareMode, ColorFormat, NrStyle, GridSize, PerfLevel,
-                                 ConsoleMode, NgxLogLevel, LogLevel, DirectoryPath, AsciiText>;
+                                 ConsoleMode, NgxLogLevel, LogLevel, DirectoryPath, WindowTitle, AsciiText>;
 
 struct ParsedOption
 {
@@ -308,6 +311,11 @@ constexpr std::array<infra::Choice<MonitorSelectionKind>, 2> kMonitorKindChoices
     return DirectoryPath::Parse(text).transform_error([](infra::StringTooLong) { return OptionsErrorKind::ArgumentTooLong; });
 }
 
+[[nodiscard]] Result<WindowTitle, OptionsErrorKind> ParseTitle(std::wstring_view text) noexcept
+{
+    return WindowTitle::Parse(text).transform_error([](infra::StringTooLong) { return OptionsErrorKind::ArgumentTooLong; });
+}
+
 [[nodiscard]] Result<OptionValue, OptionsErrorKind> ParseValue(ValueKind kind, std::wstring_view text) noexcept
 {
     switch (kind)
@@ -330,6 +338,7 @@ constexpr std::array<infra::Choice<MonitorSelectionKind>, 2> kMonitorKindChoices
     case ValueKind::NgxLog: return ParseChoice(kNgxLogChoices, text).transform([](NgxLogLevel v) { return OptionValue{ v }; });
     case ValueKind::Log: return ParseChoice(kLogChoices, text).transform([](LogLevel v) { return OptionValue{ v }; });
     case ValueKind::Path: return ParsePath(text).transform([](DirectoryPath v) { return OptionValue{ v }; });
+    case ValueKind::Title: return ParseTitle(text).transform([](WindowTitle v) { return OptionValue{ v }; });
     case ValueKind::Text: return AsciiOfChecked(text).transform([](AsciiText v) { return OptionValue{ v }; });
     }
     return Fail(OptionsErrorKind::InvalidChoice);
@@ -632,6 +641,7 @@ struct ValidatedScales
         HasFlag(list, OptionId::Help),
         HasFlag(list, OptionId::ListMonitors),
         SourceOf(list),
+        ValueOr(list, OptionId::Window, d.window),
         RequestedOf(list, OptionId::Target),
         ValueOr(list, OptionId::Nr, d.neuralRendering),
         tuning,
@@ -725,6 +735,7 @@ Options DefaultOptions() noexcept
         false,
         false,
         SourceSelection{ MonitorSelectionKind::Primary, RequestedMonitorTag::Parse(0) },
+        WindowTitle{},
         std::nullopt,
         true,
         NrTuning{ *kDefaultPreset, *kDefaultIntensity, NrStyle::Standard, *kDefaultStrength, *kDefaultStrength, *kDefaultSkin, true, true },

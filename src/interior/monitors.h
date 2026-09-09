@@ -5,12 +5,17 @@
 
 namespace interior {
 
+// What a source is: a monitor Windows enumerated, or one window asked for by name. The capture layer opens
+// a different kind of item for each; everything above this point treats them alike.
+enum class SourceKind : std::uint8_t { Monitor, Window };
+
 struct MonitorInfo
 {
     MonitorHandle handle;
     ScreenRect rect;
     bool primary;
     DeviceName name;
+    SourceKind kind;
     [[nodiscard]] friend constexpr bool operator==(const MonitorInfo&, const MonitorInfo&) noexcept = default;
 };
 

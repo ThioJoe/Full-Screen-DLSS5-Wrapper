@@ -62,6 +62,7 @@ struct Options
     bool showHelp;
     bool listMonitors;
     SourceSelection source;
+    WindowTitle window; // when set, one window is the source and the monitor selection is left alone
     std::optional<RequestedMonitor> target;
     bool neuralRendering;
     NrTuning tuning;

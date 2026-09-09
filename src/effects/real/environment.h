@@ -35,7 +35,8 @@ struct Begun
 struct EnvironmentSettings
 {
     interior::SurfaceSettings surface;
-    bool captureCursor; // what the session resolved for "auto", which the panel's Auto keeps
+    bool captureCursor;                              // what the session resolved for "auto", which the panel's Auto keeps
+    std::optional<interior::MonitorHandle> followed; // the window the source is, when the source is one window
 };
 
 class RealEnvironment final
@@ -64,6 +65,9 @@ private:
     [[nodiscard]] infra::Status<Error> SettledIfRead(const std::optional<PanelReading>& reading) noexcept;
     [[nodiscard]] infra::Status<Error> Settled(const PanelReading& reading) noexcept;
     [[nodiscard]] infra::Status<Error> Recleared(interior::DepthValue depth) noexcept;
+    // Keeps the overlay over the window the session is working on. The capture follows the window itself,
+    // so only where the answer is shown has to be put right.
+    void Followed() noexcept;
 
     Gpu gpu_;
     interior::SessionPlan plan_;

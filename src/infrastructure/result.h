@@ -24,4 +24,13 @@ template <class T, class E>
     return *result;
 }
 
+// The other way about: something that may be missing, with a reason to give when it is.
+template <class T, class E>
+[[nodiscard]] constexpr Result<T, E> AsResult(const std::optional<T>& value, const E& absent) noexcept
+{
+    if (!value.has_value())
+        return Fail(absent);
+    return *value;
+}
+
 } // namespace infra

@@ -49,6 +49,13 @@ template <std::size_t N>
     return NarrowedCharsImpl<N>(text, std::make_index_sequence<N>{});
 }
 
+// Whether one piece of text appears in another, ignoring the case of the ASCII letters in both.
+[[nodiscard]] inline bool ContainsIgnoringCase(std::wstring_view text, std::wstring_view wanted) noexcept
+{
+    const auto same = [](wchar_t x, wchar_t y) { return LowerAscii(x) == LowerAscii(y); };
+    return std::ranges::search(text, wanted, same).begin() != text.end();
+}
+
 template <std::size_t N, std::size_t... I>
 [[nodiscard]] constexpr std::array<wchar_t, N> WidenedCharsImpl(std::string_view text, std::index_sequence<I...>) noexcept
 {

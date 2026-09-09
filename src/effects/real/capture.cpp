@@ -143,12 +143,20 @@ struct Pending;
     return Check(gpu.device->OpenSharedHandle(handle.get(), IID_PPV_ARGS(&opened)), ApiCall::OpenSharedHandle).transform([&opened] { return opened; });
 }
 
+// A window is asked for by its own handle, which gives its content whatever is in front of it, and follows
+// it as it moves. A monitor is asked for by monitor. Neither opens anything belonging to another process.
+[[nodiscard]] HRESULT ItemOf(const Com<IGraphicsCaptureItemInterop>& interop, const interior::MonitorInfo& source, Com<WGC::IGraphicsCaptureItem>& item) noexcept
+{
+    if (source.kind == interior::SourceKind::Window)
+        return interop->CreateForWindow(reinterpret_cast<HWND>(source.handle.Get()), IID_PPV_ARGS(&item));
+    return interop->CreateForMonitor(reinterpret_cast<HMONITOR>(source.handle.Get()), IID_PPV_ARGS(&item));
+}
+
 [[nodiscard]] Result<Com<WGC::IGraphicsCaptureItem>, Error> ItemFor(const interior::MonitorInfo& monitor) noexcept
 {
     return ItemInterop().and_then([&monitor](const Com<IGraphicsCaptureItemInterop>& interop) {
         Com<WGC::IGraphicsCaptureItem> item;
-        const HRESULT hr = interop->CreateForMonitor(reinterpret_cast<HMONITOR>(monitor.handle.Get()), IID_PPV_ARGS(&item));
-        return Check(hr, ApiCall::CreateForMonitor).transform([&item] { return item; });
+        return Check(ItemOf(interop, monitor, item), ApiCall::CreateForMonitor).transform([&item] { return item; });
     });
 }
 

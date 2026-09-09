@@ -631,8 +631,24 @@ RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow 
 {
 }
 
+void MoveIfFound(const OutputWindow& window, const std::optional<interior::ScreenRect>& bounds) noexcept
+{
+    if (bounds.has_value())
+        MoveOutputWindow(window, *bounds);
+}
+
+// The capture of a window follows the window itself, so only the overlay showing the answer has to move.
+// A resized window is no longer the size the session was planned for, and is cropped to it until restarted.
+void RealEnvironment::Followed() noexcept
+{
+    if (!applied_.followed.has_value())
+        return;
+    MoveIfFound(window_, BoundsOfWindow(*applied_.followed));
+}
+
 Result<FrameStart, Error> RealEnvironment::Began(const Begun& begun) noexcept
 {
+    Followed();
     return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(begun); });
 }
 
@@ -706,7 +722,7 @@ Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surfa
 {
     if (surface == applied_.surface)
         return {};
-    applied_ = EnvironmentSettings{ surface, applied_.captureCursor }; // WAIVER(R2): what has been applied, replaced whole.
+    applied_ = EnvironmentSettings{ surface, applied_.captureCursor, applied_.followed }; // WAIVER(R2): what has been applied, replaced whole.
     return ApplySurface(gpu_, window_, applied_);
 }
 

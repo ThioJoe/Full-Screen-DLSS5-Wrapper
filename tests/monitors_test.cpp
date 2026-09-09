@@ -25,7 +25,7 @@ using namespace interior;
     const auto h = MonitorHandleTag::Parse(handle);
     if (!rect.has_value() || !h.has_value())
         return std::nullopt;
-    return MonitorInfo{ *h, *rect, primary, DeviceName{} };
+    return MonitorInfo{ *h, *rect, primary, DeviceName{}, SourceKind::Monitor };
 }
 
 [[nodiscard]] MonitorList RandomMonitors(infra::RngState& rng) noexcept

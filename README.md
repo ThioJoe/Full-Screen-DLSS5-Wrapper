@@ -35,6 +35,18 @@ something it was never given.
 
 The control panel says the same thing at the foot of its window.
 
+## Working on one window
+
+`--window TITLE` captures a single window instead of a monitor: the first visible top-level window whose
+title contains `TITLE`, ignoring case. The panel has a box for it on the Start-up page.
+
+This uses Windows Graphics Capture's own per-window item, so the model sees that window's content and
+nothing else — not what is stacked in front of it — and the capture follows the window as it moves. It
+still opens nothing belonging to the other process. The overlay follows the window each frame.
+
+The sizes of everything downstream are fixed when the session starts, so resizing the window is not
+followed: the capture is cropped to the size that was planned for until a new session is started.
+
 ## The model file
 
 `nvngx_dlssnr.dll` is NVIDIA's, is not in this repository, and is not in the build artifact. Put it next to

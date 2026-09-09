@@ -207,17 +207,43 @@ struct Base
     return Log(console, LogLevel::Info, line.Get());
 }
 
-[[nodiscard]] Result<Base, Error> BasedOn(const Console& console, const Options& options, const interior::DirectoryPath& directory, const interior::MonitorList& monitors) noexcept
+[[nodiscard]] Result<Base, Error> BasedOn(const Console& console, const Options& options, const interior::DirectoryPath& directory, const interior::MonitorList& monitors,
+                                          const interior::MonitorList& sources) noexcept
 {
-    return ResolvedGeometry(console, options, monitors).and_then([&](const Geometry& g) {
+    return ResolvedGeometry(console, options, sources).and_then([&](const Geometry& g) {
         return LogGeometry(console, g).transform([&] { return Base{ options, directory, g, interior::Ordered(monitors) }; });
     });
+}
+
+// One window, if one was asked for, standing in for the monitor list: the geometry then works out to that
+// window's own rectangle, and the capture opens an item for the window rather than for a monitor.
+[[nodiscard]] Result<interior::MonitorList, Error> SourcesFor(const Options& o, const interior::MonitorList& monitors) noexcept
+{
+    if (o.window.IsEmpty())
+        return monitors;
+    return real::FindWindowNamed(o.window).and_then(
+        [](const interior::MonitorInfo& found) { return interior::MonitorList{}.Push(found).transform_error([](infra::CapacityExceeded) { return Error{ real::ApiCall::WindowNotFound, 2 }; }); });
+}
+
+// A single window is captured whole, so "every source" is what the geometry is asked for.
+[[nodiscard]] Options AsWholeSource(const Options& o) noexcept
+{
+    Options whole = o; // WAIVER(R2): a copy with one answer replaced, made once and read from there on.
+    whole.source = interior::SourceSelection{ interior::MonitorSelectionKind::All, interior::RequestedMonitorTag::Parse(0) };
+    return whole;
+}
+
+[[nodiscard]] Options SelectionFor(const Options& o) noexcept
+{
+    return o.window.IsEmpty() ? o : AsWholeSource(o);
 }
 
 [[nodiscard]] Result<Base, Error> ResolveBase(const Console& console, const Options& options) noexcept
 {
     return real::SetDpiAwareness().and_then(real::InitializeRuntime).and_then(real::RequireCaptureSupport).and_then(ExecutableDirectory).and_then([&](const interior::DirectoryPath& directory) {
-        return real::EnumerateMonitors().and_then([&](const interior::MonitorList& monitors) { return BasedOn(console, options, directory, monitors); });
+        return real::EnumerateMonitors().and_then([&](const interior::MonitorList& monitors) {
+            return SourcesFor(options, monitors).and_then([&](const interior::MonitorList& sources) { return BasedOn(console, SelectionFor(options), directory, monitors, sources); });
+        });
     });
 }
 
@@ -625,9 +651,22 @@ using Caption = real::ChoiceText;
     });
 }
 
-[[nodiscard]] real::EnvironmentSettings SettingsOf(const Options& o, const SessionPlan& plan) noexcept
+[[nodiscard]] bool CapturesOneWindow(const Base& b) noexcept
 {
-    return real::EnvironmentSettings{ interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel }, plan.captureCursor };
+    return !b.options.window.IsEmpty() && !b.geometry.source.IsEmpty();
+}
+
+[[nodiscard]] std::optional<interior::MonitorHandle> FollowedWindow(const Base& b) noexcept
+{
+    if (!CapturesOneWindow(b))
+        return std::nullopt;
+    return b.geometry.source.At(0).handle;
+}
+
+[[nodiscard]] real::EnvironmentSettings SettingsOf(const Base& b, const SessionPlan& plan) noexcept
+{
+    const Options& o = b.options;
+    return real::EnvironmentSettings{ interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel }, plan.captureCursor, FollowedWindow(b) };
 }
 
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan) noexcept
@@ -635,7 +674,7 @@ using Caption = real::ChoiceText;
     const real::PanelFindings findings = FindingsFor(b, d);
     return CreatedWindow(console, b).and_then([&](real::OutputWindow window) {
         return CreatedPanel(b, plan, findings).and_then([&](std::optional<real::ControlPanel> panel) {
-            return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), std::move(panel), SettingsOf(b.options, plan), console);
+            return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), std::move(panel), SettingsOf(b, plan), console);
         });
     });
 }

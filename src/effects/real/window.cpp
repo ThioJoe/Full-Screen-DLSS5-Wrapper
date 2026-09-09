@@ -1,6 +1,7 @@
 #include "effects/real/window.h"
 
 #include "infrastructure/fold.h"
+#include "infrastructure/text.h"
 
 #include <algorithm>
 #include <array>
@@ -161,7 +162,7 @@ struct Collector
     return infra::AsOptional(interior::MonitorHandleTag::Parse(reinterpret_cast<std::uintptr_t>(handle))).and_then([&](interior::MonitorHandle h) {
         return infra::AsOptional(RectOf(info.rcMonitor)).and_then([&](const interior::ScreenRect& rect) {
             return infra::AsOptional(interior::DeviceName::Parse(std::wstring_view(info.szDevice))).transform([&](const interior::DeviceName& name) {
-                return MonitorInfo{ h, rect, IsPrimary(info), name };
+                return MonitorInfo{ h, rect, IsPrimary(info), name, interior::SourceKind::Monitor };
             });
         });
     });
@@ -301,6 +302,75 @@ Result<MonitorList, Error> EnumerateMonitors() noexcept
     return ListOf(collector);
 }
 
+// --- finding one window to work on ---------------------------------------------------------------------
+
+// What the operator typed has to appear in the title, ignoring case. Only a visible top-level window with
+// a title of its own can be picked, which leaves out the invisible message windows every process has.
+struct Search
+{
+    std::wstring_view wanted;
+    HWND found;
+};
+
+[[nodiscard]] std::array<wchar_t, interior::WindowTitle::Capacity + 1> TitleOf(HWND window) noexcept
+{
+    std::array<wchar_t, interior::WindowTitle::Capacity + 1> title{}; // WAIVER(R2): a local buffer filled once, before use.
+    (void)::GetWindowTextW(window, title.data(), static_cast<int>(title.size()));
+    return title;
+}
+
+[[nodiscard]] bool IsPickable(HWND window) noexcept
+{
+    return ::IsWindowVisible(window) != FALSE && ::GetWindow(window, GW_OWNER) == nullptr;
+}
+
+[[nodiscard]] bool Matches(HWND window, std::wstring_view wanted) noexcept
+{
+    if (!IsPickable(window))
+        return false;
+    return infra::ContainsIgnoringCase(std::wstring_view(TitleOf(window).data()), wanted);
+}
+
+// WAIVER(R17): the enumeration callback is called by the OS, which ignores attributes and discards nothing.
+BOOL CALLBACK CollectWindow(HWND window, LPARAM parameter) noexcept
+{
+    Search* search = reinterpret_cast<Search*>(parameter); // WAIVER(R2): the OS hands the search back one window at a time.
+    if (!Matches(window, search->wanted))
+        return TRUE;
+    search->found = window;
+    return FALSE;
+}
+
+[[nodiscard]] std::optional<MonitorInfo> SourceOf(HWND window) noexcept
+{
+    RECT bounds{};
+    if (::GetWindowRect(window, &bounds) == FALSE)
+        return std::nullopt;
+    return infra::AsOptional(interior::MonitorHandleTag::Parse(reinterpret_cast<std::uintptr_t>(window))).and_then([&](interior::MonitorHandle h) {
+        return infra::AsOptional(RectOf(bounds)).transform([&](const interior::ScreenRect& rect) {
+            return MonitorInfo{ h, rect, false, interior::DeviceName::Parse(std::wstring_view(TitleOf(window).data()).substr(0, interior::DeviceName::Capacity)).value_or(interior::DeviceName{}),
+                                interior::SourceKind::Window };
+        });
+    });
+}
+
+Result<MonitorInfo, Error> FindWindowNamed(const interior::WindowTitle& title) noexcept
+{
+    Search search{ title.Get(), nullptr }; // WAIVER(R2): filled by the enumeration, then read once.
+    (void)::EnumWindows(&CollectWindow, reinterpret_cast<LPARAM>(&search));
+    if (search.found == nullptr)
+        return Fail(Error{ ApiCall::WindowNotFound, 0 });
+    return infra::AsResult(SourceOf(search.found), Error{ ApiCall::WindowNotFound, 1 });
+}
+
+std::optional<interior::ScreenRect> BoundsOfWindow(interior::MonitorHandle window) noexcept
+{
+    RECT bounds{};
+    if (::GetWindowRect(reinterpret_cast<HWND>(window.Get()), &bounds) == FALSE)
+        return std::nullopt;
+    return infra::AsOptional(RectOf(bounds));
+}
+
 Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept
 {
     return RegisterWindowClass(ClassDescription()).and_then([&] { return CreateHandle(rect, settings); }).and_then([&](UniqueWindow handle) {
@@ -383,6 +453,11 @@ Status<Error> RegisterHotkeys(const OutputWindow& window) noexcept
     return RegisterOne(window.handle.get(), kHotkeyToggleOriginal, 'O').and_then([&] { return RegisterOne(window.handle.get(), kHotkeyToggleSplit, 'C'); }).and_then([&] {
         return RegisterOne(window.handle.get(), kHotkeyQuit, 'Q');
     });
+}
+
+void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& rect) noexcept
+{
+    (void)::SetWindowPos(window.handle.get(), nullptr, rect.Left().Get(), rect.Top().Get(), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 void ShowOutputWindow(const OutputWindow& window) noexcept
