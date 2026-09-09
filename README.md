@@ -104,11 +104,18 @@ crowds or clips whatever the scaling.
 Moving anything on the first two pages takes effect at once. Changing the tuning rebuilds the model's
 feature, because the model reads it while the feature is built rather than on each frame, and the frame is
 drawn again even when the desktop has sent nothing new, so a change shows even while the panel sits on
-another monitor. The Start-up page describes a session rather than changing this one: **Start a new session
-with these** writes those settings out as a command line and launches it, carrying the NGX settings the
-panel has no control for through unchanged. Closing the panel ends the session. Started from a console
-instead, the program attaches to it and logs there; `--console on` forces one, `--gui off` leaves the
-overlay to run alone.
+another monitor.
+
+The Start-up page holds what a running session cannot change under itself: which monitor or window is
+captured, where it is presented, the colour format, super resolution, where motion comes from, which
+adapter. **Apply these settings** takes them: the session stops, everything it made is released, and a new
+one is built in the same process from what the page says — read back through the same parser the command
+line uses, so it is the session a fresh process would have built. The panel itself stays where it is,
+keeping its page and its position. The one exception is the Direct3D debug layer: Windows turns it on for
+the process and will not turn it off again, so turning it off starts a new process.
+
+Closing the panel ends the session. Started from a console, the program attaches to it and logs there;
+`--console on` forces one, `--gui off` leaves the overlay to run alone.
 
 ```
 DlssScreen.exe                       # neural rendering on the primary monitor

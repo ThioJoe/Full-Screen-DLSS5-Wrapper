@@ -431,11 +431,11 @@ struct Ready
     return infra::CheckedMul(finest.width.Get(), finest.height.Get()).transform_error(FromArithmetic);
 }
 
-[[nodiscard]] Result<RealEnvironment, Error> Assembled(Ready r, const SessionPlan& plan, OutputWindow window, std::optional<ControlPanel> panel, const Console& console,
-                                                       const EnvironmentSettings& settings, const interior::LevelExtents& extents) noexcept
+[[nodiscard]] Result<RealEnvironment, Error> Assembled(Ready r, const SessionPlan& plan, OutputWindow window, const ControlPanel* panel, const Console& console, const EnvironmentSettings& settings,
+                                                       const interior::LevelExtents& extents) noexcept
 {
     return FinestPixels(plan, extents).and_then([&](std::uint32_t finest) {
-        return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), std::move(panel), console, settings, finest, r.fence, start); });
+        return Now().transform([&](interior::Instant start) { return RealEnvironment(std::move(r.gpu), plan, std::move(window), panel, console, settings, finest, r.fence, start); });
     });
 }
 
@@ -445,7 +445,7 @@ struct Ready
 struct Surroundings
 {
     const OutputWindow& window;
-    const std::optional<ControlPanel>& panel;
+    const ControlPanel* panel;
 };
 
 struct Prepared
@@ -503,18 +503,17 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
         ApplySplit(panel, *drag);
 }
 
-[[nodiscard]] std::optional<PanelReading> ReadingOf(const std::optional<ControlPanel>& panel, const WindowEvents& events, const std::optional<interior::Fraction>& drag,
-                                                    const interior::FrameState& state) noexcept
+[[nodiscard]] std::optional<PanelReading> ReadingOf(const ControlPanel* panel, const WindowEvents& events, const std::optional<interior::Fraction>& drag, const interior::FrameState& state) noexcept
 {
-    if (!panel.has_value())
+    if (panel == nullptr)
         return std::nullopt;
     SteerPanel(*panel, events, drag, state);
     return ReadControlPanel(*panel, state.controls);
 }
 
-[[nodiscard]] bool PanelWasClosed(const std::optional<ControlPanel>& panel) noexcept
+[[nodiscard]] bool PanelWasClosed(const ControlPanel* panel) noexcept
 {
-    return panel.has_value() && IsPanelClosed(*panel);
+    return panel != nullptr && IsPanelClosed(*panel);
 }
 
 [[nodiscard]] Result<Prepared, Error> Sampled(const Gpu& gpu, const Surroundings& s, const WindowEvents& events, std::optional<interior::Fraction> unmatched,
@@ -641,9 +640,9 @@ void SteerPanel(const ControlPanel& panel, const WindowEvents& events, const std
 
 } // namespace
 
-RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, std::optional<ControlPanel> panel, const Console& console, const EnvironmentSettings& settings,
+RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow window, const ControlPanel* panel, const Console& console, const EnvironmentSettings& settings,
                                  std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
-    : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(std::move(panel)), console_(console), finestPixels_(finestPixels),
+    : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(panel), console_(console), finestPixels_(finestPixels),
       frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false)
 {
 }
@@ -749,9 +748,9 @@ Status<Error> RealEnvironment::Settled(const PanelReading& reading) noexcept
     return Resurfaced(reading.surface).and_then([this, &reading] { return Recleared(reading.live.depth); });
 }
 
-[[nodiscard]] bool AsksForANewSession(bool wanted, const std::optional<ControlPanel>& panel) noexcept
+[[nodiscard]] bool AsksForANewSession(bool wanted, const ControlPanel* panel) noexcept
 {
-    return wanted && panel.has_value();
+    return wanted && panel != nullptr;
 }
 
 std::optional<interior::CommandLine> RealEnvironment::Restart(const interior::Options& options) const noexcept
@@ -795,12 +794,12 @@ Error RealEnvironment::FromPlanError(interior::PlanFrameError error) noexcept
 }
 
 Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const SessionPlan& plan, const interior::Geometry& geometry, OutputWindow window,
-                                                 std::optional<ControlPanel> panel, const EnvironmentSettings& settings, const Console& console) noexcept
+                                                 const ControlPanel* panel, const EnvironmentSettings& settings, const Console& console) noexcept
 {
     return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
         return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents)
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
-            .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), std::move(panel), console, settings, extents); });
+            .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), panel, console, settings, extents); });
     });
 }
 

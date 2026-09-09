@@ -42,8 +42,8 @@ struct EnvironmentSettings
 class RealEnvironment final
 {
 public:
-    RealEnvironment(Gpu gpu, const interior::SessionPlan& plan, OutputWindow window, std::optional<ControlPanel> panel, const Console& console, const EnvironmentSettings& settings,
-                    std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept;
+    RealEnvironment(Gpu gpu, const interior::SessionPlan& plan, OutputWindow window, const ControlPanel* panel, const Console& console, const EnvironmentSettings& settings, std::uint32_t finestPixels,
+                    interior::FenceValue fence, interior::Instant start) noexcept;
 
     [[nodiscard]] infra::Result<FrameStart, Error> BeginFrame(const interior::FrameState& state) noexcept;
     [[nodiscard]] infra::Result<ExecutionReport, Error> Execute(const interior::FramePlan& plan) noexcept;
@@ -72,7 +72,7 @@ private:
     Gpu gpu_;
     interior::SessionPlan plan_;
     OutputWindow window_;
-    std::optional<ControlPanel> panel_;
+    const ControlPanel* panel_; // borrowed: the panel outlives the session, so a rebuilt one keeps its place
     Console console_;
     std::uint32_t finestPixels_;
     FrameContext frame_;                // WAIVER(R2): per-frame bookkeeping of the effect layer, replaced whole by BeginFrame and Execute.
@@ -83,6 +83,6 @@ private:
 };
 
 [[nodiscard]] infra::Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const interior::SessionPlan& plan, const interior::Geometry& geometry,
-                                                                      OutputWindow window, std::optional<ControlPanel> panel, const EnvironmentSettings& settings, const Console& console) noexcept;
+                                                                      OutputWindow window, const ControlPanel* panel, const EnvironmentSettings& settings, const Console& console) noexcept;
 
 } // namespace real

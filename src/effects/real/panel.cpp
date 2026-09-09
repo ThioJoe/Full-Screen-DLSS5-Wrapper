@@ -1605,7 +1605,7 @@ struct Notice
                          BoldFont(m.dpi),
                          tabs,
                          tabs == nullptr ? nullptr : CreateTooltip(parent),
-                         CreateButton(parent, m, L"Start a new session with these", BS_AUTOCHECKBOX | BS_PUSHLIKE, kMargin, m.ButtonTop(), kColumnWidth),
+                         CreateButton(parent, m, L"Apply these settings", BS_AUTOCHECKBOX | BS_PUSHLIKE, kMargin, m.ButtonTop(), kColumnWidth),
                          built.labels,
                          built.sliders,
                          built.boxes,
@@ -1833,6 +1833,11 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
 {
     const interior::CommandLine paths = WithPath(WithPath(so, L"ngx-path", o.ngxPath.Get()), L"app-data", o.appDataPath.Get());
     return WithPath(paths, L"log-file", o.logFile.Get());
+}
+
+void AcknowledgeRestart(const ControlPanel& panel) noexcept
+{
+    SetChecked(panel.restart, false);
 }
 
 interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept

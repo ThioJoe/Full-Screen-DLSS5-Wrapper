@@ -133,6 +133,9 @@ struct PanelReading
 // answer back to all three. A value a unit refuses keeps what `current` holds.
 [[nodiscard]] PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSettings& current) noexcept;
 
+// Takes the request back once it has been acted on, so a session rebuilt in place does not ask again.
+void AcknowledgeRestart(const ControlPanel& panel) noexcept;
+
 // The command line the start-up page describes, for the session the operator has asked for.
 [[nodiscard]] interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept;
 

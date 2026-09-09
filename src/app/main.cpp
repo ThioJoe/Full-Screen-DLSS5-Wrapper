@@ -653,29 +653,16 @@ using Caption = real::ChoiceText;
     return real::PanelFindings{ ListsFor(b, real::UsableAdapters(d.device.factory.Get()), OfferedPresets(d)), OffersSuperResolution(d), FollowedWindow(b) };
 }
 
-// The panel is the ordinary way in: it opens unless --gui off asks for the overlay alone.
-[[nodiscard]] Result<std::optional<real::ControlPanel>, Error> CreatedPanel(const Base& b, const SessionPlan& plan, const real::PanelFindings& findings) noexcept
-{
-    if (!b.options.gui)
-        return std::optional<real::ControlPanel>{};
-    return real::CreateControlPanel(b.options, interior::StartingLive(plan), plan.initialDisplay, findings).transform([](real::ControlPanel panel) {
-        return std::optional<real::ControlPanel>{ std::move(panel) };
-    });
-}
-
 [[nodiscard]] real::EnvironmentSettings SettingsOf(const Base& b, const SessionPlan& plan) noexcept
 {
     const Options& o = b.options;
     return real::EnvironmentSettings{ interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel }, plan.captureCursor, FollowedWindow(b) };
 }
 
-[[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan) noexcept
+[[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan, const real::ControlPanel* panel) noexcept
 {
-    const real::PanelFindings findings = FindingsFor(b, d);
     return CreatedWindow(console, b).and_then([&](real::OutputWindow window) {
-        return CreatedPanel(b, plan, findings).and_then([&](std::optional<real::ControlPanel> panel) {
-            return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), std::move(panel), SettingsOf(b, plan), console);
-        });
+        return real::CreateEnvironment(std::move(d.device), std::move(d.runtime), plan, b.geometry, std::move(window), panel, SettingsOf(b, plan), console);
     });
 }
 
@@ -699,34 +686,154 @@ using Caption = real::ChoiceText;
     return real::StartProcess(line.Get(), arguments.Get());
 }
 
-[[nodiscard]] Result<interior::FrameNumber, Error> Restarted(const Options& options, real::RealEnvironment& env, interior::FrameNumber frames) noexcept
+// The panel belongs to the operator rather than to any one session, so it is made once and kept while
+// sessions are torn down and built again underneath it. Its place on screen, its page and its notice stay.
+struct PanelHolder
 {
-    const std::optional<interior::CommandLine> arguments = env.Restart(options);
-    if (!arguments.has_value())
-        return frames;
-    return Relaunch(*arguments).transform([frames] { return frames; });
+    std::optional<real::ControlPanel> panel;
+};
+
+[[nodiscard]] bool AlreadyAnswered(const Base& b, const PanelHolder& held) noexcept
+{
+    return held.panel.has_value() || !b.options.gui;
 }
 
-[[nodiscard]] Result<interior::FrameNumber, Error> Drive(const Console& console, const Options& options, const SessionPlan& plan, real::RealEnvironment& env) noexcept
+[[nodiscard]] const real::ControlPanel* Borrowed(const PanelHolder& held) noexcept
+{
+    return held.panel.has_value() ? &*held.panel : nullptr;
+}
+
+[[nodiscard]] Result<const real::ControlPanel*, Error> HeldPanel(const Base& b, const SessionPlan& plan, const real::PanelFindings& findings, PanelHolder& held) noexcept
+{
+    if (AlreadyAnswered(b, held))
+        return Borrowed(held);
+    return real::CreateControlPanel(b.options, interior::StartingLive(plan), plan.initialDisplay, findings).transform([&held](real::ControlPanel made) {
+        held.panel = std::move(made);
+        return &*held.panel;
+    });
+}
+
+// What one session leaves behind: how far it got, and the settings the operator asked the next one for.
+struct Ended
+{
+    interior::FrameNumber frames;
+    std::optional<interior::CommandLine> again;
+};
+
+[[nodiscard]] Result<Ended, Error> Drive(const Console& console, const Options& options, const SessionPlan& plan, real::RealEnvironment& env) noexcept
 {
     real::ShowOutputWindow(env.Window());
     return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit")
         .and_then([&] { return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit)); })
-        .and_then([&](interior::FrameNumber frames) { return Restarted(options, env, frames); });
+        .transform([&](interior::FrameNumber frames) { return Ended{ frames, env.Restart(options) }; });
 }
 
-[[nodiscard]] Result<interior::FrameNumber, Error> Run(const Console& console, const Options& options) noexcept
+// One session, from the devices up. Everything it makes goes away when it returns, which is what lets the
+// next one be made differently; the panel is the operator's and is not part of any of it.
+[[nodiscard]] Result<Ended, Error> Staged(const Console& console, const Base& b, Devices d, const SessionPlan& plan, PanelHolder& held) noexcept
+{
+    const real::PanelFindings findings = FindingsFor(b, d);
+    return LogPlan(console, plan).and_then([&] { return HeldPanel(b, plan, findings, held); }).and_then([&](const real::ControlPanel* panel) {
+        return Environment(console, b, std::move(d), plan, panel).and_then([&](real::RealEnvironment env) { return Drive(console, b.options, plan, env); });
+    });
+}
+
+[[nodiscard]] Result<Ended, Error> RunOnce(const Console& console, const Options& options, PanelHolder& held) noexcept
 {
     return ResolveBase(console, options).and_then([&](const Base& found) {
         return CreateDevices(console, found).and_then([&](Devices d) {
             const Base b = Offered(found, d);
-            return Planned(console, b, d).and_then([&](const SessionPlan& plan) {
-                return LogPlan(console, plan).and_then([&] { return Environment(console, b, std::move(d), plan); }).and_then([&](real::RealEnvironment env) {
-                    return Drive(console, b.options, plan, env);
-                });
-            });
+            return Planned(console, b, d).and_then([&](const SessionPlan& plan) { return Staged(console, b, std::move(d), plan, held); });
         });
     });
+}
+
+// The splitter expects a program name in front, as a real command line has, so one is put there and the
+// answer starts after it, which is what this process does with the line it was given itself.
+[[nodiscard]] std::array<wchar_t, interior::CommandLine::Capacity + 4> WithProgramName(const interior::CommandLine& line) noexcept
+{
+    std::array<wchar_t, interior::CommandLine::Capacity + 4> whole{}; // WAIVER(R2): a local buffer filled once, before use.
+    const int written = ::_snwprintf_s(whole.data(), whole.size(), _TRUNCATE, L"x %.*s", static_cast<int>(line.Get().size()), line.Get().data());
+    ENSURE(written > 0);
+    return whole;
+}
+
+[[nodiscard]] Result<Arguments, Error> SplitArguments(const interior::CommandLine& line) noexcept
+{
+    int argc = 0; // WAIVER(R2): the answer of one call, read once after it.
+    wchar_t** argv = ::CommandLineToArgvW(WithProgramName(line).data(), &argc);
+    if (argv == nullptr)
+        return Fail(real::LastError(real::ApiCall::CommandLineToArgvW));
+    return Collected(ArgumentBlock(argv), argc);
+}
+
+// What the start-up page describes is read back through the parser the command line uses, so a session
+// built from it is the session a fresh process would have built.
+[[nodiscard]] Result<Options, Error> Reread(const interior::CommandLine& asked) noexcept
+{
+    return SplitArguments(asked).and_then([](const Arguments& a) {
+        return interior::ParseOptions(std::span<const std::wstring_view>(a.views.data(), a.count)).transform_error([](const interior::OptionsError&) {
+            return Error{ real::ApiCall::CommandLineToArgvW, 1 };
+        });
+    });
+}
+
+// One session after another, each built from what the last one's panel asked for.
+struct Cycle
+{
+    Options wanted;
+    Result<Ended, Error> ended;
+};
+
+[[nodiscard]] bool Continues(const Cycle& c) noexcept
+{
+    return c.ended.has_value() && c.ended->again.has_value();
+}
+
+// The debug layer is the one setting a session cannot take back: Direct3D turns it on for the process and
+// there is no turning it off again. Everything else is made afresh below and needs no new process at all.
+[[nodiscard]] bool NeedsAFreshProcess(const Options& was, const Options& now) noexcept
+{
+    return was.debugLayer && !now.debugLayer;
+}
+
+void AcknowledgeIfHeld(const PanelHolder& held) noexcept
+{
+    if (held.panel.has_value())
+        real::AcknowledgeRestart(*held.panel);
+}
+
+[[nodiscard]] Cycle Relaunching(const Cycle& c, const Options& now) noexcept
+{
+    const interior::FrameNumber frames = c.ended->frames;
+    return Cycle{ now, Relaunch(*c.ended->again).transform([frames] { return Ended{ frames, std::nullopt }; }) };
+}
+
+[[nodiscard]] Cycle Continued(const Console& console, const Cycle& c, const Options& now, PanelHolder& held) noexcept
+{
+    if (NeedsAFreshProcess(c.wanted, now))
+        return Relaunching(c, now);
+    AcknowledgeIfHeld(held);
+    return Cycle{ now, RunOnce(console, now, held) };
+}
+
+[[nodiscard]] Cycle Next(const Console& console, const Cycle& c, PanelHolder& held) noexcept
+{
+    const Result<Options, Error> now = Reread(*c.ended->again);
+    if (!now.has_value())
+        return Cycle{ c.wanted, Fail(now.error()) };
+    return Continued(console, c, *now, held);
+}
+
+// A loop rather than one session calling the next, so asking for a hundred of them costs a hundred
+// sessions and not a hundred stack frames.
+[[nodiscard]] Result<interior::FrameNumber, Error> Run(const Console& console, const Options& options) noexcept
+{
+    PanelHolder held{};                                      // WAIVER(R2): the panel outlives the sessions, made once when the first asks for it.
+    Cycle cycle{ options, RunOnce(console, options, held) }; // WAIVER(R2): one session at a time, replaced whole by the next.
+    while (Continues(cycle))                                 // WAIVER(R2): one turn of the loop is one session.
+        cycle = Next(console, cycle, held);
+    return cycle.ended.transform([](const Ended& e) { return e.frames; });
 }
 
 [[nodiscard]] int Failed(const Console& console, const Error& error) noexcept
