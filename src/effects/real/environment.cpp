@@ -639,7 +639,7 @@ RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow 
                                  const interior::Options& options, std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
     : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(panel), console_(console), finestPixels_(finestPixels),
       frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false), resized_(false),
-      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false)
+      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false), placed_(std::nullopt)
 {
 }
 
@@ -682,11 +682,21 @@ void RealEnvironment::Settling(const interior::Extent& size, interior::Instant n
         Held(size, now);
 }
 
+// Asking Windows to put the overlay where it already is still makes the desktop manager do its work over,
+// and the window is topmost and kept out of the capture, which is not cheap work. It is placed on a move.
+void RealEnvironment::Placed(const interior::ScreenRect& bounds) noexcept
+{
+    if (placed_ == bounds)
+        return;
+    MoveOutputWindow(window_, bounds);
+    placed_ = bounds; // WAIVER(R2): where the overlay was last put, replaced whole.
+}
+
 // A window that only moves needs the overlay moved and nothing else, because the capture follows it. Every
 // size below this was settled when the session was planned, so a resize asks for the session to be rebuilt.
 void RealEnvironment::Moved(const interior::ScreenRect& bounds, interior::Instant now) noexcept
 {
-    MoveOutputWindow(window_, bounds);
+    Placed(bounds);
     Settling(SizeOf(bounds, plan_.source), now);
 }
 

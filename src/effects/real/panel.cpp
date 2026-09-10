@@ -621,10 +621,25 @@ void KeepCommitted(HWND box, int steps) noexcept
     return wide;
 }
 
-// The box is left alone while it has the keyboard, or a half-typed number would be rewritten under it.
+// The panel is written to on every frame, and writing a control text it already holds still invalidates it
+// and costs a repaint, on the thread that draws the picture. So nothing is written twice.
+[[nodiscard]] bool Reads(HWND control, const wchar_t* wanted) noexcept
+{
+    const std::array<wchar_t, kTextCapacity> now = TextOf(control);
+    return std::wstring_view(now.data()) == std::wstring_view(wanted);
+}
+
+void WriteText(HWND control, const wchar_t* wanted) noexcept
+{
+    if (Reads(control, wanted))
+        return;
+    ENSURE(::SetWindowTextW(control, wanted) != FALSE);
+}
+
 void WriteBox(HWND box, int steps, const FieldSpec& spec) noexcept
 {
-    ENSURE(::SetWindowTextW(box, Widened(Printed(steps, spec).Get()).data()) != FALSE);
+    const std::array<wchar_t, kTextCapacity> wanted = Widened(Printed(steps, spec).Get());
+    WriteText(box, wanted.data());
 }
 
 // A box being typed into is left alone; anything else moves the caret out from under the operator.
@@ -669,10 +684,19 @@ void StretchSlider(HWND slider, int steps) noexcept
         (void)::SendMessageW(slider, TBM_SETRANGEMAX, TRUE, steps);
 }
 
+// A slider redraws its thumb inside TBM_SETPOS rather than at the next paint, so a slider already at the
+// position asked for is left where it is.
+void MoveSlider(HWND slider, int steps) noexcept
+{
+    if (SliderPosition(slider) == steps)
+        return;
+    (void)::SendMessageW(slider, TBM_SETPOS, TRUE, steps);
+}
+
 void Commit(const ControlPanel& panel, std::size_t field, int steps) noexcept
 {
     StretchSlider(panel.sliders[field], steps);
-    (void)::SendMessageW(panel.sliders[field], TBM_SETPOS, TRUE, steps);
+    MoveSlider(panel.sliders[field], steps);
     KeepCommitted(panel.boxes[field], steps);
     ShowInBox(panel.boxes[field], steps, kFields[field]);
 }
@@ -1507,7 +1531,7 @@ void ApplyNotice(const ControlPanel& panel) noexcept
 void ShowPickedName(const ControlPanel& panel, std::size_t pick) noexcept
 {
     const interior::WindowTitle title = TitlePicked(PickedIn(panel.crosshairs[pick]));
-    ENSURE(::SetWindowTextW(panel.pickNames[pick], title.IsEmpty() ? kPicks[pick].nothing : title.CString()) != FALSE);
+    WriteText(panel.pickNames[pick], title.IsEmpty() ? kPicks[pick].nothing : title.CString());
 }
 
 // Holding the reset lets the window go, and the session goes back to the monitor the source names.
