@@ -549,27 +549,32 @@ struct Devices
     return Log(console, LogLevel::Warn, "The output window is not excluded from capture and overlaps the source: expect a feedback loop");
 }
 
-// A window capture never holds what is stacked in front of the window, so our overlay is not in it and
-// there is nothing to leave out. Only a monitor capture gives up the layering, and only it has to.
-[[nodiscard]] bool ShowsItsOwnContent(const Options& o) noexcept
+// A window capture never holds what is stacked in front of the window, and an output on a monitor that
+// is not being captured is not in the picture either. Only where it is has anything to be left out.
+[[nodiscard]] bool IsInItsOwnCapture(const Options& o, const Geometry& g) noexcept
 {
-    return o.excludeOwnWindows && o.window.IsEmpty();
+    return o.window.IsEmpty() && OverlapsSource(o, g);
 }
 
-[[nodiscard]] real::WindowSettings WindowSettingsOf(const Options& o) noexcept
+[[nodiscard]] bool ShowsItsOwnContent(const Options& o, const Geometry& g) noexcept
+{
+    return o.excludeOwnWindows && IsInItsOwnCapture(o, g);
+}
+
+[[nodiscard]] real::WindowSettings WindowSettingsOf(const Options& o, const Geometry& g) noexcept
 {
     return real::WindowSettings{ .topmost = o.topmost && o.window.IsEmpty(),
                                  .clickThrough = o.clickThrough,
                                  .excludeFromCapture = o.displayAffinity,
                                  .redirectionBitmap = o.redirectionBitmap,
-                                 .ownContent = ShowsItsOwnContent(o) };
+                                 .ownContent = ShowsItsOwnContent(o, g) };
 }
 
 [[nodiscard]] Result<real::OutputWindow, Error> CreatedWindow(const Console& console, const Base& b) noexcept
 {
-    return WarnFeedback(console, b.options, b.geometry).and_then([&] { return real::CreateOutputWindow(b.geometry.targetRect, WindowSettingsOf(b.options)); }).and_then([](real::OutputWindow window) {
-        return real::RegisterHotkeys(window).transform([&window] { return std::move(window); });
-    });
+    return WarnFeedback(console, b.options, b.geometry)
+        .and_then([&] { return real::CreateOutputWindow(b.geometry.targetRect, WindowSettingsOf(b.options, b.geometry)); })
+        .and_then([](real::OutputWindow window) { return real::RegisterHotkeys(window).transform([&window] { return std::move(window); }); });
 }
 
 // --- naming what the machine turned out to have --------------------------------------------------------
@@ -677,7 +682,8 @@ using Caption = real::ChoiceText;
     return real::EnvironmentSettings{ .surface = interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel },
                                       .captureCursor = plan.captureCursor,
                                       .followed = FollowedWindow(b),
-                                      .ownContent = ShowsItsOwnContent(o) };
+                                      .ownContent = ShowsItsOwnContent(o, b.geometry),
+                                      .outsideTheSource = !OverlapsSource(o, b.geometry) };
 }
 
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan, const real::ControlPanel* panel) noexcept
@@ -746,20 +752,28 @@ struct Ended
 
 // Which of the two ways our own windows are being kept out of our own capture, since one of them also
 // keeps them out of everyone else's and is the reason the overlay cannot be screenshotted or recorded.
-[[nodiscard]] Status<Error> LogExclusion(const Console& console, bool excluding) noexcept
+[[nodiscard]] Status<Error> LogHiding(const Console& console, bool excluding) noexcept
 {
     if (excluding)
         return Log(console, LogLevel::Warn, "Our windows are left out of the capture by name, which costs the overlay its click-through: it swallows clicks. --exclude-own-windows off trades back");
     return Log(console, LogLevel::Info, "Our windows are hidden from every capture, screenshots included (--exclude-own-windows on asks for the other way)");
 }
 
-[[nodiscard]] Result<Ended, Error> Drive(const Console& console, const Options& options, const SessionPlan& plan, real::RealEnvironment& env) noexcept
+// Nothing of ours can reach a capture of somewhere our windows are not, so neither way is needed there.
+[[nodiscard]] Status<Error> LogExclusion(const Console& console, const Base& b, bool excluding) noexcept
+{
+    if (!OverlapsSource(b.options, b.geometry))
+        return Log(console, LogLevel::Info, "The output is not on what is being captured, so nothing of ours is hidden: screenshots and recordings hold both windows");
+    return LogHiding(console, excluding);
+}
+
+[[nodiscard]] Result<Ended, Error> Drive(const Console& console, const Base& b, const SessionPlan& plan, real::RealEnvironment& env) noexcept
 {
     real::ShowOutputWindow(env.Window());
-    return LogExclusion(console, env.Devices().capture.excludesOurWindows)
+    return LogExclusion(console, b, env.Devices().capture.excludesOurWindows)
         .and_then([&] { return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit"); })
         .and_then([&] { return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit)); })
-        .transform([&](interior::FrameNumber frames) { return Ended{ .frames = frames, .again = env.Restart(options), .resized = env.Resized(), .abandoned = env.Abandoned() }; });
+        .transform([&](interior::FrameNumber frames) { return Ended{ .frames = frames, .again = env.Restart(b.options), .resized = env.Resized(), .abandoned = env.Abandoned() }; });
 }
 
 // One session, from the devices up. Everything it makes goes away when it returns, which is what lets the
@@ -768,7 +782,7 @@ struct Ended
 {
     const real::PanelFindings findings = FindingsFor(b, d);
     return LogPlan(console, plan).and_then([&] { return HeldPanel(b, plan, findings, held); }).and_then([&](const real::ControlPanel* panel) {
-        return Environment(console, b, std::move(d), plan, panel).and_then([&](real::RealEnvironment env) { return Drive(console, b.options, plan, env); });
+        return Environment(console, b, std::move(d), plan, panel).and_then([&](real::RealEnvironment env) { return Drive(console, b, plan, env); });
     });
 }
 

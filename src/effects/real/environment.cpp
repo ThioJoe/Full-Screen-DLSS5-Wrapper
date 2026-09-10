@@ -892,15 +892,21 @@ Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surfa
 {
     if (surface == applied_.surface)
         return {};
-    applied_ = EnvironmentSettings{ surface, applied_.captureCursor, applied_.followed, applied_.ownContent }; // WAIVER(R2): what has been applied, replaced whole.
+    // WAIVER(R2): what has been applied, replaced whole.
+    applied_ = EnvironmentSettings{ surface, applied_.captureCursor, applied_.followed, applied_.ownContent, applied_.outsideTheSource };
     return ApplySurface(gpu_, window_, applied_);
 }
 
 // A window capture holds that window's own content and nothing stacked in front, so the overlay was never
-// going to be in it: only a monitor capture needs our windows kept out, and only there does it cost.
+// going to be in it; an overlay on a monitor other than the captured one is not in the picture either.
+[[nodiscard]] bool NotInThePicture(const EnvironmentSettings& settings) noexcept
+{
+    return settings.followed.has_value() || settings.outsideTheSource;
+}
+
 [[nodiscard]] bool NothingToHideFrom(const Gpu& gpu, const EnvironmentSettings& settings) noexcept
 {
-    return gpu.capture.excludesOurWindows || settings.followed.has_value();
+    return gpu.capture.excludesOurWindows || NotInThePicture(settings);
 }
 
 [[nodiscard]] interior::SurfaceSettings WithoutAffinity(const interior::SurfaceSettings& s) noexcept
