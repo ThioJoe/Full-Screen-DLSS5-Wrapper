@@ -1042,20 +1042,31 @@ void ArmsOf(HDC dc, const RECT& box, int radius) noexcept;
 void VerticalArms(HDC dc, const RECT& box, int radius) noexcept;
 [[nodiscard]] LRESULT PaintedCrosshair(HWND window) noexcept;
 [[nodiscard]] LRESULT DraggedCrosshair(HWND window, UINT message, WPARAM w, LPARAM l) noexcept;
+[[nodiscard]] LRESULT AbandonedDrag(HWND window, UINT message, WPARAM w, LPARAM l) noexcept;
 [[nodiscard]] LRESULT StartedDrag(HWND window) noexcept;
 [[nodiscard]] LRESULT MovedDrag(HWND window) noexcept;
 [[nodiscard]] LRESULT FinishedDrag(HWND window, UINT message, WPARAM w, LPARAM l) noexcept;
 
-// The crosshair keeps the window it was last dragged onto in its own window data, so the panel can be
-// moved about and copied without the picking leaving anything dangling behind it.
-[[nodiscard]] std::optional<interior::MonitorHandle> PickedIn(HWND crosshair) noexcept
+// The crosshair keeps two windows in its own window data, so the panel can be moved about and copied
+// without the picking leaving anything dangling behind it.
+constexpr int kPointingAt = GWLP_USERDATA; // what the pointer is over, which the label shows as it goes
+constexpr int kChosen = 0;                 // what the operator chose by letting the button up
+
+[[nodiscard]] std::optional<interior::MonitorHandle> HandleAt(HWND crosshair, int slot) noexcept
 {
-    return infra::AsOptional(interior::MonitorHandleTag::Parse(static_cast<std::uintptr_t>(::GetWindowLongPtrW(crosshair, GWLP_USERDATA))));
+    return infra::AsOptional(interior::MonitorHandleTag::Parse(static_cast<std::uintptr_t>(::GetWindowLongPtrW(crosshair, slot))));
 }
 
-void KeepPicked(HWND crosshair, const std::optional<interior::MonitorHandle>& window) noexcept
+void KeepAt(HWND crosshair, int slot, const std::optional<interior::MonitorHandle>& window) noexcept
 {
-    (void)::SetWindowLongPtrW(crosshair, GWLP_USERDATA, static_cast<LONG_PTR>(window.has_value() ? window->Get() : 0u));
+    (void)::SetWindowLongPtrW(crosshair, slot, static_cast<LONG_PTR>(window.has_value() ? window->Get() : 0u));
+}
+
+// Letting go of a window, and picking one up, both mean the same thing to a drag that has not started.
+void KeepBoth(HWND crosshair, const std::optional<interior::MonitorHandle>& window) noexcept
+{
+    KeepAt(crosshair, kPointingAt, window);
+    KeepAt(crosshair, kChosen, window);
 }
 
 // Dragging over one of our own windows, or over the desktop, picks nothing, which is how a window is let
@@ -1065,7 +1076,7 @@ void PickUnderCursor(HWND crosshair) noexcept
     POINT cursor{}; // WAIVER(R2): the answer of one query, read once after it.
     if (::GetCursorPos(&cursor) == FALSE)
         return;
-    KeepPicked(crosshair, WindowUnder(cursor.x, cursor.y));
+    KeepAt(crosshair, kPointingAt, WindowUnder(cursor.x, cursor.y));
 }
 
 void DrawCrosshair(HDC dc, const RECT& box) noexcept
@@ -1149,11 +1160,23 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
     return 0;
 }
 
+// The pick is taken when the button comes up, and not before. Every window the pointer crosses on its
+// way, and the desktop it pauses over, would otherwise each be a session built and thrown away.
 [[nodiscard]] LRESULT FinishedDrag(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
 {
     if (message != WM_LBUTTONUP)
-        return ::DefWindowProcW(window, message, w, l);
+        return AbandonedDrag(window, message, w, l);
+    KeepAt(window, kChosen, HandleAt(window, kPointingAt));
     (void)::ReleaseCapture();
+    return 0;
+}
+
+// A drag that ends with something else taking the capture chooses nothing, and the label says so again.
+[[nodiscard]] LRESULT AbandonedDrag(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message != WM_CAPTURECHANGED)
+        return ::DefWindowProcW(window, message, w, l);
+    KeepAt(window, kPointingAt, HandleAt(window, kChosen));
     return 0;
 }
 
@@ -1164,7 +1187,7 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
                         .style = 0,
                         .lpfnWndProc = &CrosshairProc,
                         .cbClsExtra = 0,
-                        .cbWndExtra = 0,
+                        .cbWndExtra = sizeof(LONG_PTR),
                         .hInstance = ::GetModuleHandleW(nullptr),
                         .hIcon = nullptr,
                         .hCursor = ::LoadCursorW(nullptr, IDC_CROSS),
@@ -1179,7 +1202,7 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
     const Placement at = PlaceOfRow(Kind::Pick, pick, m);
     const HWND crosshair = CreateChild(parent, kCrosshairClass, nullptr, 0, WS_EX_CLIENTEDGE, Bounds(m, at.left, at.control, kCrosshairWidth, m.ControlHeight()));
     if (crosshair != nullptr)
-        KeepPicked(crosshair, window);
+        KeepBoth(crosshair, window);
     return crosshair;
 }
 
@@ -1540,7 +1563,7 @@ void ApplyNotice(const ControlPanel& panel) noexcept
 
 void ShowPickedName(const ControlPanel& panel, std::size_t pick) noexcept
 {
-    const interior::WindowTitle title = TitlePicked(PickedIn(panel.crosshairs[pick]));
+    const interior::WindowTitle title = TitlePicked(HandleAt(panel.crosshairs[pick], kPointingAt));
     WriteText(panel.pickNames[pick], title.IsEmpty() ? kPicks[pick].nothing : title.CString());
 }
 
@@ -1548,7 +1571,7 @@ void ShowPickedName(const ControlPanel& panel, std::size_t pick) noexcept
 void ReleasePicked(const ControlPanel& panel, std::size_t pick) noexcept
 {
     if (IsPushed(panel.pickResets[pick]))
-        KeepPicked(panel.crosshairs[pick], std::nullopt);
+        KeepBoth(panel.crosshairs[pick], std::nullopt);
 }
 
 // WAIVER(R7): walking one small table twice is what several of these do; each does something else with it.
@@ -1677,7 +1700,7 @@ using Piece = infra::BoundedString<char, kPieceCapacity>;
 // A handle rather than a title: the panel has the window itself, and a title is not a name for anything.
 [[nodiscard]] Piece WindowPiece(const ControlPanel& panel) noexcept
 {
-    const std::optional<interior::MonitorHandle> picked = PickedIn(panel.crosshairs[static_cast<std::size_t>(Pick::Window)]);
+    const std::optional<interior::MonitorHandle> picked = HandleAt(panel.crosshairs[static_cast<std::size_t>(Pick::Window)], kChosen);
     if (!picked.has_value())
         return Piece{};
     return Trimmed(infra::Formatted<kPieceCapacity>("--window=0x{:x}", picked->Get()).Get());
@@ -2093,7 +2116,7 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
 // the next session is built from, and the crosshair is ready to be dragged onto another window.
 void ReleaseWindow(const ControlPanel& panel) noexcept
 {
-    KeepPicked(panel.crosshairs[static_cast<std::size_t>(Pick::Window)], std::nullopt);
+    KeepBoth(panel.crosshairs[static_cast<std::size_t>(Pick::Window)], std::nullopt);
     ShowPickedName(panel, static_cast<std::size_t>(Pick::Window));
 }
 
