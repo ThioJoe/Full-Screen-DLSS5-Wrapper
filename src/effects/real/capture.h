@@ -52,4 +52,8 @@ struct Capture
 // Changes what the running capture sessions include; both are settings of the session, not of the frame.
 [[nodiscard]] infra::Status<Error> ApplyCaptureSettings(const Capture& capture, const CaptureSettings& settings) noexcept;
 
+// Whether a session here answers to IDisplayGraphicsCaptureSession, which carries a per-session window
+// exclusion list. Reported only; nothing is called on it yet.
+[[nodiscard]] bool OffersWindowExclusion(const Capture& capture) noexcept;
+
 } // namespace real

@@ -201,6 +201,16 @@ struct Pending;
         .transform([&session] { return session; });
 }
 
+// IDisplayGraphicsCaptureSession, in Windows metadata, carries an exclusion list scoped to one session
+// rather than to every capture. Nothing documented hands one out, so the session is asked and reported.
+constexpr GUID kDisplaySessionIid{ 0xBB91F61B, 0x218A, 0x587D, { 0x85, 0x80, 0x27, 0x01, 0xA7, 0x4C, 0x05, 0x25 } };
+
+[[nodiscard]] bool AnswersToDisplaySession(const MonitorSession& session) noexcept
+{
+    Com<IInspectable> display;
+    return SUCCEEDED(session.session->QueryInterface(kDisplaySessionIid, reinterpret_cast<void**>(display.GetAddressOf())));
+}
+
 [[nodiscard]] Result<MonitorSession, Error> StartSession(WGD11::IDirect3DDevice* device, const interior::MonitorInfo& monitor, const CaptureSettings& settings) noexcept
 {
     return ItemFor(monitor).and_then([&](const Com<WGC::IGraphicsCaptureItem>& item) {
@@ -512,6 +522,11 @@ Status<Error> ApplyCaptureSettings(const Capture& capture, const CaptureSettings
 Result<bool, Error> AcquireFrames(const Capture& capture, interior::FrameNumber number) noexcept
 {
     return CollectPending(capture).and_then([&](const PendingList& pending) { return CopyAndClose(capture, pending, ValueOf(number)); });
+}
+
+bool OffersWindowExclusion(const Capture& capture) noexcept
+{
+    return !capture.sessions.IsEmpty() && AnswersToDisplaySession(capture.sessions.At(0));
 }
 
 } // namespace real
