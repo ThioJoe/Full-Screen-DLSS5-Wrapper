@@ -12,9 +12,6 @@ struct WindowSettings
     bool clickThrough;
     bool excludeFromCapture;
     bool redirectionBitmap;
-    // The picture is this window's own content rather than a composition over it. Such a window is not
-    // layered and keeps its redirection surface, which is what a capture's exclusion list can act on.
-    bool ownContent;
 };
 
 struct OutputWindow

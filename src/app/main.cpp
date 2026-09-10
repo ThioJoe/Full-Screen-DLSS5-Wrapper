@@ -556,25 +556,21 @@ struct Devices
     return o.window.IsEmpty() && OverlapsSource(o, g);
 }
 
-[[nodiscard]] bool ShowsItsOwnContent(const Options& o, const Geometry& g) noexcept
+[[nodiscard]] bool AsksToBeLeftOut(const Options& o, const Geometry& g) noexcept
 {
     return o.excludeOwnWindows && IsInItsOwnCapture(o, g);
 }
 
-[[nodiscard]] real::WindowSettings WindowSettingsOf(const Options& o, const Geometry& g) noexcept
+[[nodiscard]] real::WindowSettings WindowSettingsOf(const Options& o) noexcept
 {
-    return real::WindowSettings{ .topmost = o.topmost && o.window.IsEmpty(),
-                                 .clickThrough = o.clickThrough,
-                                 .excludeFromCapture = o.displayAffinity,
-                                 .redirectionBitmap = o.redirectionBitmap,
-                                 .ownContent = ShowsItsOwnContent(o, g) };
+    return real::WindowSettings{ .topmost = o.topmost && o.window.IsEmpty(), .clickThrough = o.clickThrough, .excludeFromCapture = o.displayAffinity, .redirectionBitmap = o.redirectionBitmap };
 }
 
 [[nodiscard]] Result<real::OutputWindow, Error> CreatedWindow(const Console& console, const Base& b) noexcept
 {
-    return WarnFeedback(console, b.options, b.geometry)
-        .and_then([&] { return real::CreateOutputWindow(b.geometry.targetRect, WindowSettingsOf(b.options, b.geometry)); })
-        .and_then([](real::OutputWindow window) { return real::RegisterHotkeys(window).transform([&window] { return std::move(window); }); });
+    return WarnFeedback(console, b.options, b.geometry).and_then([&] { return real::CreateOutputWindow(b.geometry.targetRect, WindowSettingsOf(b.options)); }).and_then([](real::OutputWindow window) {
+        return real::RegisterHotkeys(window).transform([&window] { return std::move(window); });
+    });
 }
 
 // --- naming what the machine turned out to have --------------------------------------------------------
@@ -682,7 +678,7 @@ using Caption = real::ChoiceText;
     return real::EnvironmentSettings{ .surface = interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel },
                                       .captureCursor = plan.captureCursor,
                                       .followed = FollowedWindow(b),
-                                      .ownContent = ShowsItsOwnContent(o, b.geometry),
+                                      .asksToBeLeftOut = AsksToBeLeftOut(o, b.geometry),
                                       .outsideTheSource = !OverlapsSource(o, b.geometry) };
 }
 
@@ -755,7 +751,7 @@ struct Ended
 [[nodiscard]] Status<Error> LogHiding(const Console& console, bool excluding) noexcept
 {
     if (excluding)
-        return Log(console, LogLevel::Warn, "Our windows are left out of the capture by name, which costs the overlay its click-through: it swallows clicks. --exclude-own-windows off trades back");
+        return Log(console, LogLevel::Info, "Our windows are left out of our own capture by name, and are in everyone else's: screenshots and recordings hold them");
     return Log(console, LogLevel::Info, "Our windows are hidden from every capture, screenshots included (--exclude-own-windows on asks for the other way)");
 }
 

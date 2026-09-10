@@ -309,7 +309,7 @@ struct Recording
 // the overlay would otherwise stay hidden until the first frame is ready, which is after the asking.
 void ShownBeforeCapture(HWND window, const EnvironmentSettings& settings) noexcept
 {
-    if (!settings.ownContent)
+    if (!settings.asksToBeLeftOut)
         return;
     NoteExclusion("putting the overlay on screen before the capture is asked to leave it out");
     (void)::ShowWindow(window, SW_SHOWNOACTIVATE);
@@ -318,8 +318,8 @@ void ShownBeforeCapture(HWND window, const EnvironmentSettings& settings) noexce
 [[nodiscard]] Result<Gpu, Error> AssembledGpu(GpuDevice device, const SessionPlan& plan, const interior::Geometry& geometry, HWND window, const EnvironmentSettings& settings,
                                               const interior::LevelExtents& extents, std::span<const HWND> ours) noexcept
 {
-    NoteExclusion(settings.ownContent ? "--- new session: presenting into the window itself" : "--- new session: presenting a composition over the window");
-    return CreatePresenter(device, window, plan.target, settings.ownContent).and_then([&](Presenter presenter) {
+    NoteExclusion(settings.asksToBeLeftOut ? "--- new session: asking to be left out of the capture" : "--- new session: hidden from every capture");
+    return CreatePresenter(device, window, plan.target).and_then([&](Presenter presenter) {
         ShownBeforeCapture(window, settings);
         return CreatePipelines(device, kSwapChainFormat).and_then([&](const Pipelines& pipelines) {
             return CreateRecording(device).and_then(
@@ -845,15 +845,15 @@ Result<FrameStart, Error> RealEnvironment::Accept(const Begun& begun) noexcept
     return s.cursor == interior::CursorMode::On;
 }
 
-[[nodiscard]] WindowSettings WindowSettingsOf(const interior::SurfaceSettings& s, bool ownContent) noexcept
+[[nodiscard]] WindowSettings WindowSettingsOf(const interior::SurfaceSettings& s) noexcept
 {
-    return WindowSettings{ .topmost = s.topmost, .clickThrough = s.clickThrough, .excludeFromCapture = s.displayAffinity, .redirectionBitmap = false, .ownContent = ownContent };
+    return WindowSettings{ .topmost = s.topmost, .clickThrough = s.clickThrough, .excludeFromCapture = s.displayAffinity, .redirectionBitmap = false };
 }
 
 [[nodiscard]] infra::Status<Error> ApplySurface(const Gpu& gpu, const OutputWindow& window, const EnvironmentSettings& settings) noexcept
 {
     return ApplyCaptureSettings(gpu.capture, CaptureSettings{ CursorWanted(settings.surface, settings.captureCursor), settings.surface.captureBorder }).and_then([&] {
-        return ApplyWindowSettings(window, WindowSettingsOf(settings.surface, settings.ownContent));
+        return ApplyWindowSettings(window, WindowSettingsOf(settings.surface));
     });
 }
 
@@ -893,7 +893,7 @@ Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surfa
     if (surface == applied_.surface)
         return {};
     // WAIVER(R2): what has been applied, replaced whole.
-    applied_ = EnvironmentSettings{ surface, applied_.captureCursor, applied_.followed, applied_.ownContent, applied_.outsideTheSource };
+    applied_ = EnvironmentSettings{ surface, applied_.captureCursor, applied_.followed, applied_.asksToBeLeftOut, applied_.outsideTheSource };
     return ApplySurface(gpu_, window_, applied_);
 }
 
@@ -1015,7 +1015,7 @@ Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional
 {
     const std::array<HWND, 2> ours = OurWindows(window, panel);
     return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
-        return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents, Asked(ours, settings.ownContent))
+        return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents, Asked(ours, settings.asksToBeLeftOut))
             .and_then([&](Gpu gpu) { return Uncovered(gpu, settings, Present(ours)).transform([&] { return std::move(gpu); }); })
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
             .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), panel, console, settings, options, extents); });

@@ -69,26 +69,16 @@ constexpr std::uint32_t kMaxMessagesPerPump = 64;
     return s.topmost ? WS_EX_TOPMOST : 0u;
 }
 
-// Clicking through needs WS_EX_LAYERED, and a layered window is the one the exclusion list will not leave
-// out. A window that must be left out therefore cannot pass its clicks on.
-[[nodiscard]] DWORD LayeredStyle(const WindowSettings& s) noexcept
-{
-    return s.ownContent ? 0u : WS_EX_LAYERED;
-}
-
+// Returning HTTRANSPARENT from the window procedure only passes a click to a window on the same thread,
+// so reaching another program's window underneath needs WS_EX_LAYERED as well.
 [[nodiscard]] DWORD ClickThroughStyle(const WindowSettings& s) noexcept
 {
-    return s.clickThrough ? (WS_EX_TRANSPARENT | LayeredStyle(s)) : 0u;
-}
-
-[[nodiscard]] bool KeepsRedirection(const WindowSettings& s) noexcept
-{
-    return s.redirectionBitmap || s.ownContent;
+    return s.clickThrough ? (WS_EX_TRANSPARENT | WS_EX_LAYERED) : 0u;
 }
 
 [[nodiscard]] DWORD RedirectionStyle(const WindowSettings& s) noexcept
 {
-    return KeepsRedirection(s) ? 0u : WS_EX_NOREDIRECTIONBITMAP;
+    return s.redirectionBitmap ? 0u : WS_EX_NOREDIRECTIONBITMAP;
 }
 
 [[nodiscard]] DWORD ExtendedStyle(const WindowSettings& s) noexcept
@@ -115,14 +105,9 @@ constexpr std::uint32_t kMaxMessagesPerPump = 64;
     return UniqueWindow(handle);
 }
 
-[[nodiscard]] bool IsLayered(const WindowSettings& s) noexcept
-{
-    return s.clickThrough && !s.ownContent;
-}
-
 [[nodiscard]] Status<Error> ApplyLayering(HWND handle, const WindowSettings& s) noexcept
 {
-    if (!IsLayered(s))
+    if (!s.clickThrough)
         return {};
     return CheckBool(::SetLayeredWindowAttributes(handle, 0, 255, LWA_ALPHA), ApiCall::CreateWindowExW);
 }

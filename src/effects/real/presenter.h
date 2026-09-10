@@ -25,9 +25,9 @@ struct Presenter
     interior::Extent extent;
 };
 
-// `ownContent` binds the swap chain to the window instead of compositing it over the window. It costs the
-// per-pixel alpha a composition gives, and it is what lets a capture leave the picture out by name.
-[[nodiscard]] infra::Result<Presenter, Error> CreatePresenter(const GpuDevice& gpu, HWND window, const interior::Extent& extent, bool ownContent) noexcept;
+// The picture is composited over the window rather than being the window's own content: clicking through
+// needs WS_EX_LAYERED, and a layered window cannot hold a Direct3D 12 swap chain of its own.
+[[nodiscard]] infra::Result<Presenter, Error> CreatePresenter(const GpuDevice& gpu, HWND window, const interior::Extent& extent) noexcept;
 [[nodiscard]] infra::Status<Error> WaitForNextFrame(const Presenter& presenter) noexcept;
 [[nodiscard]] infra::Result<interior::BackBufferIndex, Error> CurrentBackBuffer(const Presenter& presenter) noexcept;
 [[nodiscard]] infra::Status<Error> PresentFrame(const Presenter& presenter, bool vsync) noexcept;

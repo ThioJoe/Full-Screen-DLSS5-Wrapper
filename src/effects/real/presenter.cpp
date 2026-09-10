@@ -1,7 +1,5 @@
 #include "effects/real/presenter.h"
 
-#include "effects/real/exclusion.h"
-
 #include "effects/real/resources.h"
 #include "infrastructure/fold.h"
 
@@ -37,61 +35,14 @@ using infra::Status;
     return Check(hr, ApiCall::CreateSwapChainForComposition).transform([&chain] { return chain; });
 }
 
-// Bound to the window rather than composited over it, so the picture is the window's own content. A
-// capture told to leave the window out then leaves the picture out; over a composition it does not.
-[[nodiscard]] Result<Com<IDXGISwapChain1>, Error> CreateWindowSwapChain(const GpuDevice& gpu, HWND window, const interior::Extent& extent) noexcept
-{
-    const DXGI_SWAP_CHAIN_DESC1 desc = SwapChainDescription(extent);
-    Com<IDXGISwapChain1> chain;
-    const HRESULT hr = gpu.factory->CreateSwapChainForHwnd(gpu.queue.Get(), window, &desc, nullptr, nullptr, &chain);
-    return Check(hr, ApiCall::CreateSwapChainForComposition).transform([&chain] { return chain; });
-}
-
-struct Chain
-{
-    Com<IDXGISwapChain1> chain;
-    bool ownContent;
-};
-
-[[nodiscard]] Result<Chain, Error> AsComposition(const GpuDevice& gpu, const interior::Extent& extent) noexcept
-{
-    return CreateCompositionSwapChain(gpu, extent).transform([](const Com<IDXGISwapChain1>& made) { return Chain{ made, false }; });
-}
-
-// A layered window may refuse a swap chain of its own, and clicking through to another program needs the
-// layering. Where it refuses, the composition is used and the picture stays inside our own capture.
-[[nodiscard]] Result<Chain, Error> TriedOnWindow(const GpuDevice& gpu, HWND window, const interior::Extent& extent) noexcept
-{
-    const Result<Com<IDXGISwapChain1>, Error> made = CreateWindowSwapChain(gpu, window, extent);
-    if (made.has_value())
-        return Chain{ *made, true };
-    NoteExclusion("the window refused a swap chain of its own; presenting a composition over it instead");
-    return AsComposition(gpu, extent);
-}
-
-[[nodiscard]] Result<Chain, Error> CreateChainFor(const GpuDevice& gpu, HWND window, const interior::Extent& extent, bool ownContent) noexcept
-{
-    if (ownContent)
-        return TriedOnWindow(gpu, window, extent);
-    return AsComposition(gpu, extent);
-}
-
 [[nodiscard]] Result<Com<IDXGISwapChain3>, Error> WithLatencyOne(const Com<IDXGISwapChain3>& chain) noexcept
 {
     return Check(chain->SetMaximumFrameLatency(1), ApiCall::SetMaximumFrameLatency).transform([&chain] { return chain; });
 }
 
-struct Ready
+[[nodiscard]] Result<Com<IDXGISwapChain3>, Error> CreateSwapChain(const GpuDevice& gpu, const interior::Extent& extent) noexcept
 {
-    Com<IDXGISwapChain3> chain;
-    bool ownContent;
-};
-
-[[nodiscard]] Result<Ready, Error> CreateSwapChain(const GpuDevice& gpu, HWND window, const interior::Extent& extent, bool ownContent) noexcept
-{
-    return CreateChainFor(gpu, window, extent, ownContent).and_then([](const Chain& made) {
-        return As<IDXGISwapChain3>(made.chain, ApiCall::QueryInterface).and_then(WithLatencyOne).transform([&made](const Com<IDXGISwapChain3>& three) { return Ready{ three, made.ownContent }; });
-    });
+    return CreateCompositionSwapChain(gpu, extent).and_then([](const Com<IDXGISwapChain1>& made) { return As<IDXGISwapChain3>(made, ApiCall::QueryInterface).and_then(WithLatencyOne); });
 }
 
 [[nodiscard]] Result<UniqueHandle, Error> WaitableOf(IDXGISwapChain3* chain) noexcept
@@ -186,14 +137,6 @@ struct Composition
     });
 }
 
-// A window swap chain needs no composition of its own: the window already shows what is presented to it.
-[[nodiscard]] Result<Presenter, Error> Assemble(const GpuDevice& gpu, HWND window, const Com<IDXGISwapChain3>& chain, const interior::Extent& extent, bool ownContent) noexcept
-{
-    if (ownContent)
-        return Rest(gpu, Composition{ nullptr, nullptr, nullptr }, chain, extent);
-    return CreateComposition(window, chain.Get()).and_then([&](const Composition& composition) { return Rest(gpu, composition, chain, extent); });
-}
-
 [[nodiscard]] bool IsWaitFailure(DWORD result) noexcept
 {
     return result == WAIT_FAILED;
@@ -201,9 +144,11 @@ struct Composition
 
 } // namespace
 
-Result<Presenter, Error> CreatePresenter(const GpuDevice& gpu, HWND window, const interior::Extent& extent, bool ownContent) noexcept
+Result<Presenter, Error> CreatePresenter(const GpuDevice& gpu, HWND window, const interior::Extent& extent) noexcept
 {
-    return CreateSwapChain(gpu, window, extent, ownContent).and_then([&](const Ready& made) { return Assemble(gpu, window, made.chain, extent, made.ownContent); });
+    return CreateSwapChain(gpu, extent).and_then([&](const Com<IDXGISwapChain3>& chain) {
+        return CreateComposition(window, chain.Get()).and_then([&](const Composition& composition) { return Rest(gpu, composition, chain, extent); });
+    });
 }
 
 Status<Error> WaitForNextFrame(const Presenter& presenter) noexcept
