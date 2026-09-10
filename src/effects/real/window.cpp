@@ -459,9 +459,29 @@ interior::WindowTitle TitleOfWindow(interior::MonitorHandle window) noexcept
     return window != nullptr && !IsOurs(window);
 }
 
+[[nodiscard]] std::array<wchar_t, 16> ClassOf(HWND window) noexcept
+{
+    std::array<wchar_t, 16> name{}; // WAIVER(R2): a local buffer filled once, before use.
+    (void)::GetClassNameW(window, name.data(), static_cast<int>(name.size()));
+    return name;
+}
+
+// Asking what is under a point on the empty desktop answers with the shell's own window, not with the
+// desktop window, so the wallpaper would be a window to work on like any other unless it is named here.
+[[nodiscard]] bool IsDesktopBackground(HWND window) noexcept
+{
+    const std::array<wchar_t, 16> name = ClassOf(window);
+    return std::wstring_view(name.data()) == L"Progman" || std::wstring_view(name.data()) == L"WorkerW";
+}
+
+[[nodiscard]] bool IsTheDesktop(HWND window, HWND desktop) noexcept
+{
+    return window == desktop || IsDesktopBackground(window);
+}
+
 [[nodiscard]] bool IsPickable(HWND window, HWND desktop) noexcept
 {
-    return window != desktop && IsSomeoneElses(window);
+    return !IsTheDesktop(window, desktop) && IsSomeoneElses(window);
 }
 
 std::optional<interior::MonitorHandle> WindowUnder(long x, long y) noexcept
