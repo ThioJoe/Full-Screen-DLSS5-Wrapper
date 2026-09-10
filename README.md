@@ -113,6 +113,13 @@ feature, because the model reads it while the feature is built rather than on ea
 drawn again even when the desktop has sent nothing new, so a change shows even while the panel sits on
 another monitor.
 
+That rebuild is not free: it drains the GPU and loads the model's weights over. A drag passes through a
+value a frame and asked for one rebuild per value, which is what stopped the picture for as long as the
+drag lasted. The tuning the frame is given therefore advances at most eight times a second. A single
+click, an arrow or a typed number still applies on the next frame; a drag updates as it moves and takes up
+the value it was left at within an eighth of a second of letting go. The redraw a change earns is the
+frame the rebuild happens on, so what is on screen is always what the model was last built with.
+
 Everything else applies itself too, just not by being read each frame. Which monitor or window is captured,
 where it is presented, the colour format, super resolution, where motion comes from, which adapter — a
 session cannot change any of those under itself, so changing one ends the session and builds another in the

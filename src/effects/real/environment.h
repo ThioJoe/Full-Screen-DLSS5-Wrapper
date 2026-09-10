@@ -69,6 +69,10 @@ private:
     [[nodiscard]] infra::Status<Error> SettledIfRead(const std::optional<PanelReading>& reading) noexcept;
     [[nodiscard]] infra::Status<Error> Settled(const PanelReading& reading) noexcept;
     [[nodiscard]] infra::Status<Error> Recleared(interior::DepthValue depth) noexcept;
+    [[nodiscard]] Begun Paced(const Begun& begun) noexcept;
+    [[nodiscard]] interior::NrTuning Pacing(const interior::NrTuning& asked) noexcept;
+    [[nodiscard]] bool MayAdopt(const interior::NrTuning& asked) const noexcept;
+    void Adopt(const interior::NrTuning& tuning) noexcept;
     // Keeps the overlay over the window the session is working on. The capture follows the window itself,
     // so only where the answer is shown has to be put right.
     void Followed(interior::Instant now) noexcept;
@@ -110,6 +114,9 @@ private:
     interior::Instant asked_;                    // WAIVER(R2): when it first described it.
     bool abandoned_;                             // WAIVER(R2): set once, when the window being followed stopped being on screen.
     std::optional<interior::ScreenRect> placed_; // WAIVER(R2): where the overlay was last put, replaced whole as the window moves.
+    interior::Instant now_;                      // WAIVER(R2): this frame's instant, replaced whole once per frame.
+    interior::Instant retuned_;                  // WAIVER(R2): when the tuning in force was last taken up, replaced whole when it is.
+    interior::NrTuning held_;                    // WAIVER(R2): the tuning the frame is told about, replaced whole no faster than the gap allows.
 };
 
 [[nodiscard]] infra::Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const interior::SessionPlan& plan, const interior::Geometry& geometry,
