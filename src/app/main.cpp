@@ -839,9 +839,21 @@ struct Cycle
     return ended.again.has_value() || AsksForTheSame(ended);
 }
 
-[[nodiscard]] bool Continues(const Cycle& c) noexcept
+// A session built on one window can fail outright because that window went away while it was being
+// built: nothing can be captured from a window that is closing. The monitor is what is left.
+[[nodiscard]] bool FellWithAWindow(const Cycle& c) noexcept
+{
+    return !c.ended.has_value() && !c.wanted.window.IsEmpty();
+}
+
+[[nodiscard]] bool AsksAgainIfEnded(const Cycle& c) noexcept
 {
     return c.ended.has_value() && AsksAgain(*c.ended);
+}
+
+[[nodiscard]] bool Continues(const Cycle& c) noexcept
+{
+    return FellWithAWindow(c) || AsksAgainIfEnded(c);
 }
 
 // The debug layer is the one setting a session cannot take back: Direct3D turns it on for the process and
@@ -850,6 +862,8 @@ struct Cycle
 {
     return was.debugLayer && !now.debugLayer;
 }
+
+constexpr std::string_view kWindowGoneText = "The window could not be captured, most likely because it has closed; going back to the monitor";
 
 // The window a session was following went away, so the next one is not given one: the source that session
 // already carries names the monitor, and that is where the model goes back to.
@@ -892,11 +906,33 @@ struct Cycle
 }
 
 // A window that changed size asks for the settings it already had: the same window, measured again.
-[[nodiscard]] Cycle Next(const Console& console, const Cycle& c, PanelHolder& held) noexcept
+[[nodiscard]] Cycle Finished(const Console& console, const Cycle& c, PanelHolder& held) noexcept
 {
     if (!c.ended->again.has_value())
         return Again(console, WantedNext(c), held);
     return Asked(console, c, held);
+}
+
+void LetGoOfPickedWindow(const PanelHolder& held) noexcept
+{
+    if (Borrowed(held) != nullptr)
+        real::ReleaseWindow(*Borrowed(held));
+}
+
+// The crosshair is emptied along with the session, so what the panel shows and what is being worked on
+// go on agreeing.
+[[nodiscard]] Cycle Retried(const Console& console, const Cycle& c, PanelHolder& held) noexcept
+{
+    const Options next = WithoutWindow(c.wanted);
+    LetGoOfPickedWindow(held);
+    return Cycle{ next, Log(console, LogLevel::Warn, kWindowGoneText).and_then([&] { return RunOnce(console, next, held); }) };
+}
+
+[[nodiscard]] Cycle Next(const Console& console, const Cycle& c, PanelHolder& held) noexcept
+{
+    if (FellWithAWindow(c))
+        return Retried(console, c, held);
+    return Finished(console, c, held);
 }
 
 // A loop rather than one session calling the next, so asking for a hundred of them costs a hundred

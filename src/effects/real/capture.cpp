@@ -168,14 +168,27 @@ struct Pending;
     return Check(item->get_Size(&size), ApiCall::GetContentSize).transform([&size] { return size; });
 }
 
+[[nodiscard]] bool HasArea(ABI::Windows::Graphics::SizeInt32 size) noexcept
+{
+    return size.Width > 0 && size.Height > 0;
+}
+
+// A window that is closing answers with a size of nothing, and a pool of that size is refused with an
+// invalid argument. It is caught here so the session can fall back rather than fail with a dialog.
+[[nodiscard]] Result<Com<WGC::IDirect3D11CaptureFramePool>, Error> PoolOf(WGD11::IDirect3DDevice* device, WGC::IDirect3D11CaptureFramePoolStatics2* statics,
+                                                                          ABI::Windows::Graphics::SizeInt32 size) noexcept
+{
+    if (!HasArea(size))
+        return Fail(Error{ ApiCall::CreateFreeThreaded, 1 });
+    Com<WGC::IDirect3D11CaptureFramePool> pool;
+    const HRESULT hr = statics->CreateFreeThreaded(device, WGD::DirectXPixelFormat_B8G8R8A8UIntNormalized, kPoolBuffers, size, &pool);
+    return Check(hr, ApiCall::CreateFreeThreaded).transform([&pool] { return pool; });
+}
+
 [[nodiscard]] Result<Com<WGC::IDirect3D11CaptureFramePool>, Error> PoolFor(WGD11::IDirect3DDevice* device, WGC::IGraphicsCaptureItem* item) noexcept
 {
     return PoolStatics().and_then([&](const Com<WGC::IDirect3D11CaptureFramePoolStatics2>& statics) {
-        return SizeOf(item).and_then([&](ABI::Windows::Graphics::SizeInt32 size) -> Result<Com<WGC::IDirect3D11CaptureFramePool>, Error> {
-            Com<WGC::IDirect3D11CaptureFramePool> pool;
-            const HRESULT hr = statics->CreateFreeThreaded(device, WGD::DirectXPixelFormat_B8G8R8A8UIntNormalized, kPoolBuffers, size, &pool);
-            return Check(hr, ApiCall::CreateFreeThreaded).transform([&pool] { return pool; });
-        });
+        return SizeOf(item).and_then([&](ABI::Windows::Graphics::SizeInt32 size) { return PoolOf(device, statics.Get(), size); });
     });
 }
 
