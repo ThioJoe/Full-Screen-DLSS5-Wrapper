@@ -1,0 +1,285 @@
+#include "effects/real/exclusion.h"
+
+#include <windows.ui.h>
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <ranges>
+
+namespace real {
+namespace {
+
+using ABI::Windows::Graphics::Capture::IGraphicsCaptureSession;
+using ABI::Windows::UI::WindowId;
+
+// IDisplayGraphicsCaptureSession as Windows metadata declares it. No Windows SDK this builds against
+// projects the type, so its identity and the order of its two methods are written out here.
+constexpr GUID kDisplaySessionIid{ 0xBB91F61B, 0x218A, 0x587D, { 0x85, 0x80, 0x27, 0x01, 0xA7, 0x4C, 0x05, 0x25 } };
+
+// The identity of a parameterised interface is a name-based UUID over its signature, so these two are not
+// in any header: they were computed from the signatures Windows would use and checked against known ones.
+constexpr GUID kIterableIid{ 0x745698BF, 0x22AD, 0x5C0D, { 0xB0, 0xE0, 0x07, 0xD3, 0x5A, 0x1C, 0x97, 0x19 } };
+constexpr GUID kIteratorIid{ 0xBA0A30A1, 0xC082, 0x5671, { 0xAC, 0x07, 0x7A, 0xAA, 0x4F, 0x26, 0x96, 0x70 } };
+
+// The reader is past its end. Written out because the headers the compile check uses lack the name.
+constexpr HRESULT kOutOfBounds = static_cast<HRESULT>(0x8000000BL);
+
+constexpr std::size_t kMaxExcluded = 4;
+using WindowIds = std::array<WindowId, kMaxExcluded>;
+
+struct IWindowIdIterator : IInspectable
+{
+    virtual HRESULT STDMETHODCALLTYPE get_Current(WindowId* value) noexcept = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_HasCurrent(boolean* value) noexcept = 0;
+    virtual HRESULT STDMETHODCALLTYPE MoveNext(boolean* value) noexcept = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetMany(UINT32 capacity, WindowId* items, UINT32* taken) noexcept = 0;
+};
+
+struct IWindowIdIterable : IInspectable
+{
+    virtual HRESULT STDMETHODCALLTYPE First(IWindowIdIterator** first) noexcept = 0;
+};
+
+struct IWindowIdVectorView : IInspectable
+{
+    virtual HRESULT STDMETHODCALLTYPE GetAt(UINT32 index, WindowId* item) noexcept = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Size(UINT32* size) noexcept = 0;
+    virtual HRESULT STDMETHODCALLTYPE IndexOf(WindowId item, UINT32* index, boolean* found) noexcept = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetMany(UINT32 start, UINT32 capacity, WindowId* items, UINT32* taken) noexcept = 0;
+};
+
+struct IDisplaySession : IInspectable
+{
+    virtual HRESULT STDMETHODCALLTYPE SetWindowExclusionList(IWindowIdIterable* windows, UINT64* iteration) noexcept = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetWindowExclusionList(IWindowIdVectorView** windows) noexcept = 0;
+};
+
+// Both objects below are single ones that live as long as the program. Windows is expected to copy the
+// list inside the call, but a pointer it chose to keep must not be left pointing at freed memory.
+[[nodiscard]] bool IsOwnOrUnknown(REFIID asked, const GUID& own) noexcept
+{
+    return ::IsEqualGUID(asked, own) || ::IsEqualGUID(asked, IID_IUnknown);
+}
+
+[[nodiscard]] bool Knows(REFIID asked, const GUID& own) noexcept
+{
+    return IsOwnOrUnknown(asked, own) || ::IsEqualGUID(asked, IID_IInspectable);
+}
+
+[[nodiscard]] HRESULT Answer(REFIID asked, const GUID& own, IUnknown* self, void** out) noexcept
+{
+    if (!Knows(asked, own))
+        return E_NOINTERFACE;
+    *out = self;
+    return S_OK;
+}
+
+[[nodiscard]] HRESULT NoIids(ULONG* count, IID** iids) noexcept
+{
+    *count = 0;
+    *iids = nullptr;
+    return S_OK;
+}
+
+[[nodiscard]] HRESULT BaseTrust(TrustLevel* level) noexcept
+{
+    *level = ::TrustLevel::BaseTrust;
+    return S_OK;
+}
+
+class Iterator final : public IWindowIdIterator
+{
+public:
+    void Reset(const WindowIds& ids, std::size_t count) noexcept;
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID asked, void** out) noexcept override { return Answer(asked, kIteratorIid, this, out); }
+    ULONG STDMETHODCALLTYPE AddRef() noexcept override { return 2; }
+    ULONG STDMETHODCALLTYPE Release() noexcept override { return 1; }
+    HRESULT STDMETHODCALLTYPE GetIids(ULONG* count, IID** iids) noexcept override { return NoIids(count, iids); }
+    HRESULT STDMETHODCALLTYPE GetRuntimeClassName(HSTRING* name) noexcept override;
+    HRESULT STDMETHODCALLTYPE GetTrustLevel(TrustLevel* level) noexcept override { return BaseTrust(level); }
+    HRESULT STDMETHODCALLTYPE get_Current(WindowId* value) noexcept override;
+    HRESULT STDMETHODCALLTYPE get_HasCurrent(boolean* value) noexcept override;
+    HRESULT STDMETHODCALLTYPE MoveNext(boolean* value) noexcept override;
+    HRESULT STDMETHODCALLTYPE GetMany(UINT32 capacity, WindowId* items, UINT32* taken) noexcept override;
+
+private:
+    WindowIds ids_{};     // WAIVER(R2): the list being handed over, replaced whole before each call.
+    std::size_t count_{}; // WAIVER(R2): how much of it is in use, replaced whole with it.
+    std::size_t at_{};    // WAIVER(R2): how far the reader has got, which is what an iterator is.
+};
+
+void Iterator::Reset(const WindowIds& ids, std::size_t count) noexcept
+{
+    ids_ = ids;
+    count_ = count;
+    at_ = 0;
+}
+
+// WAIVER(R17): a vtable entry called by Windows, which discards nothing and ignores attributes.
+HRESULT Iterator::GetRuntimeClassName(HSTRING* name) noexcept
+{
+    *name = nullptr;
+    return E_NOTIMPL;
+}
+
+// WAIVER(R17): a vtable entry called by Windows, which discards nothing and ignores attributes.
+HRESULT Iterator::get_Current(WindowId* value) noexcept
+{
+    if (at_ >= count_)
+        return kOutOfBounds;
+    *value = ids_[at_];
+    return S_OK;
+}
+
+// WAIVER(R17): a vtable entry called by Windows, which discards nothing and ignores attributes.
+HRESULT Iterator::get_HasCurrent(boolean* value) noexcept
+{
+    *value = at_ < count_ ? TRUE : FALSE;
+    return S_OK;
+}
+
+// WAIVER(R17): a vtable entry called by Windows, which discards nothing and ignores attributes.
+HRESULT Iterator::MoveNext(boolean* value) noexcept
+{
+    at_ = std::min(at_ + 1, count_); // WAIVER(R2): one step of the reader, which is the whole of its job.
+    return get_HasCurrent(value);
+}
+
+// WAIVER(R17): a vtable entry called by Windows, which discards nothing and ignores attributes.
+HRESULT Iterator::GetMany(UINT32 capacity, WindowId* items, UINT32* taken) noexcept
+{
+    const std::size_t many = std::min(static_cast<std::size_t>(capacity), count_ - at_);
+    std::ranges::copy_n(ids_.begin() + static_cast<std::ptrdiff_t>(at_), static_cast<std::ptrdiff_t>(many), items);
+    at_ += many; // WAIVER(R2): the reader has got that much further.
+    *taken = static_cast<UINT32>(many);
+    return S_OK;
+}
+
+class Iterable final : public IWindowIdIterable
+{
+public:
+    void Reset(const WindowIds& ids, std::size_t count) noexcept;
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID asked, void** out) noexcept override { return Answer(asked, kIterableIid, this, out); }
+    ULONG STDMETHODCALLTYPE AddRef() noexcept override { return 2; }
+    ULONG STDMETHODCALLTYPE Release() noexcept override { return 1; }
+    HRESULT STDMETHODCALLTYPE GetIids(ULONG* count, IID** iids) noexcept override { return NoIids(count, iids); }
+    HRESULT STDMETHODCALLTYPE GetRuntimeClassName(HSTRING* name) noexcept override;
+    HRESULT STDMETHODCALLTYPE GetTrustLevel(TrustLevel* level) noexcept override { return BaseTrust(level); }
+    HRESULT STDMETHODCALLTYPE First(IWindowIdIterator** first) noexcept override;
+
+private:
+    WindowIds ids_{};     // WAIVER(R2): the list being handed over, replaced whole before each call.
+    std::size_t count_{}; // WAIVER(R2): how much of it is in use, replaced whole with it.
+    Iterator reader_{};   // WAIVER(R2): the one reader it hands out, wound back for each walk.
+};
+
+void Iterable::Reset(const WindowIds& ids, std::size_t count) noexcept
+{
+    ids_ = ids;
+    count_ = count;
+}
+
+// WAIVER(R17): a vtable entry called by Windows, which discards nothing and ignores attributes.
+HRESULT Iterable::GetRuntimeClassName(HSTRING* name) noexcept
+{
+    *name = nullptr;
+    return E_NOTIMPL;
+}
+
+// WAIVER(R17): a vtable entry called by Windows, which discards nothing and ignores attributes.
+HRESULT Iterable::First(IWindowIdIterator** first) noexcept
+{
+    reader_.Reset(ids_, count_);
+    *first = &reader_;
+    return S_OK;
+}
+
+// One list for the program, so a pointer Windows kept stays good however many sessions are built.
+[[nodiscard]] Iterable& TheList() noexcept
+{
+    // WAIVER(R11): one per program, kept at a fixed address in case Windows holds the pointer past the call.
+    static Iterable list;
+    return list;
+}
+
+[[nodiscard]] Com<IDisplaySession> DisplaySessionOf(IGraphicsCaptureSession* session) noexcept
+{
+    Com<IDisplaySession> display;
+    (void)session->QueryInterface(kDisplaySessionIid, reinterpret_cast<void**>(display.GetAddressOf()));
+    return display;
+}
+
+[[nodiscard]] WindowId IdOf(HWND window) noexcept
+{
+    return WindowId{ reinterpret_cast<UINT64>(window) };
+}
+
+[[nodiscard]] std::size_t Filled(WindowIds& ids, std::span<const HWND> windows) noexcept
+{
+    const std::size_t many = std::min(windows.size(), kMaxExcluded);
+    std::ranges::transform(windows.first(many), ids.begin(), IdOf);
+    return many;
+}
+
+[[nodiscard]] bool Names(IWindowIdVectorView* held, WindowId wanted) noexcept
+{
+    UINT32 index = 0;
+    boolean found = FALSE;
+    if (FAILED(held->IndexOf(wanted, &index, &found)))
+        return false;
+    return found != FALSE;
+}
+
+[[nodiscard]] bool NamesAll(IWindowIdVectorView* held, const WindowIds& ids, std::size_t count) noexcept
+{
+    return std::ranges::all_of(std::span<const WindowId>(ids.data(), count), [held](WindowId id) { return Names(held, id); });
+}
+
+// Read back what the session says it is excluding and look for our own windows in it. Uncovering a window
+// on the strength of a call that quietly did nothing would put the overlay back into its own capture.
+[[nodiscard]] bool NamesAllIn(const Com<IWindowIdVectorView>& held, const WindowIds& ids, std::size_t count) noexcept
+{
+    return held != nullptr && NamesAll(held.Get(), ids, count);
+}
+
+[[nodiscard]] bool HoldsAll(IDisplaySession* display, const WindowIds& ids, std::size_t count) noexcept
+{
+    Com<IWindowIdVectorView> held;
+    if (FAILED(display->GetWindowExclusionList(held.GetAddressOf())))
+        return false;
+    return NamesAllIn(held, ids, count);
+}
+
+[[nodiscard]] bool Told(IDisplaySession* display, const WindowIds& ids, std::size_t count) noexcept
+{
+    UINT64 iteration = 0;
+    TheList().Reset(ids, count);
+    if (FAILED(display->SetWindowExclusionList(&TheList(), &iteration)))
+        return false;
+    return HoldsAll(display, ids, count);
+}
+
+[[nodiscard]] bool ToldIfAny(IDisplaySession* display, const WindowIds& ids, std::size_t count) noexcept
+{
+    return count != 0 && Told(display, ids, count);
+}
+
+} // namespace
+
+bool SessionCanExcludeWindows(IGraphicsCaptureSession* session) noexcept
+{
+    return DisplaySessionOf(session) != nullptr;
+}
+
+bool ExcludeWindowsFrom(IGraphicsCaptureSession* session, std::span<const HWND> windows) noexcept
+{
+    const Com<IDisplaySession> display = DisplaySessionOf(session);
+    if (display == nullptr)
+        return false;
+    WindowIds ids{}; // WAIVER(R2): a local list filled once, before it is handed over.
+    const std::size_t count = Filled(ids, windows);
+    return ToldIfAny(display.Get(), ids, count);
+}
+
+} // namespace real

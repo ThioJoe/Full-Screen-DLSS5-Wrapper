@@ -3,6 +3,7 @@
 #include "interior/monitors.h"
 
 #include <d3d11_4.h>
+#include <span>
 #include <windows.graphics.capture.h>
 #include <windows.graphics.directx.direct3d11.h>
 
@@ -20,6 +21,7 @@ struct MonitorSession
     Com<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool> pool;
     Com<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession> session;
     interior::MonitorInfo monitor;
+    bool excluding; // whether this session agreed to leave our own windows out of what it captures
 };
 
 // Capture runs on its own Direct3D 11 device, the only kind Windows Graphics Capture accepts, and that
@@ -39,21 +41,20 @@ struct Capture
     infra::BoundedVector<MonitorSession, interior::kMaxMonitors> sessions;
     interior::ScreenRect canvasRect;
     interior::Extent canvasExtent;
+    bool excludesOurWindows; // whether every session agreed to leave our own windows out of what it captures
 };
 
 [[nodiscard]] infra::Status<Error> InitializeRuntime() noexcept;
 [[nodiscard]] infra::Status<Error> RequireCaptureSupport() noexcept;
+// `ours` are this program's own windows. Where the session can be told to leave them out, it is, and the
+// display affinity that hides them from every capture on the machine is not needed.
 [[nodiscard]] infra::Result<Capture, Error> CreateCapture(const GpuDevice& gpu, const interior::ScreenRect& canvasRect, const interior::Extent& canvasExtent, const interior::MonitorList& monitors,
-                                                          const CaptureSettings& settings) noexcept;
+                                                          const CaptureSettings& settings, std::span<const HWND> ours) noexcept;
 // Copies the newest frame of every monitor into the canvas, after the work already submitted to the queue
 // has finished reading it and before this frame's work runs. True when a frame arrived.
 [[nodiscard]] infra::Result<bool, Error> AcquireFrames(const Capture& capture, interior::FrameNumber number) noexcept;
 
 // Changes what the running capture sessions include; both are settings of the session, not of the frame.
 [[nodiscard]] infra::Status<Error> ApplyCaptureSettings(const Capture& capture, const CaptureSettings& settings) noexcept;
-
-// Whether a session here answers to IDisplayGraphicsCaptureSession, which carries a per-session window
-// exclusion list. Reported only; nothing is called on it yet.
-[[nodiscard]] bool OffersWindowExclusion(const Capture& capture) noexcept;
 
 } // namespace real

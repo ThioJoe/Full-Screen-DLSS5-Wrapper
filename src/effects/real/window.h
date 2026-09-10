@@ -54,6 +54,9 @@ constexpr int kHotkeyQuit = 3;
 [[nodiscard]] bool IsWindowShowing(interior::MonitorHandle window) noexcept;
 // Moves the overlay so its top-left sits where the given point is. Its size is the session's and stays.
 void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& rect) noexcept;
+
+// Puts a window back into every capture on the machine, for when our own capture excludes it by name.
+[[nodiscard]] infra::Status<Error> UncoverWindow(HWND window) noexcept;
 [[nodiscard]] infra::Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept;
 [[nodiscard]] infra::Status<Error> RegisterHotkeys(const OutputWindow& window) noexcept;
 void ShowOutputWindow(const OutputWindow& window) noexcept;

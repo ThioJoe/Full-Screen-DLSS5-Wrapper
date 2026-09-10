@@ -1,5 +1,7 @@
 #include "effects/real/capture.h"
 
+#include "effects/real/exclusion.h"
+
 #include "infrastructure/checked.h"
 #include "infrastructure/fold.h"
 
@@ -191,41 +193,43 @@ struct Pending;
     });
 }
 
-[[nodiscard]] Result<Com<WGC::IGraphicsCaptureSession>, Error> SessionFor(WGC::IDirect3D11CaptureFramePool* pool, WGC::IGraphicsCaptureItem* item, const CaptureSettings& settings) noexcept
+// A session that can be told to leave our own windows out is told before it starts, so no frame it ever
+// delivers holds them. Whether it agreed is carried out, because uncovering the windows depends on it.
+struct Started
 {
     Com<WGC::IGraphicsCaptureSession> session;
+    bool excluding;
+};
+
+[[nodiscard]] Result<Started, Error> SessionFor(WGC::IDirect3D11CaptureFramePool* pool, WGC::IGraphicsCaptureItem* item, const CaptureSettings& settings, std::span<const HWND> ours) noexcept
+{
+    Com<WGC::IGraphicsCaptureSession> session;
+    bool excluding = false; // WAIVER(R2): the answer of one call, read once after it.
     return Check(pool->CreateCaptureSession(item, &session), ApiCall::CreateCaptureSession)
         .and_then([&] { return ApplyCursor(session, settings.cursor); })
         .and_then([&] { return ApplyBorder(session, settings.border); })
-        .and_then([&] { return Check(session->StartCapture(), ApiCall::StartCapture); })
-        .transform([&session] { return session; });
+        .and_then([&] {
+            excluding = ExcludeWindowsFrom(session.Get(), ours);
+            return Check(session->StartCapture(), ApiCall::StartCapture);
+        })
+        .transform([&] { return Started{ session, excluding }; });
 }
 
-// IDisplayGraphicsCaptureSession, in Windows metadata, carries an exclusion list scoped to one session
-// rather than to every capture. Nothing documented hands one out, so the session is asked and reported.
-constexpr GUID kDisplaySessionIid{ 0xBB91F61B, 0x218A, 0x587D, { 0x85, 0x80, 0x27, 0x01, 0xA7, 0x4C, 0x05, 0x25 } };
-
-[[nodiscard]] bool AnswersToDisplaySession(const MonitorSession& session) noexcept
-{
-    Com<IInspectable> display;
-    return SUCCEEDED(session.session->QueryInterface(kDisplaySessionIid, reinterpret_cast<void**>(display.GetAddressOf())));
-}
-
-[[nodiscard]] Result<MonitorSession, Error> StartSession(WGD11::IDirect3DDevice* device, const interior::MonitorInfo& monitor, const CaptureSettings& settings) noexcept
+[[nodiscard]] Result<MonitorSession, Error> StartSession(WGD11::IDirect3DDevice* device, const interior::MonitorInfo& monitor, const CaptureSettings& settings, std::span<const HWND> ours) noexcept
 {
     return ItemFor(monitor).and_then([&](const Com<WGC::IGraphicsCaptureItem>& item) {
         return PoolFor(device, item.Get()).and_then([&](const Com<WGC::IDirect3D11CaptureFramePool>& pool) {
-            return SessionFor(pool.Get(), item.Get(), settings).transform([&](const Com<WGC::IGraphicsCaptureSession>& session) { return MonitorSession{ item, pool, session, monitor }; });
+            return SessionFor(pool.Get(), item.Get(), settings, ours).transform([&](const Started& started) { return MonitorSession{ item, pool, started.session, monitor, started.excluding }; });
         });
     });
 }
 
 using Sessions = infra::BoundedVector<MonitorSession, interior::kMaxMonitors>;
 
-[[nodiscard]] Result<Sessions, Error> StartAll(WGD11::IDirect3DDevice* device, const interior::MonitorList& monitors, const CaptureSettings& settings) noexcept
+[[nodiscard]] Result<Sessions, Error> StartAll(WGD11::IDirect3DDevice* device, const interior::MonitorList& monitors, const CaptureSettings& settings, std::span<const HWND> ours) noexcept
 {
     return infra::FoldResult(monitors.Items(), Result<Sessions, Error>(Sessions{}), [&](const Sessions& acc, const interior::MonitorInfo& monitor) {
-        return StartSession(device, monitor, settings).and_then([&acc](const MonitorSession& s) {
+        return StartSession(device, monitor, settings, ours).and_then([&acc](const MonitorSession& s) {
             return acc.Push(s).transform_error([](infra::CapacityExceeded) { return Error{ ApiCall::CreateCaptureSession, 1 }; });
         });
     });
@@ -500,14 +504,21 @@ Status<Error> RequireCaptureSupport() noexcept
     });
 }
 
+// Our windows stay covered unless every session agreed to leave them out: one that did not would capture
+// them, and the model would be fed its own answer.
+[[nodiscard]] bool AllExcluding(const Sessions& sessions) noexcept
+{
+    return !sessions.IsEmpty() && std::ranges::all_of(sessions.Items(), [](const MonitorSession& s) { return s.excluding; });
+}
+
 Result<Capture, Error> CreateCapture(const GpuDevice& gpu, const interior::ScreenRect& canvasRect, const interior::Extent& canvasExtent, const interior::MonitorList& monitors,
-                                     const CaptureSettings& settings) noexcept
+                                     const CaptureSettings& settings, std::span<const HWND> ours) noexcept
 {
     return CreateDevices(gpu).and_then([&](const Devices& d) {
         return CreateBridge(d, gpu, canvasExtent).and_then([&](const Bridge& bridge) {
-            return StartAll(d.winrtDevice.Get(), monitors, settings).transform([&](const Sessions& sessions) {
-                return Capture{ d.device11, d.context, d.winrtDevice, bridge.canvas, bridge.sharedCanvas, bridge.canvasFree, bridge.sharedCanvasFree, bridge.canvasReady, bridge.sharedCanvasReady,
-                                gpu.queue,  sessions,  canvasRect,    canvasExtent };
+            return StartAll(d.winrtDevice.Get(), monitors, settings, ours).transform([&](const Sessions& sessions) {
+                return Capture{ d.device11, d.context, d.winrtDevice, bridge.canvas, bridge.sharedCanvas,   bridge.canvasFree, bridge.sharedCanvasFree, bridge.canvasReady, bridge.sharedCanvasReady,
+                                gpu.queue,  sessions,  canvasRect,    canvasExtent,  AllExcluding(sessions) };
             });
         });
     });
@@ -522,11 +533,6 @@ Status<Error> ApplyCaptureSettings(const Capture& capture, const CaptureSettings
 Result<bool, Error> AcquireFrames(const Capture& capture, interior::FrameNumber number) noexcept
 {
     return CollectPending(capture).and_then([&](const PendingList& pending) { return CopyAndClose(capture, pending, ValueOf(number)); });
-}
-
-bool OffersWindowExclusion(const Capture& capture) noexcept
-{
-    return !capture.sessions.IsEmpty() && AnswersToDisplaySession(capture.sessions.At(0));
 }
 
 } // namespace real

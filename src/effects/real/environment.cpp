@@ -294,9 +294,10 @@ struct Recording
 }
 
 [[nodiscard]] Result<Gpu, Error> WithResourcesAndCapture(GpuDevice device, Presenter presenter, const Pipelines& pipelines, const Recording& recording, const SessionPlan& plan,
-                                                         const interior::Geometry& geometry, const EnvironmentSettings& settings, const interior::LevelExtents& extents) noexcept
+                                                         const interior::Geometry& geometry, const EnvironmentSettings& settings, const interior::LevelExtents& extents,
+                                                         std::span<const HWND> ours) noexcept
 {
-    return CreateCapture(device, geometry.sourceRect, plan.source, geometry.source, CaptureSettingsOf(plan, settings)).and_then([&](Capture capture) {
+    return CreateCapture(device, geometry.sourceRect, plan.source, geometry.source, CaptureSettingsOf(plan, settings), ours).and_then([&](Capture capture) {
         return CreateResources(device, plan, presenter, extents, capture.sharedCanvas.Get()).transform([&](const ResourceTable& resources) {
             return Gpu{ std::move(device), pipelines, std::move(presenter), std::move(capture), recording.allocators, recording.list, resources, Models{}, OpticalFlowSlot{} };
         });
@@ -304,12 +305,12 @@ struct Recording
 }
 
 [[nodiscard]] Result<Gpu, Error> AssembledGpu(GpuDevice device, const SessionPlan& plan, const interior::Geometry& geometry, HWND window, const EnvironmentSettings& settings,
-                                              const interior::LevelExtents& extents) noexcept
+                                              const interior::LevelExtents& extents, std::span<const HWND> ours) noexcept
 {
     return CreatePresenter(device, window, plan.target).and_then([&](Presenter presenter) {
         return CreatePipelines(device, kSwapChainFormat).and_then([&](const Pipelines& pipelines) {
             return CreateRecording(device).and_then(
-                [&](const Recording& recording) { return WithResourcesAndCapture(std::move(device), std::move(presenter), pipelines, recording, plan, geometry, settings, extents); });
+                [&](const Recording& recording) { return WithResourcesAndCapture(std::move(device), std::move(presenter), pipelines, recording, plan, geometry, settings, extents, ours); });
         });
     });
 }
@@ -877,9 +878,24 @@ Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surfa
     return ApplySurface(gpu_, window_, applied_);
 }
 
+[[nodiscard]] interior::SurfaceSettings WithoutAffinity(const interior::SurfaceSettings& s) noexcept
+{
+    interior::SurfaceSettings next = s; // WAIVER(R2): a copy with one answer replaced, read once after it.
+    next.displayAffinity = false;
+    return next;
+}
+
+// The panel still carries the setting the session started with, so a change to any other surface setting
+// would put the blanket back over windows the capture is already leaving out by name.
+[[nodiscard]] interior::SurfaceSettings AsExcluded(const interior::SurfaceSettings& s, bool excluding) noexcept
+{
+    return excluding ? WithoutAffinity(s) : s;
+}
+
 Status<Error> RealEnvironment::Settled(const PanelReading& reading) noexcept
 {
-    return Resurfaced(reading.surface).and_then([this, &reading] { return Recleared(reading.live.depth); });
+    const interior::SurfaceSettings surface = AsExcluded(reading.surface, gpu_.capture.excludesOurWindows);
+    return Resurfaced(surface).and_then([this, &reading] { return Recleared(reading.live.depth); });
 }
 
 [[nodiscard]] bool AsksForANewSession(bool wanted, const ControlPanel* panel) noexcept
@@ -927,11 +943,39 @@ Error RealEnvironment::FromPlanError(interior::PlanFrameError error) noexcept
     return Error{ ApiCall::PlanFrame, static_cast<std::uint32_t>(error) };
 }
 
+[[nodiscard]] HWND PanelWindow(const ControlPanel* panel) noexcept
+{
+    return panel == nullptr ? nullptr : panel->window.get();
+}
+
+// The windows of this program, which the capture is asked to leave out by name. A window that is not
+// there is passed as nothing and skipped, so the list is as long as the program has windows.
+[[nodiscard]] std::array<HWND, 2> OurWindows(const OutputWindow& window, const ControlPanel* panel) noexcept
+{
+    return { window.handle.get(), PanelWindow(panel) };
+}
+
+[[nodiscard]] std::span<const HWND> Present(const std::array<HWND, 2>& ours) noexcept
+{
+    return std::span<const HWND>(ours.data(), ours[1] == nullptr ? 1u : 2u);
+}
+
+// Starting hidden from every capture is the only safe order: nothing can photograph the overlay before a
+// session exists to be told about it. Once one has taken the list, they go back to ordinary windows.
+[[nodiscard]] Status<Error> Uncovered(const Gpu& gpu, std::span<const HWND> ours) noexcept
+{
+    if (!gpu.capture.excludesOurWindows)
+        return {};
+    return infra::ForEach(ours, Status<Error>{}, [](HWND window) { return UncoverWindow(window); });
+}
+
 Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional<NgxRuntime> runtime, const SessionPlan& plan, const interior::Geometry& geometry, OutputWindow window,
                                                  const ControlPanel* panel, const EnvironmentSettings& settings, const interior::Options& options, const Console& console) noexcept
 {
+    const std::array<HWND, 2> ours = OurWindows(window, panel);
     return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
-        return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents)
+        return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents, Present(ours))
+            .and_then([&](Gpu gpu) { return Uncovered(gpu, Present(ours)).transform([&] { return std::move(gpu); }); })
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
             .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), panel, console, settings, options, extents); });
     });

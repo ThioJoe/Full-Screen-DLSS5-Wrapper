@@ -730,19 +730,19 @@ struct Ended
     bool abandoned; // the one window it was working on was closed, minimised or hidden
 };
 
-// Whether this machine could keep our windows out of our own capture alone, instead of out of every
-// capture on the machine. Reported so it can be answered on real hardware; nothing acts on it yet.
-[[nodiscard]] Status<Error> LogExclusion(const Console& console, bool offered) noexcept
+// Which of the two ways our own windows are being kept out of our own capture, since one of them also
+// keeps them out of everyone else's and is the reason the overlay cannot be screenshotted or recorded.
+[[nodiscard]] Status<Error> LogExclusion(const Console& console, bool excluding) noexcept
 {
-    if (offered)
-        return Log(console, LogLevel::Info, "Per-session window exclusion is offered here: the overlay could be hidden from our capture alone");
-    return Log(console, LogLevel::Info, "Per-session window exclusion is not offered here: hiding the overlay from our capture hides it from all capture");
+    if (excluding)
+        return Log(console, LogLevel::Info, "The capture leaves our windows out by name: the overlay and panel are visible to other capture");
+    return Log(console, LogLevel::Warn, "This Windows cannot leave our windows out by name, so they are hidden from all capture, including screenshots");
 }
 
 [[nodiscard]] Result<Ended, Error> Drive(const Console& console, const Options& options, const SessionPlan& plan, real::RealEnvironment& env) noexcept
 {
     real::ShowOutputWindow(env.Window());
-    return LogExclusion(console, real::OffersWindowExclusion(env.Devices().capture))
+    return LogExclusion(console, env.Devices().capture.excludesOurWindows)
         .and_then([&] { return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit"); })
         .and_then([&] { return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit)); })
         .transform([&](interior::FrameNumber frames) { return Ended{ .frames = frames, .again = env.Restart(options), .resized = env.Resized(), .abandoned = env.Abandoned() }; });

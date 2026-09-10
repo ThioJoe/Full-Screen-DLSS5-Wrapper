@@ -573,6 +573,13 @@ Status<Error> RegisterHotkeys(const OutputWindow& window) noexcept
     });
 }
 
+// Puts a window back into every capture on the machine. Only for when our own capture has been told to
+// leave it out by name, which is the whole point: seen by recorders, unseen by the model.
+Status<Error> UncoverWindow(HWND window) noexcept
+{
+    return CheckBool(::SetWindowDisplayAffinity(window, WDA_NONE), ApiCall::SetWindowDisplayAffinity);
+}
+
 void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& rect) noexcept
 {
     (void)::SetWindowPos(window.handle.get(), nullptr, rect.Left().Get(), rect.Top().Get(), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);

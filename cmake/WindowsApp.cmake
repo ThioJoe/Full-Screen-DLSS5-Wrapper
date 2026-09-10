@@ -54,6 +54,7 @@ set(DSCREEN_REAL_SOURCES
   src/effects/real/com.cpp
   src/effects/real/panel.cpp
   src/effects/real/trust.cpp
+  src/effects/real/exclusion.cpp
   src/effects/real/window.cpp
   src/effects/real/device.cpp
   src/effects/real/resources.cpp

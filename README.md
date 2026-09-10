@@ -128,6 +128,20 @@ restarted rather than the session rebuilt.
 Closing the panel ends the session. Started from a console, the program attaches to it and logs there;
 `--console on` forces one, `--gui off` leaves the overlay to run alone.
 
+### Screenshots and recordings
+
+The overlay sits on top of the monitor it is capturing, so a capture that included it would feed the
+model its own answer and spiral. The blunt way to stop that is `SetWindowDisplayAffinity`, which Windows
+enforces below every capture path: it keeps the overlay out of this program's capture and out of Print
+Screen, OBS and every recorder along with it. That is why the tool could not be screenshotted at all.
+
+Where Windows offers it, the capture session is instead told to leave this program's own windows out by
+name. That is scoped to the one session, so the model never sees the overlay while everything else sees
+it normally, and the tool can be demonstrated. Both windows still start hidden from all capture, because
+nothing may photograph the overlay before a session exists to be told about it; they are uncovered once a
+session has taken the list, and only after reading it back to confirm it did. The log says which of the
+two is in force at start-up. On a Windows without it, nothing changes from before.
+
 ### The settings that do nothing here
 
 The desktop is not a game engine, and five settings have nothing to act on because of it. The **depth
