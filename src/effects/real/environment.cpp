@@ -642,7 +642,7 @@ RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow 
                                  const interior::Options& options, std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
     : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(panel), console_(console), finestPixels_(finestPixels),
       frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false), resized_(false),
-      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false), placed_(std::nullopt)
+      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false)
 {
 }
 
@@ -685,19 +685,19 @@ void RealEnvironment::Settling(const interior::Extent& size, interior::Instant n
         Held(size, now);
 }
 
-// Asking Windows to put the overlay where it already is still makes the desktop manager do its work over,
-// and the window is topmost and kept out of the capture, which is not cheap work. It is placed on a move.
 [[nodiscard]] HWND FollowedHandle(const std::optional<interior::MonitorHandle>& followed) noexcept
 {
     return followed.has_value() ? reinterpret_cast<HWND>(followed->Get()) : nullptr;
 }
 
+// Where the overlay belongs is asked of the stack rather than remembered: the program that owns the
+// window can raise it over the overlay whenever it likes, and a refused placement is then tried again.
 void RealEnvironment::Placed(const interior::ScreenRect& bounds) noexcept
 {
-    if (placed_ == bounds)
+    HWND above = FollowedHandle(applied_.followed);
+    if (IsOutputWindowPlaced(window_, bounds, above))
         return;
-    MoveOutputWindowAbove(window_, bounds, FollowedHandle(applied_.followed));
-    placed_ = bounds; // WAIVER(R2): where the overlay was last put, replaced whole.
+    MoveOutputWindowAbove(window_, bounds, above);
 }
 
 // A window that only moves needs the overlay moved and nothing else, because the capture follows it. Every

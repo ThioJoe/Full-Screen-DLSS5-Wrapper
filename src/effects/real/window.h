@@ -62,6 +62,10 @@ void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& re
 // one being worked on covers the overlay too rather than being hidden behind a picture of what it covers.
 void MoveOutputWindowAbove(const OutputWindow& window, const interior::ScreenRect& rect, HWND above) noexcept;
 
+// Whether the overlay is already where that call would put it. Asked of the stack each time the window
+// being followed is looked at, because being raised over the overlay is what makes the effect vanish.
+[[nodiscard]] bool IsOutputWindowPlaced(const OutputWindow& window, const interior::ScreenRect& rect, HWND above) noexcept;
+
 // Puts a window back into every capture on the machine, for when our own capture excludes it by name.
 [[nodiscard]] infra::Status<Error> UncoverWindow(HWND window) noexcept;
 [[nodiscard]] infra::Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept;

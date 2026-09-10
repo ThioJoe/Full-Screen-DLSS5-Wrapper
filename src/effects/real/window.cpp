@@ -602,9 +602,46 @@ void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& re
     (void)::SetWindowPos(window.handle.get(), nullptr, rect.Left().Get(), rect.Top().Get(), 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+[[nodiscard]] bool IsTopmostWindow(HWND window) noexcept
+{
+    return (static_cast<DWORD>(::GetWindowLongPtrW(window, GWL_EXSTYLE)) & WS_EX_TOPMOST) != 0;
+}
+
+// Nothing can be put directly above a window that is always on top, so the overlay joins that band and
+// the two rise together. Everything else takes the place immediately above the window it follows.
+[[nodiscard]] HWND JustAbove(HWND above) noexcept
+{
+    return IsTopmostWindow(above) ? HWND_TOPMOST : above;
+}
+
 void MoveOutputWindowAbove(const OutputWindow& window, const interior::ScreenRect& rect, HWND above) noexcept
 {
-    (void)::SetWindowPos(window.handle.get(), above, rect.Left().Get(), rect.Top().Get(), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+    (void)::SetWindowPos(window.handle.get(), JustAbove(above), rect.Left().Get(), rect.Top().Get(), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+[[nodiscard]] bool IsAtPoint(const RECT& where, const interior::ScreenRect& rect) noexcept
+{
+    return where.left == rect.Left().Get() && where.top == rect.Top().Get();
+}
+
+[[nodiscard]] bool IsAtTopLeft(HWND handle, const interior::ScreenRect& rect) noexcept
+{
+    RECT where{}; // WAIVER(R2): the answer of one query, read once after it.
+    return ::GetWindowRect(handle, &where) != FALSE && IsAtPoint(where, rect);
+}
+
+[[nodiscard]] bool IsStackedOn(HWND handle, HWND above) noexcept
+{
+    if (IsTopmostWindow(above))
+        return IsTopmostWindow(handle);
+    return ::GetWindow(above, GW_HWNDPREV) == handle;
+}
+
+// Whichever program owns the window being followed can raise it, and raising it puts it over the overlay.
+// Windows can also refuse a placement outright. Both are read back from the stack rather than remembered.
+bool IsOutputWindowPlaced(const OutputWindow& window, const interior::ScreenRect& rect, HWND above) noexcept
+{
+    return IsAtTopLeft(window.handle.get(), rect) && IsStackedOn(window.handle.get(), above);
 }
 
 void ShowOutputWindow(const OutputWindow& window) noexcept
