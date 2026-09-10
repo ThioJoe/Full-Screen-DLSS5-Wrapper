@@ -639,8 +639,7 @@ RealEnvironment::RealEnvironment(Gpu gpu, const SessionPlan& plan, OutputWindow 
                                  const interior::Options& options, std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
     : gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(panel), console_(console), finestPixels_(finestPixels),
       frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false), resized_(false),
-      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false), placed_(std::nullopt), now_(start), retuned_(start),
-      held_(plan.tuning)
+      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false), placed_(std::nullopt)
 {
 }
 
@@ -785,25 +784,6 @@ void RealEnvironment::Reconsidered(interior::Instant now) noexcept
     return ending ? Stopping(begun) : begun;
 }
 
-[[nodiscard]] interior::LiveSettings WithTuning(const interior::LiveSettings& live, const interior::NrTuning& tuning) noexcept
-{
-    interior::LiveSettings next = live; // WAIVER(R2): a copy with one answer replaced, read once after it.
-    next.tuning = tuning;
-    return next;
-}
-
-// WAIVER(R7): the same record with one answer replaced, as Stopping is; which answer is the whole of it.
-[[nodiscard]] Begun WithControls(const Begun& begun, const interior::LiveSettings& controls) noexcept
-{
-    interior::FrameInput input = begun.input; // WAIVER(R2): a copy with one answer replaced, read once after it.
-    input.controlRequest = controls;
-    return Begun{ begun.frame, input, begun.reading };
-}
-
-// The model reads its tuning while its feature is built, not on each evaluate, so a changed value costs a
-// GPU drain and the weights loaded over -- which a drag asked for once per value it passed through.
-constexpr std::uint64_t kRetuneGapMicroseconds = 125000;
-
 // The three ways a session ends short of the operator quitting: the window it was working on changed size,
 // the panel settled on other settings, or the window it was working on went away.
 bool RealEnvironment::AsksForSettings() const noexcept
@@ -816,39 +796,11 @@ bool RealEnvironment::AsksToEnd() const noexcept
     return resized_ || AsksForSettings();
 }
 
-void RealEnvironment::Adopt(const interior::NrTuning& tuning) noexcept
-{
-    held_ = tuning;  // WAIVER(R2): the tuning now in force, replaced whole when a new one is taken up.
-    retuned_ = now_; // WAIVER(R2): when it was taken up, replaced whole with it.
-}
-
-bool RealEnvironment::MayAdopt(const interior::NrTuning& asked) const noexcept
-{
-    return asked != held_ && now_.Get() - retuned_.Get() >= kRetuneGapMicroseconds;
-}
-
-// What the frame is told the tuning is: the value in force until the gap has passed, so a drag asks for a
-// few rebuilds a second and the value the operator stops on is taken up as soon as the gap allows.
-interior::NrTuning RealEnvironment::Pacing(const interior::NrTuning& asked) noexcept
-{
-    if (MayAdopt(asked))
-        Adopt(asked);
-    return held_;
-}
-
-Begun RealEnvironment::Paced(const Begun& begun) noexcept
-{
-    if (!begun.input.controlRequest.has_value())
-        return begun;
-    return WithControls(begun, WithTuning(*begun.input.controlRequest, Pacing(begun.input.controlRequest->tuning)));
-}
-
 Result<FrameStart, Error> RealEnvironment::Began(const Begun& begun) noexcept
 {
-    now_ = begun.input.now; // WAIVER(R2): this frame's instant, replaced whole once per frame.
     Followed(begun.input.now);
     Reconsidered(begun.input.now);
-    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(StoppedIf(Paced(begun), AsksToEnd())); });
+    return SettledIfRead(begun.reading).and_then([this, &begun] { return Accept(StoppedIf(begun, AsksToEnd())); });
 }
 
 Result<FrameStart, Error> RealEnvironment::BeginFrame(const interior::FrameState& state) noexcept
