@@ -1764,9 +1764,10 @@ using Piece = infra::BoundedString<char, kPieceCapacity>;
 [[nodiscard]] Arguments RuntimeArguments(const interior::Options& o, const Arguments& so) noexcept
 {
     constexpr std::array<const char*, 3> ngxLog{ "0", "1", "2" };
-    const std::array<Piece, 4> pieces{ Trimmed(infra::Formatted<kPieceCapacity>("--ngx-log={}", ngxLog[static_cast<std::size_t>(o.ngxLogLevel)]).Get()),
+    const std::array<Piece, 5> pieces{ Trimmed(infra::Formatted<kPieceCapacity>("--ngx-log={}", ngxLog[static_cast<std::size_t>(o.ngxLogLevel)]).Get()),
                                        Trimmed(infra::Formatted<kPieceCapacity>("--ngx-project-id={}", o.ngxProjectId.Get()).Get()), AppIdPiece(o.ngxAppId),
-                                       Trimmed(infra::Formatted<kPieceCapacity>("--show-inert={}", Word(o.showInert)).Get()) };
+                                       Trimmed(infra::Formatted<kPieceCapacity>("--show-inert={}", Word(o.showInert)).Get()),
+                                       Trimmed(infra::Formatted<kPieceCapacity>("--exclude-own-windows={}", Word(o.excludeOwnWindows)).Get()) };
     return JoinedAll(so, pieces);
 }
 

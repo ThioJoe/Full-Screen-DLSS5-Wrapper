@@ -67,6 +67,7 @@ enum class OptionId : std::uint8_t {
     Indicator,
     CubinCache,
     ShowInert,
+    ExcludeOwnWindows,
 };
 
 enum class ValueKind : std::uint8_t {
@@ -99,7 +100,7 @@ struct OptionSpec
     ValueKind kind;
 };
 
-constexpr std::array<OptionSpec, 48> kSpecs{ {
+constexpr std::array<OptionSpec, 49> kSpecs{ {
     { L"help", OptionId::Help, ValueKind::Flag },
     { L"list-monitors", OptionId::ListMonitors, ValueKind::Flag },
     { L"monitor", OptionId::Monitor, ValueKind::MonitorSel },
@@ -148,6 +149,7 @@ constexpr std::array<OptionSpec, 48> kSpecs{ {
     { L"indicator", OptionId::Indicator, ValueKind::Bool },
     { L"cubin-cache", OptionId::CubinCache, ValueKind::Bool },
     { L"show-inert", OptionId::ShowInert, ValueKind::Bool },
+    { L"exclude-own-windows", OptionId::ExcludeOwnWindows, ValueKind::Bool },
 } };
 
 struct FlagValue
@@ -681,6 +683,7 @@ struct ValidatedScales
         ValueOr(list, OptionId::Indicator, d.indicator),
         ValueOr(list, OptionId::CubinCache, d.cubinCache),
         ValueOr(list, OptionId::ShowInert, d.showInert),
+        ValueOr(list, OptionId::ExcludeOwnWindows, d.excludeOwnWindows),
     };
 }
 
@@ -775,6 +778,7 @@ Options DefaultOptions() noexcept
         ConsoleMode::Auto,
         false,
         true,
+        false,
         false,
     };
 }

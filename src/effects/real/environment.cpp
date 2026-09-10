@@ -960,6 +960,13 @@ Error RealEnvironment::FromPlanError(interior::PlanFrameError error) noexcept
     return std::span<const HWND>(ours.data(), ours[1] == nullptr ? 1u : 2u);
 }
 
+// Asking for nothing to be left out is how the capture is told not to try, which leaves the windows
+// hidden from every capture, as they were before there was another way.
+[[nodiscard]] std::span<const HWND> Asked(const std::array<HWND, 2>& ours, bool wanted) noexcept
+{
+    return wanted ? Present(ours) : std::span<const HWND>{};
+}
+
 // Starting hidden from every capture is the only safe order: nothing can photograph the overlay before a
 // session exists to be told about it. Once one has taken the list, they go back to ordinary windows.
 [[nodiscard]] Status<Error> Uncovered(const Gpu& gpu, std::span<const HWND> ours) noexcept
@@ -974,7 +981,7 @@ Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional
 {
     const std::array<HWND, 2> ours = OurWindows(window, panel);
     return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
-        return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents, Present(ours))
+        return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents, Asked(ours, options.excludeOwnWindows))
             .and_then([&](Gpu gpu) { return Uncovered(gpu, Present(ours)).transform([&] { return std::move(gpu); }); })
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
             .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), panel, console, settings, options, extents); });

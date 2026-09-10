@@ -736,7 +736,7 @@ struct Ended
 {
     if (excluding)
         return Log(console, LogLevel::Info, "The capture leaves our windows out by name: the overlay and panel are visible to other capture");
-    return Log(console, LogLevel::Warn, "This Windows cannot leave our windows out by name, so they are hidden from all capture, including screenshots");
+    return Log(console, LogLevel::Info, "Our windows are hidden from every capture, screenshots included (--exclude-own-windows on asks for the other way)");
 }
 
 [[nodiscard]] Result<Ended, Error> Drive(const Console& console, const Options& options, const SessionPlan& plan, real::RealEnvironment& env) noexcept

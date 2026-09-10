@@ -135,12 +135,17 @@ model its own answer and spiral. The blunt way to stop that is `SetWindowDisplay
 enforces below every capture path: it keeps the overlay out of this program's capture and out of Print
 Screen, OBS and every recorder along with it. That is why the tool could not be screenshotted at all.
 
-Where Windows offers it, the capture session is instead told to leave this program's own windows out by
-name. That is scoped to the one session, so the model never sees the overlay while everything else sees
-it normally, and the tool can be demonstrated. Both windows still start hidden from all capture, because
-nothing may photograph the overlay before a session exists to be told about it; they are uncovered once a
-session has taken the list, and only after reading it back to confirm it did. The log says which of the
-two is in force at start-up. On a Windows without it, nothing changes from before.
+Where Windows offers it, the capture session can instead be told to leave this program's own windows out
+by name. That is scoped to the one session, so the model never sees the overlay while everything else
+sees it normally, and the tool can be demonstrated. `--exclude-own-windows on` asks for it; it is off by
+default while it is still being proved on real machines, and the log says which of the two is in force.
+
+Getting it wrong puts the overlay back into its own capture, so three things have to hold before either
+window is uncovered. Both start hidden from all capture, because nothing may photograph the overlay
+before a session exists to be told about it. Each window handle is turned into the identifier the list
+takes and then turned back again, and is only used if it comes back as the same window. And the list is
+read off the session afterwards and searched for every window in it. Any of those failing leaves the
+windows hidden, which is what the tool did before there was another way.
 
 ### The settings that do nothing here
 

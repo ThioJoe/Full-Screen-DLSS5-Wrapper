@@ -99,7 +99,8 @@ struct Options
     ConsoleMode console;
     bool indicator;
     bool cubinCache;
-    bool showInert; // show the panel page holding the settings that change nothing on a desktop
+    bool showInert;         // show the panel page holding the settings that change nothing on a desktop
+    bool excludeOwnWindows; // ask the capture to leave our own windows out, rather than hiding them from all capture
     [[nodiscard]] friend constexpr bool operator==(const Options&, const Options&) noexcept = default;
 };
 

@@ -4,7 +4,7 @@
 
 #include <algorithm>
 #include <array>
-#include <atomic>
+#include <optional>
 #include <ranges>
 
 namespace real {
@@ -210,15 +210,89 @@ HRESULT Iterable::First(IWindowIdIterator** first) noexcept
     return display;
 }
 
-[[nodiscard]] WindowId IdOf(HWND window) noexcept
+// A WindowId is not a window handle, so one has to be asked for. These two live in an API set rather than
+// in any library this links against, and are absent on a Windows too old to know them.
+using WindowIdOfWindow = HRESULT(WINAPI*)(HWND, WindowId*);
+using WindowOfWindowId = HRESULT(WINAPI*)(WindowId, HWND*);
+
+constexpr wchar_t kWindowingSet[] = L"ext-ms-win-windowing-external-l1-1-0.dll";
+
+struct Interop
 {
-    return WindowId{ reinterpret_cast<UINT64>(window) };
+    WindowIdOfWindow toId;
+    WindowOfWindowId toWindow;
+};
+
+[[nodiscard]] Interop ResolvedIn(HMODULE library) noexcept
+{
+    return Interop{ .toId = reinterpret_cast<WindowIdOfWindow>(reinterpret_cast<void*>(::GetProcAddress(library, "GetWindowIdFromWindow"))),
+                    .toWindow = reinterpret_cast<WindowOfWindowId>(reinterpret_cast<void*>(::GetProcAddress(library, "GetWindowFromWindowId"))) };
 }
 
+[[nodiscard]] Interop Resolved() noexcept
+{
+    const HMODULE library = ::LoadLibraryExW(kWindowingSet, nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (library == nullptr)
+        return Interop{ .toId = nullptr, .toWindow = nullptr };
+    return ResolvedIn(library);
+}
+
+[[nodiscard]] const Interop& TheInterop() noexcept
+{
+    // WAIVER(R11): resolved once for the program, from a library that is never let go of again.
+    static const Interop interop = Resolved();
+    return interop;
+}
+
+// An id is only believed when Windows turns it back into the window it was made from. An id that means
+// nothing would go into the list, read back out of it, and be taken for success.
+[[nodiscard]] bool NamesTheWindow(const Interop& interop, WindowId id, HWND window) noexcept
+{
+    HWND back = nullptr;
+    if (FAILED(interop.toWindow(id, &back)))
+        return false;
+    return back == window;
+}
+
+[[nodiscard]] std::optional<WindowId> CheckedAgainst(const Interop& interop, WindowId id, HWND window) noexcept
+{
+    return NamesTheWindow(interop, id, window) ? std::optional<WindowId>{ id } : std::nullopt;
+}
+
+[[nodiscard]] std::optional<WindowId> ConvertedBy(const Interop& interop, HWND window) noexcept
+{
+    WindowId id{};
+    if (FAILED(interop.toId(window, &id)))
+        return std::nullopt;
+    return CheckedAgainst(interop, id, window);
+}
+
+[[nodiscard]] bool HasBoth(const Interop& interop) noexcept
+{
+    return interop.toId != nullptr && interop.toWindow != nullptr;
+}
+
+[[nodiscard]] std::optional<WindowId> IdOf(HWND window) noexcept
+{
+    if (!HasBoth(TheInterop()))
+        return std::nullopt;
+    return ConvertedBy(TheInterop(), window);
+}
+
+[[nodiscard]] bool IsThere(const std::optional<WindowId>& id) noexcept
+{
+    return id.has_value();
+}
+
+// All of them or none: a list missing one of our windows would leave that one in the capture, and the
+// windows are uncovered on the strength of the list being complete.
 [[nodiscard]] std::size_t Filled(WindowIds& ids, std::span<const HWND> windows) noexcept
 {
     const std::size_t many = std::min(windows.size(), kMaxExcluded);
-    std::ranges::transform(windows.first(many), ids.begin(), IdOf);
+    const auto converted = windows.first(many) | std::views::transform([](HWND w) { return IdOf(w); });
+    if (!std::ranges::all_of(converted, IsThere))
+        return 0;
+    std::ranges::transform(converted, ids.begin(), [](const std::optional<WindowId>& id) { return *id; });
     return many;
 }
 
