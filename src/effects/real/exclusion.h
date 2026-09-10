@@ -24,4 +24,8 @@ void NoteExclusionWide(const wchar_t* text) noexcept;
 // Writes the session's exclusion list to that log as it stands, for asking when it stops being held.
 void NoteExclusionList(ABI::Windows::Graphics::Capture::IGraphicsCaptureSession* session, const char* when) noexcept;
 
+// Writes down which configuration a frame was made under, whenever that number changes. Setting the
+// exclusion list hands back a number, and a list taken but never applied never reaches the frames.
+void NoteFrameConfiguration(IUnknown* frame) noexcept;
+
 } // namespace real

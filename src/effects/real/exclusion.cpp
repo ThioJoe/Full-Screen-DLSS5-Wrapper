@@ -87,6 +87,15 @@ struct IDisplaySession : IInspectable
     virtual HRESULT STDMETHODCALLTYPE GetWindowExclusionList(IWindowIdVectorView** windows) noexcept = 0;
 };
 
+// A frame carries the number of the configuration it was made under, and SetWindowExclusionList hands
+// back the number its list was given. Until the frames reach that number, the list was taken and not used.
+constexpr GUID kFrameConfigurationIid{ 0x71616DC8, 0xFEA5, 0x5741, { 0xA3, 0xD8, 0x59, 0x1A, 0xCC, 0x39, 0xA9, 0xEE } };
+
+struct IFrameConfiguration : IInspectable
+{
+    virtual HRESULT STDMETHODCALLTYPE get_ConfigurationIteration(UINT64* value) noexcept = 0;
+};
+
 // An interface we did not think of is the likeliest way a computed identity is wrong, and Windows asking
 // for one it cannot get is invisible from the outside, so every refusal says what was asked for.
 [[nodiscard]] HRESULT NotedRefusal(REFIID asked) noexcept
@@ -447,6 +456,37 @@ void NoteHeldIfAny(IDisplaySession* display, Com<IWindowIdVectorView>& held) noe
 void NoteExclusion(const char* line) noexcept
 {
     Note(line);
+}
+
+[[nodiscard]] UINT64& LastConfiguration() noexcept
+{
+    // WAIVER(R11): one per program, so a number is written down when it changes rather than every frame.
+    static UINT64 seen = ~0ull;
+    return seen;
+}
+
+void NoteConfigurationChange(UINT64 iteration) noexcept
+{
+    if (iteration == LastConfiguration())
+        return;
+    LastConfiguration() = iteration; // WAIVER(R2): the last number seen, replaced whole by this one.
+    NoteOne("frames are now being made under configuration", iteration);
+}
+
+void NoteConfigurationOf(IFrameConfiguration* which) noexcept
+{
+    UINT64 iteration = 0; // WAIVER(R2): the answer of one query, read once after it.
+    if (FAILED(which->get_ConfigurationIteration(&iteration)))
+        return;
+    NoteConfigurationChange(iteration);
+}
+
+void NoteFrameConfiguration(IUnknown* frame) noexcept
+{
+    Com<IFrameConfiguration> which;
+    if (FAILED(frame->QueryInterface(kFrameConfigurationIid, reinterpret_cast<void**>(which.GetAddressOf()))))
+        return;
+    NoteConfigurationOf(which.Get());
 }
 
 void NoteExclusionWide(const wchar_t* text) noexcept

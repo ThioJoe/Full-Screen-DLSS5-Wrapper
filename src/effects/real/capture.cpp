@@ -377,6 +377,7 @@ using PendingList = infra::BoundedVector<Pending, interior::kMaxMonitors>;
 {
     if (!frame)
         return acc;
+    NoteFrameConfiguration(frame.Get());
     return TextureOf(frame.Get()).and_then([&](const Com<ID3D11Texture2D>& texture) {
         return acc.Push(Pending{ frame, texture, session.monitor }).transform_error([](infra::CapacityExceeded) { return Error{ ApiCall::TryGetNextFrame, 1 }; });
     });
