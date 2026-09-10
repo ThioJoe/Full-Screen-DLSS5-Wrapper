@@ -88,6 +88,9 @@ private:
     void Considering(const interior::CommandLine& shape, interior::Instant now) noexcept;
     void Asked(const interior::CommandLine& shape, interior::Instant now) noexcept;
     [[nodiscard]] bool AsksForAnother(const interior::CommandLine& shape, interior::Instant now) const noexcept;
+    [[nodiscard]] bool AsksForAnotherWindow() const noexcept;
+    [[nodiscard]] bool HasWaited(interior::Instant now) const noexcept;
+    [[nodiscard]] bool IsWorthBuilding(interior::Instant now) const noexcept;
     void HeldSettings(const interior::CommandLine& shape, interior::Instant now) noexcept;
     void Noticed(const interior::Extent& size, interior::Instant now) noexcept;
     [[nodiscard]] bool HasSettled(interior::Instant now) const noexcept;

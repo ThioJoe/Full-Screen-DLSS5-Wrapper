@@ -141,6 +141,9 @@ struct PanelReading
 // while a session is following it.
 void ReleaseWindow(const ControlPanel& panel) noexcept;
 
+// The window the crosshair was last left on, which is what a session built from the panel would follow.
+[[nodiscard]] std::optional<interior::MonitorHandle> PickedWindow(const ControlPanel& panel) noexcept;
+
 // The command line the start-up page describes, for the session the operator has asked for.
 [[nodiscard]] interior::CommandLine RestartCommandLine(const ControlPanel& panel, const interior::Options& options) noexcept;
 

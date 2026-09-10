@@ -789,9 +789,26 @@ void RealEnvironment::Asked(const interior::CommandLine& shape, interior::Instan
     asked_ = now;    // WAIVER(R2): when it was first described, replaced whole with it.
 }
 
+[[nodiscard]] bool RealEnvironment::HasWaited(interior::Instant now) const noexcept
+{
+    return now.Get() - asked_.Get() >= kSettleMicroseconds;
+}
+
+// The crosshair takes its window when the button comes up, which is already the operator saying they
+// have chosen. Waiting for that to settle would only be waiting.
+[[nodiscard]] bool RealEnvironment::AsksForAnotherWindow() const noexcept
+{
+    return panel_ != nullptr && PickedWindow(*panel_) != applied_.followed;
+}
+
+[[nodiscard]] bool RealEnvironment::IsWorthBuilding(interior::Instant now) const noexcept
+{
+    return HasWaited(now) || AsksForAnotherWindow();
+}
+
 [[nodiscard]] bool RealEnvironment::AsksForAnother(const interior::CommandLine& shape, interior::Instant now) const noexcept
 {
-    return shape != built_ && now.Get() - asked_.Get() >= kSettleMicroseconds;
+    return shape != built_ && IsWorthBuilding(now);
 }
 
 void RealEnvironment::HeldSettings(const interior::CommandLine& shape, interior::Instant now) noexcept

@@ -1700,7 +1700,7 @@ using Piece = infra::BoundedString<char, kPieceCapacity>;
 // A handle rather than a title: the panel has the window itself, and a title is not a name for anything.
 [[nodiscard]] Piece WindowPiece(const ControlPanel& panel) noexcept
 {
-    const std::optional<interior::MonitorHandle> picked = HandleAt(panel.crosshairs[static_cast<std::size_t>(Pick::Window)], kChosen);
+    const std::optional<interior::MonitorHandle> picked = PickedWindow(panel);
     if (!picked.has_value())
         return Piece{};
     return Trimmed(infra::Formatted<kPieceCapacity>("--window=0x{:x}", picked->Get()).Get());
@@ -2114,6 +2114,11 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
 
 // The window a session was following has gone: the panel lets go of it too, so what it shows is the source
 // the next session is built from, and the crosshair is ready to be dragged onto another window.
+std::optional<interior::MonitorHandle> PickedWindow(const ControlPanel& panel) noexcept
+{
+    return HandleAt(panel.crosshairs[static_cast<std::size_t>(Pick::Window)], kChosen);
+}
+
 void ReleaseWindow(const ControlPanel& panel) noexcept
 {
     KeepBoth(panel.crosshairs[static_cast<std::size_t>(Pick::Window)], std::nullopt);
