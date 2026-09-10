@@ -612,11 +612,19 @@ void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& re
     return (static_cast<DWORD>(::GetWindowLongPtrW(window, GWL_EXSTYLE)) & WS_EX_TOPMOST) != 0;
 }
 
+// SetWindowPos names the window that is to precede the one being positioned, so naming the window being
+// followed puts the overlay behind it. The place above it is asked for by naming whatever is there now.
+[[nodiscard]] HWND Preceding(HWND window) noexcept
+{
+    HWND before = ::GetWindow(window, GW_HWNDPREV);
+    return before == nullptr ? HWND_TOP : before;
+}
+
 // Nothing can be put directly above a window that is always on top, so the overlay joins that band and
-// the two rise together. Everything else takes the place immediately above the window it follows.
+// the two rise together.
 [[nodiscard]] HWND JustAbove(HWND above) noexcept
 {
-    return IsTopmostWindow(above) ? HWND_TOPMOST : above;
+    return IsTopmostWindow(above) ? HWND_TOPMOST : Preceding(above);
 }
 
 void MoveOutputWindowAbove(const OutputWindow& window, const interior::ScreenRect& rect, HWND above) noexcept
