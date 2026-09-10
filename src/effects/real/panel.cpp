@@ -428,8 +428,18 @@ LRESULT CALLBACK PanelProc(HWND window, UINT message, WPARAM w, LPARAM l) noexce
 
 [[nodiscard]] WNDCLASSEXW ClassDescription() noexcept
 {
-    return WNDCLASSEXW{ sizeof(WNDCLASSEXW), 0,      &PanelProc, 0, 0, ::GetModuleHandleW(nullptr), nullptr, ::LoadCursorW(nullptr, IDC_ARROW), ::GetSysColorBrush(COLOR_BTNFACE), nullptr,
-                        kPanelClass,         nullptr };
+    return WNDCLASSEXW{ .cbSize = sizeof(WNDCLASSEXW),
+                        .style = 0,
+                        .lpfnWndProc = &PanelProc,
+                        .cbClsExtra = 0,
+                        .cbWndExtra = 0,
+                        .hInstance = ::GetModuleHandleW(nullptr),
+                        .hIcon = nullptr,
+                        .hCursor = ::LoadCursorW(nullptr, IDC_ARROW),
+                        .hbrBackground = ::GetSysColorBrush(COLOR_BTNFACE),
+                        .lpszMenuName = nullptr,
+                        .lpszClassName = kPanelClass,
+                        .hIconSm = nullptr };
 }
 
 // Advisory: the older common controls register their classes as they load and refuse this call, while
