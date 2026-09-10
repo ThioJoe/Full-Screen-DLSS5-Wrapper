@@ -305,11 +305,22 @@ struct Recording
     });
 }
 
+// A window Windows has never had to compose is not one it can be asked to leave out of a capture, and
+// the overlay would otherwise stay hidden until the first frame is ready, which is after the asking.
+void ShownBeforeCapture(HWND window, const EnvironmentSettings& settings) noexcept
+{
+    if (!settings.ownContent)
+        return;
+    NoteExclusion("putting the overlay on screen before the capture is asked to leave it out");
+    (void)::ShowWindow(window, SW_SHOWNOACTIVATE);
+}
+
 [[nodiscard]] Result<Gpu, Error> AssembledGpu(GpuDevice device, const SessionPlan& plan, const interior::Geometry& geometry, HWND window, const EnvironmentSettings& settings,
                                               const interior::LevelExtents& extents, std::span<const HWND> ours) noexcept
 {
     NoteExclusion(settings.ownContent ? "--- new session: presenting into the window itself" : "--- new session: presenting a composition over the window");
     return CreatePresenter(device, window, plan.target, settings.ownContent).and_then([&](Presenter presenter) {
+        ShownBeforeCapture(window, settings);
         return CreatePipelines(device, kSwapChainFormat).and_then([&](const Pipelines& pipelines) {
             return CreateRecording(device).and_then(
                 [&](const Recording& recording) { return WithResourcesAndCapture(std::move(device), std::move(presenter), pipelines, recording, plan, geometry, settings, extents, ours); });

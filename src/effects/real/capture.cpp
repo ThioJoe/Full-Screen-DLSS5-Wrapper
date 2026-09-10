@@ -201,6 +201,15 @@ struct Started
     bool excluding;
 };
 
+// The list is handed over twice, because a session that takes it while stopped need not be the one that
+// reads it while running. Either time sticking is enough for the windows to be uncovered.
+[[nodiscard]] bool ExcludedAgain(WGC::IGraphicsCaptureSession* session, std::span<const HWND> ours, bool before) noexcept
+{
+    NoteExclusionList(session, "--- after StartCapture");
+    const bool after = ExcludeWindowsFrom(session, ours);
+    return after || before;
+}
+
 [[nodiscard]] Result<Started, Error> SessionFor(WGC::IDirect3D11CaptureFramePool* pool, WGC::IGraphicsCaptureItem* item, const CaptureSettings& settings, std::span<const HWND> ours) noexcept
 {
     Com<WGC::IGraphicsCaptureSession> session;
@@ -212,10 +221,7 @@ struct Started
             excluding = ExcludeWindowsFrom(session.Get(), ours);
             return Check(session->StartCapture(), ApiCall::StartCapture);
         })
-        .transform([&] {
-            NoteExclusionList(session.Get(), "--- after StartCapture");
-            return Started{ session, excluding };
-        });
+        .transform([&] { return Started{ session, ExcludedAgain(session.Get(), ours, excluding) }; });
 }
 
 [[nodiscard]] Result<MonitorSession, Error> StartSession(WGD11::IDirect3DDevice* device, const interior::MonitorInfo& monitor, const CaptureSettings& settings, std::span<const HWND> ours) noexcept
