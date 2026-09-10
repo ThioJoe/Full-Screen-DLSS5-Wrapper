@@ -23,6 +23,7 @@ using infra::Result;
 
 constexpr wchar_t kPanelClass[] = L"DlssScreenControlPanel";
 constexpr wchar_t kCrosshairClass[] = L"DlssScreenWindowPicker";
+constexpr wchar_t kOutlineClass[] = L"DlssScreenPickOutline";
 constexpr int kCrosshairWidth = 34;
 constexpr int kReferenceDpi = 96;
 constexpr int kTextCapacity = 32;
@@ -1046,11 +1047,26 @@ void VerticalArms(HDC dc, const RECT& box, int radius) noexcept;
 [[nodiscard]] LRESULT StartedDrag(HWND window) noexcept;
 [[nodiscard]] LRESULT MovedDrag(HWND window) noexcept;
 [[nodiscard]] LRESULT FinishedDrag(HWND window, UINT message, WPARAM w, LPARAM l) noexcept;
+[[nodiscard]] LRESULT CALLBACK HighlightProc(HWND window, UINT message, WPARAM w, LPARAM l) noexcept;
+void FilledWith(HDC dc, const RECT& box, COLORREF colour) noexcept;
+void HideOutline(HWND outline) noexcept;
+void OutlineAround(HWND outline, const std::optional<interior::MonitorHandle>& picked) noexcept;
 
 // The crosshair keeps two windows in its own window data, so the panel can be moved about and copied
 // without the picking leaving anything dangling behind it.
-constexpr int kPointingAt = GWLP_USERDATA; // what the pointer is over, which the label shows as it goes
-constexpr int kChosen = 0;                 // what the operator chose by letting the button up
+constexpr int kPointingAt = GWLP_USERDATA;                     // what the pointer is over, which the label shows as it goes
+constexpr int kChosen = 0;                                     // what the operator chose by letting the button up
+constexpr int kHighlight = static_cast<int>(sizeof(LONG_PTR)); // the outline drawn around what the pointer is over
+
+[[nodiscard]] HWND HighlightOf(HWND crosshair) noexcept
+{
+    return reinterpret_cast<HWND>(::GetWindowLongPtrW(crosshair, kHighlight));
+}
+
+void KeepHighlight(HWND crosshair, HWND highlight) noexcept
+{
+    (void)::SetWindowLongPtrW(crosshair, kHighlight, reinterpret_cast<LONG_PTR>(highlight));
+}
 
 [[nodiscard]] std::optional<interior::MonitorHandle> HandleAt(HWND crosshair, int slot) noexcept
 {
@@ -1157,6 +1173,7 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
         return 0;
     (void)::SetCursor(::LoadCursorW(nullptr, IDC_CROSS));
     PickUnderCursor(window);
+    OutlineAround(HighlightOf(window), HandleAt(window, kPointingAt));
     return 0;
 }
 
@@ -1167,6 +1184,7 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
     if (message != WM_LBUTTONUP)
         return AbandonedDrag(window, message, w, l);
     KeepAt(window, kChosen, HandleAt(window, kPointingAt));
+    HideOutline(HighlightOf(window));
     (void)::ReleaseCapture();
     return 0;
 }
@@ -1177,7 +1195,109 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
     if (message != WM_CAPTURECHANGED)
         return ::DefWindowProcW(window, message, w, l);
     KeepAt(window, kPointingAt, HandleAt(window, kChosen));
+    HideOutline(HighlightOf(window));
     return 0;
+}
+
+// The outline drawn around the window under the pointer. Only its border is painted: the middle is
+// filled with a colour the window is told to treat as nothing, so what is inside stays visible.
+constexpr COLORREF kOutlineHollow = RGB(0, 0, 1);
+constexpr COLORREF kOutlineEdge = RGB(0, 160, 255);
+constexpr int kOutlineEdgeWidth = 4;
+constexpr DWORD kOutlineStyle = WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
+
+void DrawOutline(HDC dc, const RECT& box) noexcept
+{
+    const RECT inside{ box.left + kOutlineEdgeWidth, box.top + kOutlineEdgeWidth, box.right - kOutlineEdgeWidth, box.bottom - kOutlineEdgeWidth };
+    FilledWith(dc, box, kOutlineEdge);
+    FilledWith(dc, inside, kOutlineHollow);
+}
+
+void FilledWith(HDC dc, const RECT& box, COLORREF colour) noexcept
+{
+    const HBRUSH brush = ::CreateSolidBrush(colour);
+    ::FillRect(dc, &box, brush);
+    ENSURE(::DeleteObject(brush) != FALSE);
+}
+
+void PaintOutline(HWND window) noexcept
+{
+    PAINTSTRUCT paint{}; // WAIVER(R2): the record the OS fills to hand over the device context.
+    RECT box{};
+    (void)::GetClientRect(window, &box);
+    DrawOutline(::BeginPaint(window, &paint), box);
+    (void)::EndPaint(window, &paint);
+}
+
+// WAIVER(R17): the window procedure is called by the OS, which discards nothing and ignores attributes.
+LRESULT CALLBACK HighlightProc(HWND window, UINT message, WPARAM w, LPARAM l) noexcept
+{
+    if (message != WM_PAINT)
+        return ::DefWindowProcW(window, message, w, l);
+    PaintOutline(window);
+    return 0;
+}
+
+// WAIVER(R7): a window class is described the same way wherever one is made; every field differs in kind.
+[[nodiscard]] WNDCLASSEXW HighlightDescription() noexcept
+{
+    return WNDCLASSEXW{ .cbSize = sizeof(WNDCLASSEXW),
+                        .style = 0,
+                        .lpfnWndProc = &HighlightProc,
+                        .cbClsExtra = 0,
+                        .cbWndExtra = 0,
+                        .hInstance = ::GetModuleHandleW(nullptr),
+                        .hIcon = nullptr,
+                        .hCursor = ::LoadCursorW(nullptr, IDC_CROSS),
+                        .hbrBackground = nullptr,
+                        .lpszMenuName = nullptr,
+                        .lpszClassName = kOutlineClass,
+                        .hIconSm = nullptr };
+}
+
+// Hidden from every capture: it is a picking aid, and a recording of the work should not hold it.
+[[nodiscard]] HWND Prepared(HWND outline) noexcept
+{
+    if (outline == nullptr)
+        return nullptr;
+    (void)::SetLayeredWindowAttributes(outline, kOutlineHollow, 0, LWA_COLORKEY);
+    (void)::SetWindowDisplayAffinity(outline, WDA_EXCLUDEFROMCAPTURE);
+    return outline;
+}
+
+// Owned by the panel, so it goes when the panel goes and nothing has to remember to take it down.
+[[nodiscard]] HWND CreateOutline(HWND owner) noexcept
+{
+    return Prepared(::CreateWindowExW(kOutlineStyle, kOutlineClass, nullptr, WS_POPUP, 0, 0, 0, 0, owner, nullptr, ::GetModuleHandleW(nullptr), nullptr));
+}
+
+void HideOutline(HWND outline) noexcept
+{
+    (void)::ShowWindow(outline, SW_HIDE);
+}
+
+void ShowOutlineOn(HWND outline, const interior::ScreenRect& bounds) noexcept
+{
+    const int width = bounds.Right().Get() - bounds.Left().Get();
+    const int height = bounds.Bottom().Get() - bounds.Top().Get();
+    (void)::SetWindowPos(outline, HWND_TOPMOST, bounds.Left().Get(), bounds.Top().Get(), width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+[[nodiscard]] std::optional<interior::ScreenRect> BoundsOfPicked(const std::optional<interior::MonitorHandle>& picked) noexcept
+{
+    if (!picked.has_value())
+        return std::nullopt;
+    return BoundsOfWindow(*picked);
+}
+
+// Around whatever the pointer is over, and nowhere at all when that is our own windows or the desktop.
+void OutlineAround(HWND outline, const std::optional<interior::MonitorHandle>& picked) noexcept
+{
+    const std::optional<interior::ScreenRect> bounds = BoundsOfPicked(picked);
+    if (bounds.has_value())
+        ShowOutlineOn(outline, *bounds);
+    else
+        HideOutline(outline);
 }
 
 // WAIVER(R7): two window classes are described the same way; the procedure, the cursor and the name differ.
@@ -1187,7 +1307,7 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
                         .style = 0,
                         .lpfnWndProc = &CrosshairProc,
                         .cbClsExtra = 0,
-                        .cbWndExtra = sizeof(LONG_PTR),
+                        .cbWndExtra = 2 * sizeof(LONG_PTR),
                         .hInstance = ::GetModuleHandleW(nullptr),
                         .hIcon = nullptr,
                         .hCursor = ::LoadCursorW(nullptr, IDC_CROSS),
@@ -1197,13 +1317,19 @@ LRESULT CALLBACK CrosshairProc(HWND window, UINT message, WPARAM w, LPARAM l) no
                         .hIconSm = nullptr };
 }
 
+[[nodiscard]] HWND Furnished(HWND crosshair, HWND parent, const std::optional<interior::MonitorHandle>& window) noexcept
+{
+    if (crosshair == nullptr)
+        return nullptr;
+    KeepBoth(crosshair, window);
+    KeepHighlight(crosshair, CreateOutline(parent));
+    return crosshair;
+}
+
 [[nodiscard]] HWND CreateCrosshair(HWND parent, const Metrics& m, std::size_t pick, const std::optional<interior::MonitorHandle>& window) noexcept
 {
     const Placement at = PlaceOfRow(Kind::Pick, pick, m);
-    const HWND crosshair = CreateChild(parent, kCrosshairClass, nullptr, 0, WS_EX_CLIENTEDGE, Bounds(m, at.left, at.control, kCrosshairWidth, m.ControlHeight()));
-    if (crosshair != nullptr)
-        KeepBoth(crosshair, window);
-    return crosshair;
+    return Furnished(CreateChild(parent, kCrosshairClass, nullptr, 0, WS_EX_CLIENTEDGE, Bounds(m, at.left, at.control, kCrosshairWidth, m.ControlHeight())), parent, window);
 }
 
 // The choices of a runtime list run two to a line, wrapping down the row as far as the list is long.
@@ -2057,9 +2183,10 @@ void DressPanel(const ControlPanel& panel) noexcept
 Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options, const interior::LiveSettings& live, interior::DisplayMode display, const PanelFindings& findings) noexcept
 {
     InitialiseCommonControls();
-    return RegisterWindowClass(ClassDescription()).and_then([] { return RegisterWindowClass(CrosshairDescription()); }).and_then([&] {
-        return CreatePanelWindow().and_then([&](UniqueWindow window) { return Populated(std::move(window), options, live, display, findings); });
-    });
+    return RegisterWindowClass(ClassDescription())
+        .and_then([] { return RegisterWindowClass(CrosshairDescription()); })
+        .and_then([] { return RegisterWindowClass(HighlightDescription()); })
+        .and_then([&] { return CreatePanelWindow().and_then([&](UniqueWindow window) { return Populated(std::move(window), options, live, display, findings); }); });
 }
 
 // What the panel does to itself before it is read: the chosen page, the notice, what is greyed, and any
