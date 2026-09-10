@@ -37,6 +37,7 @@ struct EnvironmentSettings
     interior::SurfaceSettings surface;
     bool captureCursor;                              // what the session resolved for "auto", which the panel's Auto keeps
     std::optional<interior::MonitorHandle> followed; // the window the source is, when the source is one window
+    bool ownContent;                                 // the overlay shows its own content rather than a composition over it
 };
 
 class RealEnvironment final

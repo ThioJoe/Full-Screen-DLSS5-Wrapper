@@ -25,7 +25,9 @@ struct Presenter
     interior::Extent extent;
 };
 
-[[nodiscard]] infra::Result<Presenter, Error> CreatePresenter(const GpuDevice& gpu, HWND window, const interior::Extent& extent) noexcept;
+// `ownContent` binds the swap chain to the window instead of compositing it over the window. It costs the
+// per-pixel alpha a composition gives, and it is what lets a capture leave the picture out by name.
+[[nodiscard]] infra::Result<Presenter, Error> CreatePresenter(const GpuDevice& gpu, HWND window, const interior::Extent& extent, bool ownContent) noexcept;
 [[nodiscard]] infra::Status<Error> WaitForNextFrame(const Presenter& presenter) noexcept;
 [[nodiscard]] infra::Result<interior::BackBufferIndex, Error> CurrentBackBuffer(const Presenter& presenter) noexcept;
 [[nodiscard]] infra::Status<Error> PresentFrame(const Presenter& presenter, bool vsync) noexcept;

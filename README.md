@@ -140,6 +140,13 @@ by name. That is scoped to the one session, so the model never sees the overlay 
 sees it normally, and the tool can be demonstrated. `--exclude-own-windows on` asks for it; it is off by
 default while it is still being proved on real machines, and the log says which of the two is in force.
 
+The exclusion names a window, and a window is only left out if the picture is the window's own content.
+The overlay used to be a composition placed over its window: the window was excluded and the composition
+over it was not, so the overlay went on photographing itself while the panel beside it disappeared
+correctly. With the exclusion in force the overlay is given a swap chain of its own instead. It costs the
+per-pixel alpha a composition gives, which a picture covering the whole monitor has no use for, and it
+costs the layering the click-through used to ride on, which hit testing does not need.
+
 Getting it wrong puts the overlay back into its own capture, so three things have to hold before either
 window is uncovered. Both start hidden from all capture, because nothing may photograph the overlay
 before a session exists to be told about it. Each window handle is turned into the identifier the list

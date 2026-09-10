@@ -1,6 +1,7 @@
 #include "effects/real/environment.h"
 
 #include "effects/real/clock.h"
+#include "effects/real/exclusion.h"
 #include "infrastructure/checked.h"
 #include "infrastructure/fold.h"
 #include "infrastructure/text.h"
@@ -307,7 +308,8 @@ struct Recording
 [[nodiscard]] Result<Gpu, Error> AssembledGpu(GpuDevice device, const SessionPlan& plan, const interior::Geometry& geometry, HWND window, const EnvironmentSettings& settings,
                                               const interior::LevelExtents& extents, std::span<const HWND> ours) noexcept
 {
-    return CreatePresenter(device, window, plan.target).and_then([&](Presenter presenter) {
+    NoteExclusion(settings.ownContent ? "presenting into the window itself" : "presenting a composition over the window");
+    return CreatePresenter(device, window, plan.target, settings.ownContent).and_then([&](Presenter presenter) {
         return CreatePipelines(device, kSwapChainFormat).and_then([&](const Pipelines& pipelines) {
             return CreateRecording(device).and_then(
                 [&](const Recording& recording) { return WithResourcesAndCapture(std::move(device), std::move(presenter), pipelines, recording, plan, geometry, settings, extents, ours); });
@@ -827,15 +829,15 @@ Result<FrameStart, Error> RealEnvironment::Accept(const Begun& begun) noexcept
     return s.cursor == interior::CursorMode::On;
 }
 
-[[nodiscard]] WindowSettings WindowSettingsOf(const interior::SurfaceSettings& s) noexcept
+[[nodiscard]] WindowSettings WindowSettingsOf(const interior::SurfaceSettings& s, bool ownContent) noexcept
 {
-    return WindowSettings{ s.topmost, s.clickThrough, s.displayAffinity, false };
+    return WindowSettings{ .topmost = s.topmost, .clickThrough = s.clickThrough, .excludeFromCapture = s.displayAffinity, .redirectionBitmap = false, .ownContent = ownContent };
 }
 
 [[nodiscard]] infra::Status<Error> ApplySurface(const Gpu& gpu, const OutputWindow& window, const EnvironmentSettings& settings) noexcept
 {
     return ApplyCaptureSettings(gpu.capture, CaptureSettings{ CursorWanted(settings.surface, settings.captureCursor), settings.surface.captureBorder }).and_then([&] {
-        return ApplyWindowSettings(window, WindowSettingsOf(settings.surface));
+        return ApplyWindowSettings(window, WindowSettingsOf(settings.surface, settings.ownContent));
     });
 }
 
@@ -874,7 +876,7 @@ Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surfa
 {
     if (surface == applied_.surface)
         return {};
-    applied_ = EnvironmentSettings{ surface, applied_.captureCursor, applied_.followed }; // WAIVER(R2): what has been applied, replaced whole.
+    applied_ = EnvironmentSettings{ surface, applied_.captureCursor, applied_.followed, applied_.ownContent }; // WAIVER(R2): what has been applied, replaced whole.
     return ApplySurface(gpu_, window_, applied_);
 }
 

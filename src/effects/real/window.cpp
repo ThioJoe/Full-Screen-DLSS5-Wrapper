@@ -69,14 +69,26 @@ constexpr std::uint32_t kMaxMessagesPerPump = 64;
     return s.topmost ? WS_EX_TOPMOST : 0u;
 }
 
+// Hit testing falls through on WS_EX_TRANSPARENT alone; the layering is only for a composition's alpha,
+// and a window swap chain cannot have it, so a window showing its own content goes without.
+[[nodiscard]] DWORD LayeredStyle(const WindowSettings& s) noexcept
+{
+    return s.ownContent ? 0u : WS_EX_LAYERED;
+}
+
 [[nodiscard]] DWORD ClickThroughStyle(const WindowSettings& s) noexcept
 {
-    return s.clickThrough ? (WS_EX_LAYERED | WS_EX_TRANSPARENT) : 0u;
+    return s.clickThrough ? (WS_EX_TRANSPARENT | LayeredStyle(s)) : 0u;
+}
+
+[[nodiscard]] bool KeepsRedirection(const WindowSettings& s) noexcept
+{
+    return s.redirectionBitmap || s.ownContent;
 }
 
 [[nodiscard]] DWORD RedirectionStyle(const WindowSettings& s) noexcept
 {
-    return s.redirectionBitmap ? 0u : WS_EX_NOREDIRECTIONBITMAP;
+    return KeepsRedirection(s) ? 0u : WS_EX_NOREDIRECTIONBITMAP;
 }
 
 [[nodiscard]] DWORD ExtendedStyle(const WindowSettings& s) noexcept
@@ -103,9 +115,14 @@ constexpr std::uint32_t kMaxMessagesPerPump = 64;
     return UniqueWindow(handle);
 }
 
+[[nodiscard]] bool IsLayered(const WindowSettings& s) noexcept
+{
+    return s.clickThrough && !s.ownContent;
+}
+
 [[nodiscard]] Status<Error> ApplyLayering(HWND handle, const WindowSettings& s) noexcept
 {
-    if (!s.clickThrough)
+    if (!IsLayered(s))
         return {};
     return CheckBool(::SetLayeredWindowAttributes(handle, 0, 255, LWA_ALPHA), ApiCall::CreateWindowExW);
 }

@@ -444,6 +444,11 @@ void NoteHeldIfAny(IDisplaySession* display, Com<IWindowIdVectorView>& held) noe
     return ToldIfAny(display, ids, count);
 }
 
+void NoteExclusion(const char* line) noexcept
+{
+    Note(line);
+}
+
 void NoteExclusionList(IGraphicsCaptureSession* session, const char* when) noexcept
 {
     const Com<IDisplaySession> display = DisplaySessionOf(session);

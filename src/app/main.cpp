@@ -551,7 +551,9 @@ struct Devices
 
 [[nodiscard]] real::WindowSettings WindowSettingsOf(const Options& o) noexcept
 {
-    return real::WindowSettings{ o.topmost, o.clickThrough, o.displayAffinity, o.redirectionBitmap };
+    return real::WindowSettings{
+        .topmost = o.topmost, .clickThrough = o.clickThrough, .excludeFromCapture = o.displayAffinity, .redirectionBitmap = o.redirectionBitmap, .ownContent = o.excludeOwnWindows
+    };
 }
 
 [[nodiscard]] Result<real::OutputWindow, Error> CreatedWindow(const Console& console, const Base& b) noexcept
@@ -663,7 +665,10 @@ using Caption = real::ChoiceText;
 [[nodiscard]] real::EnvironmentSettings SettingsOf(const Base& b, const SessionPlan& plan) noexcept
 {
     const Options& o = b.options;
-    return real::EnvironmentSettings{ interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel }, plan.captureCursor, FollowedWindow(b) };
+    return real::EnvironmentSettings{ .surface = interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel },
+                                      .captureCursor = plan.captureCursor,
+                                      .followed = FollowedWindow(b),
+                                      .ownContent = o.excludeOwnWindows };
 }
 
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan, const real::ControlPanel* panel) noexcept
