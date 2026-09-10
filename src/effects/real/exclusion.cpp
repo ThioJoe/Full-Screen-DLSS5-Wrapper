@@ -428,12 +428,30 @@ bool SessionCanExcludeWindows(IGraphicsCaptureSession* session) noexcept
     return DisplaySessionOf(session) != nullptr;
 }
 
+void NoteHeldIfAny(IDisplaySession* display, Com<IWindowIdVectorView>& held) noexcept
+{
+    NoteOne("list now: hr", static_cast<unsigned long>(display->GetWindowExclusionList(held.GetAddressOf())));
+    if (held == nullptr)
+        return;
+    NoteHeld(held.Get());
+}
+
 [[nodiscard]] bool Listed(IDisplaySession* display, std::span<const HWND> windows) noexcept
 {
     WindowIds ids{}; // WAIVER(R2): a local list filled once, before it is handed over.
     const std::size_t count = Filled(ids, windows);
     NoteOne("windows converted", count);
     return ToldIfAny(display, ids, count);
+}
+
+void NoteExclusionList(IGraphicsCaptureSession* session, const char* when) noexcept
+{
+    const Com<IDisplaySession> display = DisplaySessionOf(session);
+    if (display == nullptr)
+        return;
+    Com<IWindowIdVectorView> held;
+    Note(when);
+    NoteHeldIfAny(display.Get(), held);
 }
 
 bool ExcludeWindowsFrom(IGraphicsCaptureSession* session, std::span<const HWND> windows) noexcept

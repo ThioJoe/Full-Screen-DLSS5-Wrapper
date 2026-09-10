@@ -92,7 +92,7 @@ std::string_view UsageText() noexcept
            "                             Ask the capture to leave this program's own windows out by name,\n"
            "                             instead of hiding them from every capture on the machine. Needs a\n"
            "                             Windows that offers it; where it works, the overlay and the panel\n"
-           "                             can be screenshotted and recorded (default off, still being proved)\n"
+           "                             can be screenshotted and recorded (default on for this branch)\n"
            "  --show-inert on|off        Add an Inert page to the panel holding the settings that change\n"
            "                             nothing on a desktop: the depth plane and its inversion, model UI\n"
            "                             correction, and the two optical flow settings (default off)\n"

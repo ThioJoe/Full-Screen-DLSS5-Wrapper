@@ -212,7 +212,10 @@ struct Started
             excluding = ExcludeWindowsFrom(session.Get(), ours);
             return Check(session->StartCapture(), ApiCall::StartCapture);
         })
-        .transform([&] { return Started{ session, excluding }; });
+        .transform([&] {
+            NoteExclusionList(session.Get(), "--- after StartCapture");
+            return Started{ session, excluding };
+        });
 }
 
 [[nodiscard]] Result<MonitorSession, Error> StartSession(WGD11::IDirect3DDevice* device, const interior::MonitorInfo& monitor, const CaptureSettings& settings, std::span<const HWND> ours) noexcept

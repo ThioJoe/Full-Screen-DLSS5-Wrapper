@@ -203,7 +203,7 @@ constexpr std::array<std::pair<std::wstring_view, bool>, 8> kSpellings{
 [[nodiscard]] bool DefaultWindowMatchesTheDocumentation(const Options& d) noexcept
 {
     return d.displayAffinity && d.topmost && d.clickThrough && !d.redirectionBitmap && !d.debugLayer && !d.adapter.has_value() && d.logLevel == LogLevel::Info && d.logFile.IsEmpty() && !d.showHelp &&
-           !d.listMonitors && !d.showInert && !d.excludeOwnWindows;
+           !d.listMonitors && !d.showInert && d.excludeOwnWindows;
 }
 
 [[nodiscard]] bool DefaultsMatchTheDocumentation(infra::RngState&) noexcept

@@ -779,7 +779,7 @@ Options DefaultOptions() noexcept
         false,
         true,
         false,
-        false,
+        true,
     };
 }
 
