@@ -627,11 +627,6 @@ void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& re
     return IsTopmostWindow(above) ? HWND_TOPMOST : Preceding(above);
 }
 
-void MoveOutputWindowAbove(const OutputWindow& window, const interior::ScreenRect& rect, HWND above) noexcept
-{
-    (void)::SetWindowPos(window.handle.get(), JustAbove(above), rect.Left().Get(), rect.Top().Get(), 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-}
-
 [[nodiscard]] bool IsAtPoint(const RECT& where, const interior::ScreenRect& rect) noexcept
 {
     return where.left == rect.Left().Get() && where.top == rect.Top().Get();
@@ -648,6 +643,24 @@ void MoveOutputWindowAbove(const OutputWindow& window, const interior::ScreenRec
     if (IsTopmostWindow(above))
         return IsTopmostWindow(handle);
     return ::GetWindow(above, GW_HWNDPREV) == handle;
+}
+
+[[nodiscard]] UINT MoveFlags(bool stacked) noexcept
+{
+    return stacked ? (SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOZORDER) : (SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+[[nodiscard]] HWND InsertFor(bool stacked, HWND above) noexcept
+{
+    return stacked ? nullptr : JustAbove(above);
+}
+
+// Once in place the overlay is itself the window preceding the one being followed, and no window can be
+// inserted after itself: such a call fails whole, move and all. A move alone asks for no restacking.
+void MoveOutputWindowAbove(const OutputWindow& window, const interior::ScreenRect& rect, HWND above) noexcept
+{
+    const bool stacked = IsStackedOn(window.handle.get(), above);
+    (void)::SetWindowPos(window.handle.get(), InsertFor(stacked, above), rect.Left().Get(), rect.Top().Get(), 0, 0, MoveFlags(stacked));
 }
 
 // Whichever program owns the window being followed can raise it, and raising it puts it over the overlay.
