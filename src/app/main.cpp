@@ -549,11 +549,20 @@ struct Devices
     return Log(console, LogLevel::Warn, "The output window is not excluded from capture and overlaps the source: expect a feedback loop");
 }
 
+// A window capture never holds what is stacked in front of the window, so our overlay is not in it and
+// there is nothing to leave out. Only a monitor capture gives up the layering, and only it has to.
+[[nodiscard]] bool ShowsItsOwnContent(const Options& o) noexcept
+{
+    return o.excludeOwnWindows && o.window.IsEmpty();
+}
+
 [[nodiscard]] real::WindowSettings WindowSettingsOf(const Options& o) noexcept
 {
-    return real::WindowSettings{
-        .topmost = o.topmost, .clickThrough = o.clickThrough, .excludeFromCapture = o.displayAffinity, .redirectionBitmap = o.redirectionBitmap, .ownContent = o.excludeOwnWindows
-    };
+    return real::WindowSettings{ .topmost = o.topmost && o.window.IsEmpty(),
+                                 .clickThrough = o.clickThrough,
+                                 .excludeFromCapture = o.displayAffinity,
+                                 .redirectionBitmap = o.redirectionBitmap,
+                                 .ownContent = ShowsItsOwnContent(o) };
 }
 
 [[nodiscard]] Result<real::OutputWindow, Error> CreatedWindow(const Console& console, const Base& b) noexcept
@@ -668,7 +677,7 @@ using Caption = real::ChoiceText;
     return real::EnvironmentSettings{ .surface = interior::SurfaceSettings{ o.cursor, o.captureBorder, o.displayAffinity, o.topmost, o.clickThrough, o.logLevel },
                                       .captureCursor = plan.captureCursor,
                                       .followed = FollowedWindow(b),
-                                      .ownContent = o.excludeOwnWindows };
+                                      .ownContent = ShowsItsOwnContent(o) };
 }
 
 [[nodiscard]] Result<real::RealEnvironment, Error> Environment(const Console& console, const Base& b, Devices d, const SessionPlan& plan, const real::ControlPanel* panel) noexcept
@@ -740,7 +749,7 @@ struct Ended
 [[nodiscard]] Status<Error> LogExclusion(const Console& console, bool excluding) noexcept
 {
     if (excluding)
-        return Log(console, LogLevel::Info, "The capture leaves our windows out by name: the overlay and panel are visible to other capture");
+        return Log(console, LogLevel::Warn, "Our windows are left out of the capture by name, which costs the overlay its click-through: it swallows clicks. --exclude-own-windows off trades back");
     return Log(console, LogLevel::Info, "Our windows are hidden from every capture, screenshots included (--exclude-own-windows on asks for the other way)");
 }
 

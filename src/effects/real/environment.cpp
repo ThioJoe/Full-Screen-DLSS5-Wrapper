@@ -687,11 +687,16 @@ void RealEnvironment::Settling(const interior::Extent& size, interior::Instant n
 
 // Asking Windows to put the overlay where it already is still makes the desktop manager do its work over,
 // and the window is topmost and kept out of the capture, which is not cheap work. It is placed on a move.
+[[nodiscard]] HWND FollowedHandle(const std::optional<interior::MonitorHandle>& followed) noexcept
+{
+    return followed.has_value() ? reinterpret_cast<HWND>(followed->Get()) : nullptr;
+}
+
 void RealEnvironment::Placed(const interior::ScreenRect& bounds) noexcept
 {
     if (placed_ == bounds)
         return;
-    MoveOutputWindow(window_, bounds);
+    MoveOutputWindowAbove(window_, bounds, FollowedHandle(applied_.followed));
     placed_ = bounds; // WAIVER(R2): where the overlay was last put, replaced whole.
 }
 
@@ -880,6 +885,13 @@ Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surfa
     return ApplySurface(gpu_, window_, applied_);
 }
 
+// A window capture holds that window's own content and nothing stacked in front, so the overlay was never
+// going to be in it: only a monitor capture needs our windows kept out, and only there does it cost.
+[[nodiscard]] bool NothingToHideFrom(const Gpu& gpu, const EnvironmentSettings& settings) noexcept
+{
+    return gpu.capture.excludesOurWindows || settings.followed.has_value();
+}
+
 [[nodiscard]] interior::SurfaceSettings WithoutAffinity(const interior::SurfaceSettings& s) noexcept
 {
     interior::SurfaceSettings next = s; // WAIVER(R2): a copy with one answer replaced, read once after it.
@@ -896,7 +908,7 @@ Status<Error> RealEnvironment::Resurfaced(const interior::SurfaceSettings& surfa
 
 Status<Error> RealEnvironment::Settled(const PanelReading& reading) noexcept
 {
-    const interior::SurfaceSettings surface = AsExcluded(reading.surface, gpu_.capture.excludesOurWindows);
+    const interior::SurfaceSettings surface = AsExcluded(reading.surface, NothingToHideFrom(gpu_, applied_));
     return Resurfaced(surface).and_then([this, &reading] { return Recleared(reading.live.depth); });
 }
 
@@ -974,9 +986,9 @@ Error RealEnvironment::FromPlanError(interior::PlanFrameError error) noexcept
 
 // Starting hidden from every capture is the only safe order: nothing can photograph the overlay before a
 // session exists to be told about it. Once one has taken the list, they go back to ordinary windows.
-[[nodiscard]] Status<Error> Uncovered(const Gpu& gpu, std::span<const HWND> ours) noexcept
+[[nodiscard]] Status<Error> Uncovered(const Gpu& gpu, const EnvironmentSettings& settings, std::span<const HWND> ours) noexcept
 {
-    if (!gpu.capture.excludesOurWindows)
+    if (!NothingToHideFrom(gpu, settings))
         return {};
     return infra::ForEach(ours, Status<Error>{}, [](HWND window) { return UncoverWindow(window); });
 }
@@ -986,8 +998,8 @@ Result<RealEnvironment, Error> CreateEnvironment(GpuDevice device, std::optional
 {
     const std::array<HWND, 2> ours = OurWindows(window, panel);
     return interior::LevelExtentsOf(plan.source, plan.levels).transform_error(FromPyramid).and_then([&](const interior::LevelExtents& extents) {
-        return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents, Asked(ours, options.excludeOwnWindows))
-            .and_then([&](Gpu gpu) { return Uncovered(gpu, Present(ours)).transform([&] { return std::move(gpu); }); })
+        return AssembledGpu(std::move(device), plan, geometry, window.handle.get(), settings, extents, Asked(ours, settings.ownContent))
+            .and_then([&](Gpu gpu) { return Uncovered(gpu, settings, Present(ours)).transform([&] { return std::move(gpu); }); })
             .and_then([&](Gpu gpu) { return Started(std::move(gpu), std::move(runtime), plan); })
             .and_then([&](Ready r) { return Assembled(std::move(r), plan, std::move(window), panel, console, settings, options, extents); });
     });
