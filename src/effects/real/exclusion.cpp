@@ -449,6 +449,14 @@ void NoteExclusion(const char* line) noexcept
     Note(line);
 }
 
+void NoteExclusionWide(const wchar_t* text) noexcept
+{
+    std::array<char, 1024> narrow{}; // WAIVER(R2): a local buffer filled once, before it is written out.
+    const auto room = std::views::iota(std::size_t{ 0 }, narrow.size() - 1) | std::views::take_while([text](std::size_t at) { return text[at] != L'\0'; });
+    std::ranges::for_each(room, [&](std::size_t at) { narrow[at] = static_cast<char>(text[at]); });
+    Note(narrow.data());
+}
+
 void NoteExclusionList(IGraphicsCaptureSession* session, const char* when) noexcept
 {
     const Com<IDisplaySession> display = DisplaySessionOf(session);

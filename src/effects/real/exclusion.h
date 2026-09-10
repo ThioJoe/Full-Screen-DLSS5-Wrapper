@@ -18,6 +18,9 @@ namespace real {
 // Adds a line to the log the exclusion writes, so what was tried is all in one place.
 void NoteExclusion(const char* line) noexcept;
 
+// Adds a wide line to that log, narrowed as it goes; for command lines, which are ASCII bar their paths.
+void NoteExclusionWide(const wchar_t* text) noexcept;
+
 // Writes the session's exclusion list to that log as it stands, for asking when it stops being held.
 void NoteExclusionList(ABI::Windows::Graphics::Capture::IGraphicsCaptureSession* session, const char* when) noexcept;
 

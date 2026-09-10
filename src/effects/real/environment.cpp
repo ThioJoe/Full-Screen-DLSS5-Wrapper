@@ -308,7 +308,7 @@ struct Recording
 [[nodiscard]] Result<Gpu, Error> AssembledGpu(GpuDevice device, const SessionPlan& plan, const interior::Geometry& geometry, HWND window, const EnvironmentSettings& settings,
                                               const interior::LevelExtents& extents, std::span<const HWND> ours) noexcept
 {
-    NoteExclusion(settings.ownContent ? "presenting into the window itself" : "presenting a composition over the window");
+    NoteExclusion(settings.ownContent ? "--- new session: presenting into the window itself" : "--- new session: presenting a composition over the window");
     return CreatePresenter(device, window, plan.target, settings.ownContent).and_then([&](Presenter presenter) {
         return CreatePipelines(device, kSwapChainFormat).and_then([&](const Pipelines& pipelines) {
             return CreateRecording(device).and_then(
@@ -909,7 +909,10 @@ std::optional<interior::CommandLine> RealEnvironment::Restart(const interior::Op
 {
     if (!AsksForANewSession(AsksForSettings(), panel_))
         return std::nullopt;
-    return RestartCommandLine(*panel_, options);
+    const interior::CommandLine line = RestartCommandLine(*panel_, options);
+    NoteExclusion("--- this session is asking for another, built from:");
+    NoteExclusionWide(line.CString());
+    return line;
 }
 
 Result<ExecutionReport, Error> RealEnvironment::Retuned(const interior::LiveSettings& controls) noexcept
