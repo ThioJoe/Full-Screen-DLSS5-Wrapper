@@ -750,11 +750,35 @@ void RealEnvironment::Watched(interior::MonitorHandle window, interior::Instant 
         FollowedTo(BoundsOfWindow(window), now);
 }
 
+[[nodiscard]] HWND PanelWindow(const ControlPanel* panel) noexcept;
+
+[[nodiscard]] bool IsAlreadyBehind(const OutputWindow& window, HWND front) noexcept
+{
+    return front == nullptr || IsOutputWindowBehind(window, front);
+}
+
+void RealEnvironment::Behind(HWND front) noexcept
+{
+    if (IsAlreadyBehind(window_, front))
+        return;
+    KeepOutputWindowBehind(window_, front);
+}
+
+// The panel is another of our windows, and an overlay covering the monitor is in front of everything and
+// left out of the capture that draws over it: on one screen the panel would be nowhere at all.
+void RealEnvironment::Fronted() noexcept
+{
+    if (!applied_.surface.topmost)
+        return;
+    Behind(PanelWindow(panel_));
+}
+
 void RealEnvironment::Followed(interior::Instant now) noexcept
 {
     if (!applied_.followed.has_value())
-        return;
-    Watched(*applied_.followed, now);
+        Fronted();
+    else
+        Watched(*applied_.followed, now);
 }
 
 // What a session cannot follow while it runs, it is rebuilt for, once the panel has settled on it. Settling

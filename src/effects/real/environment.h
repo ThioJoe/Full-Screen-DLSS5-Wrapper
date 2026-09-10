@@ -74,6 +74,8 @@ private:
     // Keeps the overlay over the window the session is working on. The capture follows the window itself,
     // so only where the answer is shown has to be put right.
     void Followed(interior::Instant now) noexcept;
+    void Fronted() noexcept;
+    void Behind(HWND front) noexcept;
     void Watched(interior::MonitorHandle window, interior::Instant now) noexcept;
     void Abandon() noexcept;
     [[nodiscard]] bool AsksForSettings() const noexcept;

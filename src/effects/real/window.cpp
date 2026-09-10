@@ -657,6 +657,17 @@ bool IsOutputWindowPlaced(const OutputWindow& window, const interior::ScreenRect
     return IsAtTopLeft(window.handle.get(), rect) && IsStackedOn(window.handle.get(), above);
 }
 
+bool IsOutputWindowBehind(const OutputWindow& window, HWND front) noexcept
+{
+    return ::GetWindow(front, GW_HWNDNEXT) == window.handle.get();
+}
+
+// The overlay is moved rather than the panel raised, so nothing the operator is holding on to shifts.
+void KeepOutputWindowBehind(const OutputWindow& window, HWND front) noexcept
+{
+    (void)::SetWindowPos(window.handle.get(), front, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
 void ShowOutputWindow(const OutputWindow& window) noexcept
 {
     ::ShowWindow(window.handle.get(), SW_SHOWNOACTIVATE);
