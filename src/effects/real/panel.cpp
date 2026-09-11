@@ -6,6 +6,7 @@
 #include "interior/ngx_params.h"
 
 #include <commctrl.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <array>
@@ -63,6 +64,7 @@ constexpr wchar_t kNoticeBody[] =
     L"game.\r\n\r\n"
     L"This should be considered an experimental demo, NOT a preview of what it does when it is used properly.";
 constexpr int kExpanderWidth = 28;
+constexpr int kClassNameCapacity = 16; // long enough to tell a link control's class name from any other
 
 constexpr int kMinRowsPerColumn = 7;
 constexpr int kMaxRowsPerColumn = 16;
@@ -231,11 +233,25 @@ constexpr std::array<PickSpec, kPickCount> kPicks{ {
       L"none: capturing a monitor" },
 } };
 
+// Text on the About page, plain or with a web address in it as a link. How many lines it wraps into is
+// written here: the column and the text scale together with the display, so the count holds.
+struct NoteSpec
+{
+    const wchar_t* text;
+    int lines;
+};
+
+constexpr std::array<NoteSpec, kNoteCount> kNotes{ {
+    { L"Full-Screen Wrapper for DLSS5, version " DSCREEN_VERSION_STRING, 1 },
+    { L"An experimental tool that runs NVIDIA's DLSS 5 Neural Rendering model on the desktop, or on one window. It is not an NVIDIA product, and the model file is not included with it.", 3 },
+    { L"Source code, releases and issues: <a href=\"https://github.com/ThioJoe/DLSS5-Entire-Screen\">github.com/ThioJoe/DLSS5-Entire-Screen</a>", 2 },
+} };
+
 // --- what sits on which page, and in what order -------------------------------------------------------
 
 // A frame is a group box around the rows it names. A break ends a column early, so a page can say which
-// rows stand on the right rather than leaving that to how many happen to fit on the left.
-enum class Kind : std::uint8_t { Field, Toggle, Group, Pick, List, Frame, Break };
+// rows stand on the right rather than leaving that to how many happen to fit on the left. A note is text.
+enum class Kind : std::uint8_t { Field, Toggle, Group, Pick, List, Frame, Break, Note };
 
 struct RowSpec
 {
@@ -266,6 +282,10 @@ struct RowSpec
 [[nodiscard]] constexpr RowSpec Of(Frame f) noexcept
 {
     return RowSpec{ Kind::Frame, static_cast<std::size_t>(f) };
+}
+[[nodiscard]] constexpr RowSpec Of(Note n) noexcept
+{
+    return RowSpec{ Kind::Note, static_cast<std::size_t>(n) };
 }
 
 constexpr RowSpec kNextColumn{ Kind::Break, 0 };
@@ -313,6 +333,7 @@ constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
       14,
       { Of(Group::Format), Of(Group::Sr), Of(Field::SrPreset), Of(Group::Motion), Of(Field::MvLevel), Of(Field::MvScaleX), Of(Field::MvScaleY), Of(Field::ResetThreshold), kNextColumn,
         Of(List::Adapter), Of(Toggle::RedirectionBitmap), Of(Toggle::DebugLayer), Of(Toggle::Indicator), Of(Toggle::CubinCache) } },
+    { L"About", 3, { Of(Note::Title), Of(Note::Purpose), Of(Note::Repository) } },
     { L"Inert", 6, { Of(Field::DepthValue), Of(Toggle::DepthInverted), Of(Toggle::UiCorrection), kNextColumn, Of(Group::NvofGrid), Of(Group::NvofPerf) } },
 } };
 
@@ -368,6 +389,7 @@ static_assert(RowsOfKind(Kind::Group) == kGroupCount);
 static_assert(RowsOfKind(Kind::Pick) == kPickCount);
 static_assert(RowsOfKind(Kind::List) == kListCount);
 static_assert(RowsOfKind(Kind::Frame) == kFrameCount);
+static_assert(RowsOfKind(Kind::Note) == kNoteCount);
 static_assert(FramesAreFlat());
 static_assert(PagesBreakOnce());
 
@@ -390,6 +412,8 @@ struct Metrics
     [[nodiscard]] int RowHeight() const noexcept { return LabelHeight() + ControlHeight() + RowGap(); }
     // From a frame's top edge, where its caption is written, to the first row in it.
     [[nodiscard]] int CaptionHeight() const noexcept { return line + Of(kCaptionGap); }
+    // A note is as tall as the lines it wraps into, with a little under the last for the descenders.
+    [[nodiscard]] int NoteHeight(int lines) const noexcept { return lines * line + Of(2); }
     [[nodiscard]] int PageTop() const noexcept { return Of(kMargin + kTabHeight); }
     // The rows, then the notice under them, then the margin.
     [[nodiscard]] int PageHeight() const noexcept { return column + ControlHeight() + Of(2 * kMargin); }
@@ -425,6 +449,8 @@ struct Placement
             return m.ControlHeight() + m.RowGap();
         if (row.kind == Kind::List)
             return HeightOfList(row.index, m);
+        if (row.kind == Kind::Note)
+            return m.NoteHeight(kNotes[row.index].lines) + m.RowGap();
         return m.RowHeight();
     };
 
@@ -480,11 +506,11 @@ struct Walk
     std::optional<Placement> found;
 };
 
-// A switch has no label of its own above it, so its control stands where a label would.
+// A switch has no label of its own above it, and a note is only text, so each stands where a label would.
 [[nodiscard]] Placement PlaceOf(const RowSpec& row, const Cell& at, const Metrics& m) noexcept
 {
     const int top = m.PageTop() + at.offset;
-    const int control = row.kind == Kind::Toggle ? top : top + m.LabelHeight();
+    const int control = row.kind == Kind::Toggle || row.kind == Kind::Note ? top : top + m.LabelHeight();
     return Placement{ kMargin + static_cast<int>(at.column) * (kColumnWidth + kMargin), top, control, kColumnWidth };
 }
 
@@ -601,11 +627,36 @@ LRESULT CALLBACK PanelProc(HWND window, UINT message, WPARAM w, LPARAM l) noexce
                             HWND box = reinterpret_cast<HWND>(::SendMessageW(delta->hdr.hwndFrom, UDM_GETBUDDY, 0, 0));
                             NudgeBox(box, kFields[field], delta->iDelta);
                         };
+
+                        static constexpr auto Nudged = [] [[nodiscard]] (LPARAM l) noexcept -> LRESULT {
+                            Nudge(reinterpret_cast<const NMUPDOWN*>(l));
+                            return 1; // the control keeps the position it was given, which nothing reads
+                        };
+
+                        // A link on the About page is opened in the default browser. Only a link control is answered, since
+                        // the tabs send the same click, and only a web address is opened, which is all the notes carry.
+                        static constexpr auto Follow = [](const NMHDR* header, LPARAM l) noexcept -> void {
+                            static constexpr auto IsLink = [] [[nodiscard]] (HWND from) noexcept -> bool {
+                                std::array<wchar_t, kClassNameCapacity> name{}; // WAIVER(R2): a local buffer filled once, before use.
+                                (void)::GetClassNameW(from, name.data(), kClassNameCapacity);
+                                return std::wstring_view(name.data()) == WC_LINK;
+                            };
+
+                            static constexpr auto OpenWebAddress = [](const wchar_t* address) noexcept -> void {
+                                if (!std::wstring_view(address).starts_with(L"https://"))
+                                    return;
+                                (void)::ShellExecuteW(nullptr, L"open", address, nullptr, nullptr, SW_SHOWNORMAL);
+                            };
+                            if (!IsLink(header->hwndFrom))
+                                return;
+                            OpenWebAddress(reinterpret_cast<const NMLINK*>(l)->item.szUrl);
+                        };
                         const NMHDR* header = reinterpret_cast<const NMHDR*>(l);
-                        if (header->code != UDN_DELTAPOS)
-                            return 0;
-                        Nudge(reinterpret_cast<const NMUPDOWN*>(l));
-                        return 1; // the control keeps the position it was given, which nothing reads
+                        if (header->code == UDN_DELTAPOS)
+                            return Nudged(l);
+                        if (header->code == NM_CLICK || header->code == NM_RETURN)
+                            Follow(header, l);
+                        return 0;
                     };
                     if (message == WM_NOTIFY)
                         return Notified(l);
@@ -881,6 +932,7 @@ struct Built
     std::array<HWND, kListCount> listLabels;
     std::array<std::array<HWND, kMaxListChoices>, kListCount> listChoices;
     std::array<HWND, kFrameCount> frames;
+    std::array<HWND, kNoteCount> notes;
 };
 
 [[nodiscard]] LRESULT CALLBACK HighlightProc(HWND window, UINT message, WPARAM w, LPARAM l) noexcept;
@@ -1139,7 +1191,9 @@ void ShowOnly(const ControlPanel& panel, Page chosen) noexcept
             };
             if (row.kind == Kind::Break)
                 return;
-            if (row.kind == Kind::Frame)
+            if (row.kind == Kind::Note)
+                (void)::ShowWindow(panel.notes[row.index], HowOf(visible));
+            else if (row.kind == Kind::Frame)
                 ShowFrame(panel, row.index, visible);
             else
                 ShowRow(panel, row, visible);
@@ -1381,7 +1435,7 @@ Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options,
     // Advisory: the older common controls register their classes as they load and refuse this call, while
     // version 6 needs asking. Either way the controls are checked once built, which is the answer that counts.
     static constexpr auto InitialiseCommonControls = []() noexcept -> void {
-        INITCOMMONCONTROLSEX controls{ sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES | ICC_STANDARD_CLASSES | ICC_UPDOWN_CLASS | ICC_TAB_CLASSES };
+        INITCOMMONCONTROLSEX controls{ sizeof(INITCOMMONCONTROLSEX), ICC_BAR_CLASSES | ICC_STANDARD_CLASSES | ICC_UPDOWN_CLASS | ICC_TAB_CLASSES | ICC_LINK_CLASS };
         (void)::InitCommonControlsEx(&controls);
     };
 
@@ -1847,9 +1901,19 @@ Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options,
                     built.frames = infra::Generated<HWND, kFrameCount>([&](std::size_t f) { return CreateFrame(parent, m, f); });
                     return built;
                 };
+
+                // A note is a link control whether or not it has a link in it: the control shows plain text as plain text.
+                static constexpr auto BuildNotes = [] [[nodiscard]] (HWND parent, const Metrics& m, Built built) noexcept -> Built {
+                    static constexpr auto CreateNote = [] [[nodiscard]] (HWND parent, const Metrics& m, std::size_t n) noexcept -> HWND {
+                        const Placement at = PlaceOfRow(Kind::Note, n, m);
+                        return CreateChild(parent, WC_LINK, kNotes[n].text, WS_TABSTOP, 0, Bounds(m, at.left, at.top, at.width, m.NoteHeight(kNotes[n].lines)));
+                    };
+                    built.notes = infra::Generated<HWND, kNoteCount>([&](std::size_t n) { return CreateNote(parent, m, n); });
+                    return built;
+                };
                 const Built numbers = BuildToggles(parent, m, StartingToggles(o, live), findings, BuildFields(parent, m, StartingValues(o, live), Built{}));
                 const Built rows = BuildLists(parent, m, BuildPicks(parent, m, findings, BuildGroups(parent, m, StartingChoices(o, display), findings, numbers)));
-                return BuildFrames(parent, m, rows);
+                return BuildNotes(parent, m, BuildFrames(parent, m, rows));
             };
 
             static constexpr auto CreateTabs = [] [[nodiscard]] (HWND parent, const Metrics& m) noexcept -> HWND {
@@ -1910,6 +1974,7 @@ Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options,
                                  built.listChoices,
                                  CountsOf(*m.lists),
                                  built.frames,
+                                 built.notes,
                                  o.displayAffinity,
                                  o.clickThrough,
                                  findings.superResolution,
@@ -1932,9 +1997,9 @@ Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options,
 
                     static constexpr auto EveryRowPresent = [] [[nodiscard]] (const ControlPanel& panel) noexcept -> bool {
                         // Every span here points into the panel itself, which outlives the answer.
-                        static constexpr auto GroupsOf = [] [[nodiscard]] (const ControlPanel& panel) noexcept -> std::array<std::span<const HWND>, 12> {
-                            return { panel.labels,      panel.sliders,    panel.boxes,      panel.spins,     panel.resets,     panel.toggles,
-                                     panel.groupLabels, panel.pickLabels, panel.crosshairs, panel.pickNames, panel.pickResets, panel.frames };
+                        static constexpr auto GroupsOf = [] [[nodiscard]] (const ControlPanel& panel) noexcept -> std::array<std::span<const HWND>, 13> {
+                            return { panel.labels,     panel.sliders,    panel.boxes,     panel.spins,      panel.resets, panel.toggles, panel.groupLabels,
+                                     panel.pickLabels, panel.crosshairs, panel.pickNames, panel.pickResets, panel.frames, panel.notes };
                         };
                         return std::ranges::all_of(GroupsOf(panel), AllPresent) && IsPresent(panel.tabs);
                     };
@@ -2109,6 +2174,8 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
                             return nullptr;
                         if (row.kind == Kind::Frame)
                             return panel.frames[row.index];
+                        if (row.kind == Kind::Note)
+                            return panel.notes[row.index];
                         return MarkerOfRow(panel, row);
                     };
 

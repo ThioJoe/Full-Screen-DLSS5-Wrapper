@@ -113,9 +113,9 @@ Double-clicking the executable opens the control panel and the overlay, with no 
 command line option except `--help`, `--list-monitors`, `--gui` and the NGX runtime settings has a control
 on the panel, on one of three pages: **Model** for what the model reads, what its work is compared
 against and which window it is given, **View** for the capture and the window it is shown in, and
-**Advanced** for the rest. A number is a slider to sweep it, a box to type an exact value and arrows to
-step it, with a reset beside each; a choice is a row of buttons; a path is a box to type in. Rows that
-belong together share a frame. Every row is measured from the height of the display's own text, so nothing
+**Advanced** for the rest. An **About** page names the version and links to this repository. A number is a
+slider to sweep it, a box to type an exact value and arrows to step it, with a reset beside each; a choice
+is a row of buttons; a path is a box to type in. Rows that belong together share a frame. Every row is measured from the height of the display's own text, so nothing
 crowds or clips whatever the scaling, and the window is only as tall as the deepest page it is showing.
 
 Moving anything on the first two pages takes effect at once. Changing the tuning rebuilds the model's

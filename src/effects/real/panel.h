@@ -14,9 +14,10 @@ struct FontDeleter
 };
 using UniqueFont = std::unique_ptr<std::remove_pointer_t<HFONT>, FontDeleter>;
 
-// The panel's pages: the model's own tuning, what is captured and where it is shown, and the choices worth
-// having but rarely worth changing. Inert holds what changes nothing on a desktop; --show-inert asks for it.
-enum class Page : std::size_t { Model, View, Advanced, Inert, Count };
+// The panel's pages: the model's own tuning, what is captured and where it is shown, the choices worth
+// having but rarely worth changing, and what the program is and where its source is. Inert holds what
+// changes nothing on a desktop; --show-inert asks for it, so it comes last.
+enum class Page : std::size_t { Model, View, Advanced, About, Inert, Count };
 
 // A number the operator sets: a slider to sweep it, a box to type it, arrows to step it.
 enum class Field : std::size_t { Intensity, LocalStructure, LocalTone, Skin, MvScaleX, MvScaleY, Split, DepthValue, ResetThreshold, MvLevel, SrPreset, Passes, Count };
@@ -53,11 +54,15 @@ enum class Pick : std::size_t { Window, Count };
 // controls, since style changes nothing while local tone is zero; the skin controls; and the comparison.
 enum class Frame : std::size_t { Tone, Skin, Compare, Count };
 
+// A line or a few of text on the About page, one of them with a link to the repository in it.
+enum class Note : std::size_t { Title, Purpose, Repository, Count };
+
 constexpr std::size_t kFieldCount = static_cast<std::size_t>(Field::Count);
 constexpr std::size_t kToggleCount = static_cast<std::size_t>(Toggle::Count);
 constexpr std::size_t kGroupCount = static_cast<std::size_t>(Group::Count);
 constexpr std::size_t kPickCount = static_cast<std::size_t>(Pick::Count);
 constexpr std::size_t kFrameCount = static_cast<std::size_t>(Frame::Count);
+constexpr std::size_t kNoteCount = static_cast<std::size_t>(Note::Count);
 constexpr std::size_t kListCount = static_cast<std::size_t>(List::Count);
 constexpr std::size_t kMaxListChoices = 20;
 constexpr std::size_t kMaxChoices = 4;
@@ -115,6 +120,7 @@ struct ControlPanel
     std::array<std::array<HWND, kMaxListChoices>, kListCount> listChoices;
     std::array<std::size_t, kListCount> listCounts;
     std::array<HWND, kFrameCount> frames; // each lies under the rows it surrounds, drawn last so it clips none of them
+    std::array<HWND, kNoteCount> notes;   // the About page's text; a link in it is opened by the panel's own window procedure
     // Two settings the panel carries but does not show: off, each spoils the picture rather than changing
     // it, so they are the command line's to set and the panel's to pass on unaltered.
     bool displayAffinity;
