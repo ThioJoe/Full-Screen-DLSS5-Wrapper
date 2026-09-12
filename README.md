@@ -33,11 +33,11 @@ Just a single `exe` (signed with a trusted certificate) written in C++ with zero
 ## Why This Over Similar Tools?
 - It's a single `.exe` file, no installation or third party dependencies required.
     - It's also signed with a trusted certificate.
-- Theoretically anti-cheat false-positive safe
-  - Does NOT inject itself into or modify any other applications. It reads the final screen output and processes that. (See [How It Works](https://github.com/ThioJoe/Full-Screen-DLSS5-Wrapper#how-it-works) explanation below)
-    - Therefore it _should_ present no more false-positive anti-cheat risk than ordinary screen-capture software or graphics-enhancement overlay software.
-  - It's code signed, so any anti-cheat providers could see you are running the unmodified version of the tool, which verifiably loads only official signed & unmodified Nvidia binaries.
-  - That being said, some anti-cheats may block overlays in general and might kick you at worst. So still best to not use it in competitive games to be safe.
+- Designed to Minimize Anti-Cheat False-Positive Risk
+  - Does NOT inject itself into or modify any other applications. It captures the final screen output using Windows' screen-capture APIs and processes that. (See [How It Works](https://github.com/ThioJoe/Full-Screen-DLSS5-Wrapper#how-it-works) explanation below)
+    - This makes it architecturally more similar to screen-capture software or an external graphics-enhancement overlay.
+  - It's code signed, so any anti-cheat providers could see you are running the unmodified version of the tool, which independently verifies loaded Nvidia binary signatures.
+  - Note: There's still never a guarantee. Some anti-cheats may block overlays in general. So still best to not use it in competitive games, or where third party overlays are prohibited. Check the game's rules.
 
 # Example Screenshots
 
