@@ -59,8 +59,8 @@ constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all",  
     return parsed.has_value() && parsed->source.kind == MonitorSelectionKind::Index && parsed->source.index.Get() == index;
 }
 
-// Past 1 the model makes no further difference, so the parser takes 0 to 1 and refuses the rest rather
-// than accepting a number that would quietly do nothing.
+// TEST BUILD: the parser takes any finite intensity, so what the model makes of one past its usual range
+// can be seen.
 [[nodiscard]] bool IntensityAcceptsItsWholeRange(infra::RngState& rng) noexcept
 {
     const std::wstring joined = L"--nr-intensity=" + std::to_wstring(proptest::DrawUnit(rng));
@@ -68,12 +68,12 @@ constexpr std::array<std::wstring_view, 12> kVocabulary{ L"--monitor", L"all",  
     return ParseOptions(real).has_value();
 }
 
-[[nodiscard]] bool IntensityRefusesWhatIsOutsideIt(infra::RngState&) noexcept
+[[nodiscard]] bool IntensityAcceptsWhatIsOutsideItsUsualRange(infra::RngState&) noexcept
 {
     const std::array<std::wstring_view, 1> above{ L"--nr-intensity=1.5" };
     const std::array<std::wstring_view, 1> below{ L"--nr-intensity=-0.5" };
     const std::array<std::wstring_view, 1> ends{ L"--nr-intensity=1" };
-    return !ParseOptions(above).has_value() && !ParseOptions(below).has_value() && ParseOptions(ends).has_value();
+    return ParseOptions(above).has_value() && ParseOptions(below).has_value() && ParseOptions(ends).has_value();
 }
 
 [[nodiscard]] bool PassesAcceptAnyCountFromOne(infra::RngState& rng) noexcept
@@ -256,7 +256,7 @@ std::uint32_t OptionsSuite(std::uint64_t seed) noexcept
     failures += Failures(proptest::ForAll("empty arguments give the defaults", seed, 1, EmptyArgumentsGiveDefaults));
     failures += Failures(proptest::ForAll("--monitor N round-trips", seed, 200, MonitorIndexRoundTrips));
     failures += Failures(proptest::ForAll("--nr-intensity accepts its whole range", seed, 300, IntensityAcceptsItsWholeRange));
-    failures += Failures(proptest::ForAll("--nr-intensity refuses what is outside it", seed, 1, IntensityRefusesWhatIsOutsideIt));
+    failures += Failures(proptest::ForAll("--nr-intensity accepts what is outside its usual range", seed, 1, IntensityAcceptsWhatIsOutsideItsUsualRange));
     failures += Failures(proptest::ForAll("--nr-passes accepts any count from one", seed, 100, PassesAcceptAnyCountFromOne));
     failures += Failures(proptest::ForAll("--nr-passes refuses zero", seed, 1, PassesRefuseZero));
     failures += Failures(proptest::ForAll("--nr-local-tone accepts every finite value", seed, 300, StrengthAcceptsEveryFiniteValue));

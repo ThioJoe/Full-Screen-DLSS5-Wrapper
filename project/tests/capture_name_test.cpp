@@ -98,7 +98,7 @@ using namespace interior;
     const bool passes = Contains(stem.Get(), "x_") && Contains(stem.Get(), std::string("_") + std::to_string(live.passes.Get()) + "x_");
     const bool intensity = Contains(stem.Get(), "_Intensity-");
     const long percent = static_cast<long>(live.tuning.intensity.Get() * 100.0f + 0.5f);
-    return passes == (live.passes.Get() > 1 || everything) && intensity == (percent < 100 || everything);
+    return passes == (live.passes.Get() > 1 || everything) && intensity == (percent != 100 || everything);
 }
 
 [[nodiscard]] bool TheStemBeginsWithTheLabelAndEndsWithTheMoment(infra::RngState& rng) noexcept

@@ -116,7 +116,8 @@ constexpr int kOpenUnits = 1000;
 }
 
 constexpr std::array<FieldSpec, kFieldCount> kFields{ {
-    { L"Intensity", L"0% is the original image, 100% is the full effect: a blending percentage.\r\nThe command line takes it as 0 to 1.", 0, 100, 100, Notation::Percent, 10, 100, nullptr },
+    { L"Intensity", L"TEST BUILD: any value goes to the model, above 100% and below 0% included, to see what it makes of them.\r\nThe command line takes it as a plain number, 1 being 100%.", -500,
+      500, 100, Notation::Percent, 10, Open(100), nullptr },
     { L"Local structure", L"Detail the model adds within a region.\r\nDoes nothing while auto mask is off.\r\n(You can manually set this higher than the slider limit)", 0, 1000, 100,
       Notation::Decimal, 100, Open(100), nullptr },
     { L"Local tone", L"How far the model moves local brightness.\r\n(You can manually set this higher than the slider limit)", 0, 1000, 100, Notation::Decimal, 100, Open(100), nullptr },

@@ -61,7 +61,7 @@ struct Kept
 [[nodiscard]] Part IntensityPart(const NrTuning& t, bool everything) noexcept
 {
     const long percent = PercentOf(t.intensity);
-    if (percent >= 100 && !everything)
+    if (percent == 100 && !everything) // TEST BUILD: past 100 is not the default either, so it is named
         return Part{};
     return infra::Formatted<Part::Capacity>("_Intensity-{}", percent);
 }

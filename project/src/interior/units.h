@@ -145,8 +145,8 @@ struct StrengthTag
     [[nodiscard]] static constexpr Result<Strength, UnitError> Parse(float raw) noexcept;
 };
 
-// How much of the model's work to keep. Unlike the strengths, this one does have an end: past 1 the model
-// makes no further difference, so 0 to 1 inclusive is the whole of it.
+// How much of the model's work to keep. TEST BUILD: any finite value is passed to the model, above 1 and
+// below 0 included, to see what it makes of them; the release build takes 0 to 1 only.
 struct NrIntensityTag;
 using NrIntensity = infra::Strong<float, NrIntensityTag>;
 struct NrIntensityTag
@@ -451,7 +451,7 @@ constexpr Result<Strength, UnitError> StrengthTag::Parse(float raw) noexcept
 
 constexpr Result<NrIntensity, UnitError> NrIntensityTag::Parse(float raw) noexcept
 {
-    if (IsOutsideOrNaN(raw, 0.0f, 1.0f))
+    if (IsNotFinite(raw))
         return infra::Fail(UnitError::IntensityOutOfRange);
     return NrIntensity(raw);
 }
