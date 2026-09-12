@@ -7,7 +7,7 @@
 // C++ is the same macro, spliced into a longer literal where the text is part of one.
 
 #define DSCREEN_VERSION_MAJOR 1
-#define DSCREEN_VERSION_MINOR 0
+#define DSCREEN_VERSION_MINOR 1
 #define DSCREEN_VERSION_PATCH 0
 
 #define DSCREEN_PRODUCT_NAME "Full-Screen Wrapper for DLSS5"
