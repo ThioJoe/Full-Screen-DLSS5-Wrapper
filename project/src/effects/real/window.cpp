@@ -340,6 +340,18 @@ bool IsWindowShowing(interior::MonitorHandle window) noexcept
     return ::IsWindow(handle) != FALSE && IsOnScreen(handle);
 }
 
+bool IsWindowThere(interior::MonitorHandle window) noexcept
+{
+    return ::IsWindow(reinterpret_cast<HWND>(window.Get())) != FALSE;
+}
+
+void BringWindowBack(interior::MonitorHandle window) noexcept
+{
+    HWND handle = reinterpret_cast<HWND>(window.Get());
+    (void)::ShowWindowAsync(handle, SW_SHOWNOACTIVATE);
+    (void)::SetWindowPos(handle, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+}
+
 Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept
 {
     // The window paints every pixel it owns from the swap chain, so it asks for no background brush.
@@ -571,6 +583,11 @@ void RaiseOutputWindow(const OutputWindow& window) noexcept
 void ShowOutputWindow(const OutputWindow& window) noexcept
 {
     ::ShowWindow(window.handle.get(), SW_SHOWNOACTIVATE);
+}
+
+void HideOutputWindow(const OutputWindow& window) noexcept
+{
+    ::ShowWindow(window.handle.get(), SW_HIDE);
 }
 
 Result<WindowEvents, Error> PumpEvents(const OutputWindow&) noexcept

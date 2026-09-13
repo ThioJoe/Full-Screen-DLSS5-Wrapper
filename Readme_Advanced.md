@@ -52,10 +52,14 @@ building the session again — once the size has stopped changing and stayed sti
 once for every step of a drag. Moving a window needs no rebuild at all: the capture follows it, and only
 the overlay is moved.
 
-A window that is closed, minimised or hidden leaves nothing to capture, so the session lets it go rather
-than leaving the overlay sitting over where it used to be. The crosshair goes back to holding nothing and
-the next session takes the monitor the Source setting names, which is the primary one unless it says
-otherwise. Restoring the window does not take it back: drag the crosshair onto it again.
+A window that is closed leaves nothing to capture, so the session lets it go rather than leaving the
+overlay sitting over where it used to be: the crosshair goes back to holding nothing and the next session
+takes the monitor the Source setting names, which is the primary one unless it says otherwise. A window
+that is minimised or hidden may come back, so the session waits for it instead, with the overlay out of
+sight, and carries on the moment it is showing again. The **Bring the window back** button under the
+crosshair restores it and puts it on top without giving it the focus, for a game that minimises itself
+whenever another window is used: it comes back with the overlay over it, and stays up until it is next
+given the focus and then loses it.
 
 ## Screenshots
 

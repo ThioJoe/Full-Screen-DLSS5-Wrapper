@@ -55,9 +55,17 @@ constexpr int kHotkeyQuit = 3;
 // Where that window is now, so the overlay can follow it. Nothing once the window has gone.
 [[nodiscard]] std::optional<interior::ScreenRect> BoundsOfWindow(interior::MonitorHandle window) noexcept;
 
-// Whether a window is still something to capture. Closed, hidden and minimised all answer no, and a
-// session following such a window is built again for the monitor its source names.
+// Whether a window is still something to capture. Closed, hidden and minimised all answer no; a session
+// following one waits for it to show again, or is built again for the monitor its source names when the
+// window is gone for good, which is what the next asks.
 [[nodiscard]] bool IsWindowShowing(interior::MonitorHandle window) noexcept;
+// Whether a window still exists at all: a closed one answers no, a minimised or hidden one yes.
+[[nodiscard]] bool IsWindowThere(interior::MonitorHandle window) noexcept;
+// Restores a minimised window and puts it on top of the others without giving it the focus, so a game that
+// minimises itself whenever another window is used comes back without being used. Asked of the window's
+// own thread, so one that is not answering does not hold this one up; a window of another program may
+// refuse, and the next frame shows whether it came back.
+void BringWindowBack(interior::MonitorHandle window) noexcept;
 // Moves the overlay so its top-left sits where the given point is. Its size is the session's and stays.
 void MoveOutputWindow(const OutputWindow& window, const interior::ScreenRect& rect) noexcept;
 
@@ -85,6 +93,8 @@ void RaiseOutputWindow(const OutputWindow& window) noexcept;
 [[nodiscard]] infra::Result<OutputWindow, Error> CreateOutputWindow(const interior::ScreenRect& rect, const WindowSettings& settings) noexcept;
 [[nodiscard]] infra::Status<Error> RegisterHotkeys(const OutputWindow& window) noexcept;
 void ShowOutputWindow(const OutputWindow& window) noexcept;
+// Takes the overlay off the screen, for while the window it follows is away, and ShowOutputWindow brings it back.
+void HideOutputWindow(const OutputWindow& window) noexcept;
 [[nodiscard]] infra::Result<WindowEvents, Error> PumpEvents(const OutputWindow& window) noexcept;
 
 // Changes how the output window behaves: whether the capture sees it, whether it stays above everything,

@@ -211,8 +211,8 @@ RealEnvironment::RealEnvironment(HeldFiles held, Gpu gpu, const SessionPlan& pla
                                  const interior::Options& options, std::uint32_t finestPixels, interior::FenceValue fence, interior::Instant start) noexcept
     : held_(std::move(held)), gpu_(std::move(gpu)), plan_(plan), window_(std::move(window)), panel_(panel), console_(console), finestPixels_(finestPixels),
       frame_{ interior::FrameNumberTag::Parse(0), *kZeroSlot, *kZeroSet, false, fence }, stats_{ start, 0, 0 }, applied_(settings), clearedDepth_(plan.depth), restartWanted_(false), resized_(false),
-      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false), snapshot_(std::nullopt), recording_(std::nullopt),
-      comparison_(std::nullopt), cursor_(std::nullopt), writer_(std::make_unique<PngWriter>()), now_(start)
+      pending_(plan.source), since_(start), options_(options), built_(ShapeOf(panel)), wanted_(built_), asked_(start), abandoned_(false), waiting_(false), snapshot_(std::nullopt),
+      recording_(std::nullopt), comparison_(std::nullopt), cursor_(std::nullopt), writer_(std::make_unique<PngWriter>()), now_(start)
 {
 }
 
@@ -293,14 +293,51 @@ void RealEnvironment::Abandon() noexcept
     LetGoOfWindow(panel_);
 }
 
-// A window closed, minimised or hidden has nothing left to capture, and the overlay would sit over it
-// showing the last frame it got. The session ends instead, and the next takes the monitor the source names.
-void RealEnvironment::Watched(interior::MonitorHandle window, interior::Instant now) noexcept
+// A window closed has nothing left to capture and never will, so the session ends and the next takes the
+// monitor the source names. One minimised or hidden may come back, so the session waits for it with the
+// overlay out of sight rather than leaving it over where the window was, and carries on when it shows.
+Status<Error> RealEnvironment::Watched(interior::MonitorHandle window, interior::Instant now) noexcept
 {
-    if (!IsWindowShowing(window))
+    if (!IsWindowThere(window))
+    {
         Abandon();
-    else
-        FollowedTo(BoundsOfWindow(window), now);
+        return {};
+    }
+    if (!IsWindowShowing(window))
+        return Waiting();
+    return Resumed().transform([this, window, now] { FollowedTo(BoundsOfWindow(window), now); });
+}
+
+Status<Error> RealEnvironment::Waiting() noexcept
+{
+    if (waiting_)
+        return {};
+    waiting_ = true; // WAIVER(R2): set while the window is away, cleared when it is back.
+    HideOutputWindow(window_);
+    return Log(console_, interior::LogLevel::Info, "the window is minimised or hidden; waiting for it to come back, which the panel's Bring the window back button does");
+}
+
+Status<Error> RealEnvironment::Resumed() noexcept
+{
+    if (!waiting_)
+        return {};
+    waiting_ = false; // WAIVER(R2): cleared when the window is back.
+    ShowOutputWindow(window_);
+    return Log(console_, interior::LogLevel::Info, "the window is back");
+}
+
+Status<Error> RealEnvironment::BroughtBack(const PanelReading& reading) noexcept
+{
+    if (!reading.restoreWindow || !applied_.followed.has_value())
+        return {};
+    BringWindowBack(*applied_.followed);
+    return Log(console_, interior::LogLevel::Info, "bringing the window back");
+}
+
+void RealEnvironment::ShowFollowing() noexcept
+{
+    if (panel_ != nullptr)
+        ApplyFollowing(*panel_, applied_.followed.has_value());
 }
 
 [[nodiscard]] HWND PanelWindow(const ControlPanel* panel) noexcept;
@@ -327,12 +364,14 @@ void RealEnvironment::Fronted() noexcept
         RaiseOutputWindow(window_);
 }
 
-void RealEnvironment::Followed(interior::Instant now) noexcept
+Status<Error> RealEnvironment::Followed(interior::Instant now) noexcept
 {
     if (!applied_.followed.has_value())
+    {
         Fronted();
-    else
-        Watched(*applied_.followed, now);
+        return {};
+    }
+    return Watched(*applied_.followed, now);
 }
 
 // What a session cannot follow while it runs, it is rebuilt for, once the panel has settled on it. Settling
@@ -423,11 +462,14 @@ Result<FrameStart, Error> RealEnvironment::Began(const Begun& begun) noexcept
         return Begun{ begun.frame, input, begun.reading };
     };
     now_ = begun.input.now; // WAIVER(R2): this frame's clock reading, replaced whole per frame.
-    Followed(begun.input.now);
-    Reconsidered(begun.input.now);
-    return DrainedRecording(begun.frame.slot).and_then([this, &begun] { return SettledIfRead(begun.reading); }).and_then([this] { return ShowRecording(); }).and_then([this, &begun] {
-        return Accept(Overridden(StoppedIf(begun, AsksToEnd()), comparison_));
-    });
+    return Followed(begun.input.now)
+        .and_then([this, &begun] {
+            Reconsidered(begun.input.now);
+            return DrainedRecording(begun.frame.slot);
+        })
+        .and_then([this, &begun] { return SettledIfRead(begun.reading); })
+        .and_then([this] { return ShowRecording(); })
+        .and_then([this, &begun] { return Accept(Overridden(StoppedIf(begun, AsksToEnd()), comparison_)); });
 }
 
 Result<FrameStart, Error> RealEnvironment::BeginFrame(const interior::FrameState& state) noexcept
@@ -702,7 +744,11 @@ Status<Error> RealEnvironment::Settled(const PanelReading& reading) noexcept
             cursor_ = OverlayOf(reading, applied_);   // WAIVER(R2): the cursor this frame's captures get, replaced whole each frame.
             return ToggledComparison(reading, order);
         })
-        .transform([this, &reading] { ShowComparison(reading); });
+        .and_then([this, &reading] { return BroughtBack(reading); })
+        .transform([this, &reading] {
+            ShowComparison(reading);
+            ShowFollowing();
+        });
 }
 
 namespace {

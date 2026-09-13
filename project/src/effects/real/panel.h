@@ -72,8 +72,9 @@ enum class Heading : std::size_t { Values, Count };
 enum class Folder : std::size_t { Captures, Count };
 
 // A push button that asks for one thing to be done: a screenshot, from the Capture page and again from the
-// Model page, so it is to hand while the model is being tuned; a recording; a comparison capture.
-enum class Action : std::size_t { Screenshot, ModelScreenshot, Record, Compare, Count };
+// Model page, so it is to hand while the model is being tuned; a recording; a comparison capture; and
+// bringing back the window being worked on when it has minimised itself.
+enum class Action : std::size_t { Screenshot, ModelScreenshot, Record, Compare, RestoreWindow, Count };
 
 constexpr std::size_t kFieldCount = static_cast<std::size_t>(Field::Count);
 constexpr std::size_t kToggleCount = static_cast<std::size_t>(Toggle::Count);
@@ -198,6 +199,7 @@ struct PanelReading
     interior::DisplayMode display;
     interior::Fraction split;
     CaptureRequest capture;
+    bool restoreWindow; // the button that brings the window back was clicked since the panel was last read
 };
 
 [[nodiscard]] infra::Result<ControlPanel, Error> CreateControlPanel(const interior::Options& options, const interior::LiveSettings& live, interior::DisplayMode display,
@@ -214,6 +216,8 @@ struct PanelReading
 // Lets go of the window the crosshair is holding, for when that window is closed, hidden or minimised
 // while a session is following it.
 void ReleaseWindow(const ControlPanel& panel) noexcept;
+// Offers the button that brings the window back only while there is a window being followed to bring back.
+void ApplyFollowing(const ControlPanel& panel, bool following) noexcept;
 
 // The window the crosshair was last left on, which is what a session built from the panel would follow.
 [[nodiscard]] std::optional<interior::MonitorHandle> PickedWindow(const ControlPanel& panel) noexcept;

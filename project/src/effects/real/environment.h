@@ -94,10 +94,17 @@ private:
     [[nodiscard]] infra::Status<Error> Recleared(interior::DepthValue depth) noexcept;
     // Keeps the overlay over the window the session is working on. The capture follows the window itself,
     // so only where the answer is shown has to be put right.
-    void Followed(interior::Instant now) noexcept;
+    [[nodiscard]] infra::Status<Error> Followed(interior::Instant now) noexcept;
     void Fronted() noexcept;
     void Behind(HWND front) noexcept;
-    void Watched(interior::MonitorHandle window, interior::Instant now) noexcept;
+    [[nodiscard]] infra::Status<Error> Watched(interior::MonitorHandle window, interior::Instant now) noexcept;
+    // While the window being followed is minimised or hidden the overlay is out of sight and the session
+    // waits; when it shows again the overlay comes back. Each says so in the log once.
+    [[nodiscard]] infra::Status<Error> Waiting() noexcept;
+    [[nodiscard]] infra::Status<Error> Resumed() noexcept;
+    // The panel's button restores the window and puts it on top without giving it the focus.
+    [[nodiscard]] infra::Status<Error> BroughtBack(const PanelReading& reading) noexcept;
+    void ShowFollowing() noexcept;
     void Abandon() noexcept;
     [[nodiscard]] bool AsksForSettings() const noexcept;
     [[nodiscard]] bool AsksToEnd() const noexcept;
@@ -137,7 +144,8 @@ private:
     interior::CommandLine built_;             // the shape it was built with
     interior::CommandLine wanted_;            // WAIVER(R2): the shape the panel now describes, replaced whole as it changes.
     interior::Instant asked_;                 // WAIVER(R2): when it first described it.
-    bool abandoned_;                          // WAIVER(R2): set once, when the window being followed stopped being on screen.
+    bool abandoned_;                          // WAIVER(R2): set once, when the window being followed was closed.
+    bool waiting_;                            // WAIVER(R2): set while the window being followed is minimised or hidden, cleared when it is back.
     std::optional<SnapshotOrder> snapshot_;   // WAIVER(R2): the screenshot the panel asked for this frame, taken after the frame and cleared then.
     std::optional<VideoRecording> recording_; // WAIVER(R2): the recording under way, replaced whole as frames are added and cleared when it stops.
     std::optional<Comparison> comparison_;    // WAIVER(R2): the comparison capture under way, replaced whole as pictures are saved and cleared when it ends.

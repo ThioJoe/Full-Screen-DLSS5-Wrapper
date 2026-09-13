@@ -294,12 +294,15 @@ constexpr wchar_t kCompareHint[] = L"Takes one frame and writes its original, th
                                    L"folder of their own under the captures folder.\nThe model is built again for each, so it takes a moment per picture. Clicking again stops it.";
 constexpr wchar_t kCompareLabel[] = L"Capture all combinations";
 constexpr wchar_t kStopCompareLabel[] = L"Stop capturing";
+constexpr wchar_t kRestoreHint[] = L"Restores the window being worked on when it has been minimised, and puts it on top, without giving it the focus; the overlay comes back over it.\n"
+                                   L"For a game that minimises itself whenever another window is used.";
 
 constexpr std::array<ActionSpec, kActionCount> kActions{ {
     { L"Save screenshot", kScreenshotHint },
     { L"Save screenshot", kScreenshotHint },
     { kRecordLabel, kRecordHint },
     { kCompareLabel, kCompareHint },
+    { L"Bring the window back", kRestoreHint },
 } };
 
 // A setting a comparison capture can run through, and whether it takes a count of values.
@@ -431,9 +434,9 @@ struct PageSpec
 // drives a backend this build leaves out.
 constexpr std::array<PageSpec, static_cast<std::size_t>(Page::Count)> kPages{ {
     { L"Model",
-      11,
+      12,
       { Of(Toggle::NeuralRendering), Of(List::Preset), Of(Field::Intensity), Of(Field::LocalStructure), Of(Frame::Tone), Of(Frame::Skin), kNextColumn, Of(Field::Passes), Of(Frame::Compare),
-        Of(Pick::Window), Of(Action::ModelScreenshot) } },
+        Of(Pick::Window), Of(Action::RestoreWindow), Of(Action::ModelScreenshot) } },
     { L"View", 8, { Of(List::Source), Of(Group::Cursor), Of(Toggle::CaptureBorder), kNextColumn, Of(List::Target), Of(Toggle::Vsync), Of(Toggle::Topmost), Of(Group::LogLevel) } },
     { L"Advanced",
       14,
@@ -2704,16 +2707,16 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
         Readback(panel);
     };
 
-    // A screenshot button keeps its click until the panel is read, and every button is read, so a click on
-    // either is taken and none is left waiting for the next reading.
-    static constexpr auto CaptureOf = [] [[nodiscard]] (const ControlPanel& panel) noexcept -> CaptureRequest {
-        static constexpr auto Taken = [] [[nodiscard]] (HWND button) noexcept -> bool {
-            const bool clicked = ::GetWindowLongPtrW(button, GWLP_USERDATA) != 0;
-            if (clicked)
-                (void)::SetWindowLongPtrW(button, GWLP_USERDATA, 0);
-            return clicked;
-        };
+    // A button keeps its click until the panel is read, and every button is read, so a click on any is
+    // taken and none is left waiting for the next reading.
+    static constexpr auto Taken = [] [[nodiscard]] (HWND button) noexcept -> bool {
+        const bool clicked = ::GetWindowLongPtrW(button, GWLP_USERDATA) != 0;
+        if (clicked)
+            (void)::SetWindowLongPtrW(button, GWLP_USERDATA, 0);
+        return clicked;
+    };
 
+    static constexpr auto CaptureOf = [] [[nodiscard]] (const ControlPanel& panel) noexcept -> CaptureRequest {
         static constexpr auto FolderOf = [] [[nodiscard]] (const ControlPanel& panel) noexcept -> interior::DirectoryPath {
             const std::array<wchar_t, kPathCapacity + 1> text = PathTextOf(panel.folderBoxes[static_cast<std::size_t>(Folder::Captures)]);
             return interior::DirectoryPath::Parse(text.data()).value_or(interior::DirectoryPath{});
@@ -2742,7 +2745,9 @@ PanelReading ReadControlPanel(const ControlPanel& panel, const interior::LiveSet
     };
     Arrange(panel);
     const interior::Fraction split = interior::FractionTag::Parse(SettledValue(panel, Field::Split)).value_or(*kCentre);
-    return PanelReading{ LiveOf(panel, current), SurfaceOf(panel), DisplayFrom(ChosenIn(panel, Group::Compare, 0)), split, CaptureOf(panel) };
+    return PanelReading{
+        LiveOf(panel, current), SurfaceOf(panel), DisplayFrom(ChosenIn(panel, Group::Compare, 0)), split, CaptureOf(panel), Taken(panel.actions[static_cast<std::size_t>(Action::RestoreWindow)])
+    };
 }
 
 // The window a session was following has gone: the panel lets go of it too, so what it shows is the source
@@ -2921,6 +2926,14 @@ void ApplyComparison(const ControlPanel& panel, std::uint32_t planned, const std
     WriteText(panel.comparisonLabel, ProgressText(*running).data());
     (void)::EnableWindow(button, TRUE);
     FillBar(bar, running->done, std::max(running->total, 1u));
+}
+
+void ApplyFollowing(const ControlPanel& panel, bool following) noexcept
+{
+    const HWND button = panel.actions[static_cast<std::size_t>(Action::RestoreWindow)];
+    if ((::IsWindowEnabled(button) != FALSE) == following)
+        return;
+    (void)::EnableWindow(button, following ? TRUE : FALSE);
 }
 
 bool IsPanelClosed(const ControlPanel& panel) noexcept
