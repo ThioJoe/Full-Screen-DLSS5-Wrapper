@@ -54,11 +54,16 @@ struct Pending;
     });
 }
 
-[[nodiscard]] Status<Error> ApplyBorder(const Com<WGC::IGraphicsCaptureSession>& session, bool border) noexcept
+// Whether to draw the border the system puts around what is being captured is a setting Windows has only
+// from build 20348; an older one does not carry the interface at all and draws its border whatever is
+// asked. Nothing but that border turns on it, so a Windows without the setting is not a refusal: the
+// session runs and says so, which is what the answer carries.
+[[nodiscard]] Result<bool, Error> AppliedBorder(const Com<WGC::IGraphicsCaptureSession>& session, bool border) noexcept
 {
-    return As<WGC::IGraphicsCaptureSession3>(session, ApiCall::PutIsBorderRequired).and_then([border](const Com<WGC::IGraphicsCaptureSession3>& s3) {
-        return Check(s3->put_IsBorderRequired(border ? 1 : 0), ApiCall::PutIsBorderRequired);
-    });
+    Com<WGC::IGraphicsCaptureSession3> settable; // WAIVER(R2): the answer of one query, read once after it.
+    if (FAILED(session.As(&settable)))
+        return false;
+    return Check(settable->put_IsBorderRequired(border ? 1 : 0), ApiCall::PutIsBorderRequired).transform([] { return true; });
 }
 
 // A session that can be told to leave our own windows out is told before it starts, so no frame it ever
@@ -67,6 +72,7 @@ struct Started
 {
     Com<WGC::IGraphicsCaptureSession> session;
     bool excluding;
+    bool controlsBorder;
 };
 
 using Sessions = infra::BoundedVector<MonitorSession, interior::kMaxMonitors>;
@@ -224,20 +230,22 @@ Result<Capture, Error> CreateCapture(const GpuDevice& gpu, const interior::Scree
                     return after || before;
                 };
                 Com<WGC::IGraphicsCaptureSession> session;
-                bool excluding = false; // WAIVER(R2): the answer of one call, read once after it.
+                bool excluding = false;      // WAIVER(R2): the answer of one call, read once after it.
+                bool controlsBorder = false; // WAIVER(R2): the answer of one call, read once after it.
                 return Check(pool->CreateCaptureSession(item, &session), ApiCall::CreateCaptureSession)
                     .and_then([&] { return ApplyCursor(session, settings.cursor); })
-                    .and_then([&] { return ApplyBorder(session, settings.border); })
-                    .and_then([&] {
+                    .and_then([&] { return AppliedBorder(session, settings.border); })
+                    .and_then([&](bool controlled) {
+                        controlsBorder = controlled;
                         excluding = ExcludeWindowsFrom(session.Get(), ours);
                         return Check(session->StartCapture(), ApiCall::StartCapture);
                     })
-                    .transform([&] { return Started{ session, ExcludedAgain(session.Get(), ours, excluding) }; });
+                    .transform([&] { return Started{ session, ExcludedAgain(session.Get(), ours, excluding), controlsBorder }; });
             };
             return ItemFor(monitor).and_then([&](const Com<WGC::IGraphicsCaptureItem>& item) {
                 return PoolFor(device, item.Get()).and_then([&](const Com<WGC::IDirect3D11CaptureFramePool>& pool) {
                     return SessionFor(pool.Get(), item.Get(), settings, ours).transform([&](const Started& started) {
-                        return MonitorSession{ item, pool, started.session, monitor, started.excluding };
+                        return MonitorSession{ item, pool, started.session, monitor, started.excluding, started.controlsBorder };
                     });
                 });
             });
@@ -349,11 +357,30 @@ Result<Capture, Error> CreateCapture(const GpuDevice& gpu, const interior::Scree
     static constexpr auto AllExcluding = [] [[nodiscard]] (const Sessions& sessions) noexcept -> bool {
         return !sessions.IsEmpty() && std::ranges::all_of(sessions.Items(), [](const MonitorSession& s) { return s.excluding; });
     };
+
+    // The border is ours to decide only where every session's Windows carries the setting.
+    static constexpr auto AllControllingBorder = [] [[nodiscard]] (const Sessions& sessions) noexcept -> bool {
+        return !sessions.IsEmpty() && std::ranges::all_of(sessions.Items(), [](const MonitorSession& s) { return s.controlsBorder; });
+    };
     return CreateDevices(gpu).and_then([&](const Devices& d) {
         return CreateBridge(d, gpu, canvasExtent).and_then([&](const Bridge& bridge) {
             return StartAll(d.winrtDevice.Get(), monitors, settings, ours).transform([&](const Sessions& sessions) {
-                return Capture{ d.device11, d.context, d.winrtDevice, bridge.canvas, bridge.sharedCanvas,   bridge.canvasFree, bridge.sharedCanvasFree, bridge.canvasReady, bridge.sharedCanvasReady,
-                                gpu.queue,  sessions,  canvasRect,    canvasExtent,  AllExcluding(sessions) };
+                // WAIVER(R1): every field named, so a field added later cannot quietly take another's place.
+                return Capture{ .device11 = d.device11,
+                                .context = d.context,
+                                .winrtDevice = d.winrtDevice,
+                                .canvas = bridge.canvas,
+                                .sharedCanvas = bridge.sharedCanvas,
+                                .canvasFree = bridge.canvasFree,
+                                .sharedCanvasFree = bridge.sharedCanvasFree,
+                                .canvasReady = bridge.canvasReady,
+                                .sharedCanvasReady = bridge.sharedCanvasReady,
+                                .queue = gpu.queue,
+                                .sessions = sessions,
+                                .canvasRect = canvasRect,
+                                .canvasExtent = canvasExtent,
+                                .excludesOurWindows = AllExcluding(sessions),
+                                .controlsBorder = AllControllingBorder(sessions) };
             });
         });
     });
@@ -361,8 +388,9 @@ Result<Capture, Error> CreateCapture(const GpuDevice& gpu, const interior::Scree
 
 Status<Error> ApplyCaptureSettings(const Capture& capture, const CaptureSettings& settings) noexcept
 {
-    return infra::ForEach(capture.sessions.Items(), Status<Error>{},
-                          [&settings](const MonitorSession& session) { return ApplyCursor(session.session, settings.cursor).and_then([&] { return ApplyBorder(session.session, settings.border); }); });
+    return infra::ForEach(capture.sessions.Items(), Status<Error>{}, [&settings](const MonitorSession& session) {
+        return ApplyCursor(session.session, settings.cursor).and_then([&] { return AppliedBorder(session.session, settings.border).transform([](bool) {}); });
+    });
 }
 
 Result<bool, Error> AcquireFrames(const Capture& capture, interior::FrameNumber number) noexcept

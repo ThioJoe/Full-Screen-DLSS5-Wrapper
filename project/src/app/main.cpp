@@ -701,8 +701,17 @@ struct Ended
                     return Log(console, LogLevel::Info, "The output is not on what is being captured, so nothing of ours is hidden: screenshots and recordings hold both windows");
                 return LogHiding(console, excluding);
             };
+            // Said only where it cannot be had, since having it is what the setting is for and needs no remark.
+            static constexpr auto LogBorder = [] [[nodiscard]] (const Console& console, bool controls) noexcept -> Status<Error> {
+                if (controls)
+                    return {};
+                return Log(
+                    console, LogLevel::Warn,
+                    "This Windows has no setting for the capture border, which arrived in build 20348, so the system draws its own around what is captured and --capture-border cannot change it");
+            };
             real::ShowOutputWindow(env.Window());
             return LogExclusion(console, b, env.Devices().capture.excludesOurWindows)
+                .and_then([&] { return LogBorder(console, env.Devices().capture.controlsBorder); })
                 .and_then([&] { return Log(console, LogLevel::Info, "Running. Hotkeys: Ctrl+Alt+Shift+O original/processed, Ctrl+Alt+Shift+C split view, Ctrl+Alt+Shift+Q quit"); })
                 .and_then([&] { return Settled(env, app::RunSession<real::RealEnvironment, Error>(env, plan, interior::InitialFrameState(plan), kFrameLimit)); })
                 .and_then([&](interior::FrameNumber frames) { return env.Finished().transform([frames] { return frames; }); })

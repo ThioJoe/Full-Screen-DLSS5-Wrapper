@@ -134,7 +134,11 @@ cannot stand in for one:
 
 ## Requirements
 
-- Windows 10 2004 or newer (Windows Graphics Capture, DirectComposition), Windows 11 recommended.
+- Windows 10 version 2004, build 19041, or newer (Windows Graphics Capture, DirectComposition); Windows 11
+  recommended. 2004 is where the two capture settings this uses arrived: whether the cursor is captured,
+  and keeping the overlay out of every capture. Whether the system draws its border around what is being
+  captured is a setting only from build 20348, so on Windows 10 that border is drawn whatever
+  `--capture-border` says, and the log says so once at start-up. Nothing else turns on it.
 - An NVIDIA RTX GPU with driver **616.64 or newer** for neural rendering. 616.64 is the first driver
   whose NGX loader offers DLSS 5 (feature 18) itself; on 616.56 and older the loader answers
   `NotImplemented` to the requirements query and cannot build the feature, and this tool stops at

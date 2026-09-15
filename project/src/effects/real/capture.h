@@ -21,7 +21,8 @@ struct MonitorSession
     Com<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool> pool;
     Com<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession> session;
     interior::MonitorInfo monitor;
-    bool excluding; // whether this session agreed to leave our own windows out of what it captures
+    bool excluding;      // whether this session agreed to leave our own windows out of what it captures
+    bool controlsBorder; // whether this Windows carries the setting that says whether to draw the capture border
 };
 
 // Capture runs on its own Direct3D 11 device, the only kind Windows Graphics Capture accepts, and that
@@ -42,6 +43,7 @@ struct Capture
     interior::ScreenRect canvasRect;
     interior::Extent canvasExtent;
     bool excludesOurWindows; // whether every session agreed to leave our own windows out of what it captures
+    bool controlsBorder;     // whether the capture border was ours to decide; where it is not, Windows draws its own
 };
 
 [[nodiscard]] infra::Status<Error> InitializeRuntime() noexcept;
